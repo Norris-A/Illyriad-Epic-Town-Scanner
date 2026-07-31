@@ -1,0 +1,8 @@
+node_modules/
+dist/
+*.log
+
+# Markdown is maintained outside this repo, README excepted. The code cites the
+# spec docs by section number (mechanics §4.1, PRD §3.5, ...) — keep them to hand.
+*.md
+!README.md

@@ -7,6 +7,7 @@ import assert from 'node:assert/strict';
 import {
   computeK, computeBOther, computeConsumption, computeRRef,
   tFood, tRp, tMax, goldNet, claimUpkeep, distance, knapsack, recoverSet, scoreSite,
+  milsovAdvice,
 } from '../src/scoring.js';
 import { DEFAULT_SETTINGS } from '../src/constants.js';
 
@@ -196,4 +197,108 @@ test('an unmeetable milsov quota is reported, not silently dropped', () => {
     settings: { ...worked, tMin: 0, milsovQuota: [{ level: 3, count: 4 }] },
   });
   assert.equal(plan.quotaMet, false);
+  assert.equal(plan.milsovNote, null, 'a "maybe" site gets the quota flag, not a level tweak');
+});
+
+// --- Milsov level advisory (PRD §3.6) --------------------------------------
+
+// Two orthogonal neighbours at d = 1 and a diagonal at d = 1.414. Requesting
+// 3x Sov II reaches the diagonal; 2x Sov III does not, and buys the same +30%.
+//   requested 3x Sov II : 10 * 2 * (1 + 1 + 1.4142) = 68.28 RP, bonus 30
+//   alternative 2x Sov III : 10 * 3 * (1 + 1)       = 60.00 RP, bonus 30
+const advisorySite = [
+  { dx: 1, dy: 0, food: 3 },
+  { dx: 0, dy: 1, food: 3 },
+  { dx: 1, dy: 1, food: 3 },
+  { dx: 2, dy: 0, food: 7 },
+  { dx: 2, dy: 2, food: 9 },
+];
+
+test('the advisory fires when a concentrated split genuinely wins', () => {
+  const plan = scoreSite({
+    neighbours: advisorySite,
+    settings: { ...worked, tMin: 0, milsovQuota: [{ level: 2, count: 3 }] },
+  });
+  assert.ok(plan.milsovNote, 'the note should fire');
+  assert.deepEqual(plan.milsovAdvice.levels, [3, 3]);
+  close(plan.milsovAdvice.rp, 60);
+  close(plan.milsovAdvice.requestedRp, 68.284);
+  assert.equal(plan.milsovAdvice.bonus, 30);
+  assert.equal(plan.milsovAdvice.requestedBonus, 30);
+  assert.match(plan.milsovNote, /^2x Sov III would cost less research than your 3x Sov II/);
+  // Upkeep doubles per level, so concentrating costs more W/C/I/S. Say so.
+  assert.match(plan.milsovNote, /higher structure upkeep/);
+});
+
+test('the plan still uses the requested levels unchanged when the note fires', () => {
+  const plan = scoreSite({
+    neighbours: advisorySite,
+    settings: { ...worked, tMin: 0, milsovQuota: [{ level: 2, count: 3 }] },
+  });
+  assert.ok(plan.milsovNote, 'precondition: the note fires');
+  assert.equal(plan.milsov.length, 3, 'three tiles, exactly as requested');
+  for (const m of plan.milsov) assert.equal(m.level, 2, 'Sov II, exactly as requested');
+  close(plan.milsov.reduce((n, m) => n + m.rp, 0), 68.284);
+});
+
+test('the advisory stays silent when the distance multiplier kills the saving', () => {
+  // The PRD's own illustration, at real distances: only one tile sits at d = 1,
+  // so spreading 1x Sov V over more squares reaches d = 1.414 and beyond and
+  // costs more research for the same or less bonus.
+  const neighbours = [
+    { dx: 1, dy: 0, food: 3 },
+    { dx: 1, dy: 1, food: 3 },
+    { dx: 2, dy: 0, food: 7 },
+    { dx: 2, dy: 2, food: 9 },
+  ];
+  const plan = scoreSite({
+    neighbours,
+    settings: { ...worked, tMin: 0, milsovQuota: [{ level: 5, count: 1 }] },
+  });
+  assert.equal(plan.milsovNote, null, '3x Sov II does not actually beat 1x Sov V here');
+});
+
+test('the advisory never suggests spending more research or taking more tiles', () => {
+  // Bonus per RP collapses to 1/(2 * mean distance), so a plan on more of the
+  // cheapest-first prefix can never win. That is what makes it safe to compare
+  // milsov in isolation: a win returns tiles to the food knapsack.
+  const ds = [1, 1, 1.4142135, 2, 2.2360679, 2.8284271];
+  const tiles = ds.map((d) => ({ d }));
+  for (let level = 1; level <= 5; level++) {
+    for (let count = 1; count <= ds.length; count++) {
+      const requested = tiles.slice(0, count).map((t) => ({
+        ...t, level, rp: claimUpkeep(t.d, level, false).rp,
+      }));
+      const advice = milsovAdvice({ requested, tiles, chancery: false });
+      if (!advice) continue;
+      assert.ok(advice.rp <= advice.requestedRp + 1e-9, `${count}x L${level}: spends more RP`);
+      assert.ok(advice.bonus >= advice.requestedBonus - 1e-9, `${count}x L${level}: weaker`);
+      assert.ok(advice.tileCount <= count, `${count}x L${level}: took more tiles`);
+    }
+  }
+});
+
+test('the advisory costs nothing and says nothing without a milsov quota', () => {
+  const plan = scoreSite({ neighbours: advisorySite, settings: { ...worked, tMin: 0 } });
+  assert.equal(plan.milsovNote, null);
+  assert.equal(plan.milsovAdvice, null);
+  assert.equal(milsovAdvice({ requested: [], tiles: [], chancery: false }), null);
+});
+
+test('the advisory toggle switches it off (PRD §4)', () => {
+  const plan = scoreSite({
+    neighbours: advisorySite,
+    settings: { ...worked, tMin: 0, milsovAdvisory: false, milsovQuota: [{ level: 2, count: 3 }] },
+  });
+  assert.equal(plan.milsovNote, null);
+});
+
+test('a mixed quota puts the highest level on the nearest tile', () => {
+  const plan = scoreSite({
+    neighbours: advisorySite,
+    settings: { ...worked, tMin: 0, milsovQuota: [{ level: 1, count: 1 }, { level: 5, count: 1 }] },
+  });
+  const byD = [...plan.milsov].sort((a, b) => a.d - b.d);
+  assert.equal(byD[0].level, 5, 'Sov V belongs on the d=1 tile, not the Sov I');
+  assert.equal(byD[1].level, 1);
 });

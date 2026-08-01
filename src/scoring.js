@@ -11,6 +11,7 @@ import {
   CHANCERY_FACTOR,
   FOOD_CLAIM_LEVEL,
   MILSOV_UPKEEP_BY_LEVEL,
+  MILSOV_BONUS_PER_LEVEL,
   CITY_PROFILES,
   FLOUR_MILL_L20,
   NATURES_BOUNTY_BY_RETREATS,
@@ -258,6 +259,133 @@ export function recoverSet(candidates, dpResult, spend) {
   return chosen.reverse();
 }
 
+// --- Milsov level advisory (PRD §3.6) --------------------------------------
+
+const ROMAN = ['I', 'II', 'III', 'IV', 'V'];
+
+/** "1x Sov V + 2x Sov III", levels descending. */
+function describeLevels(levels) {
+  const counts = new Map();
+  for (const l of levels) counts.set(l, (counts.get(l) ?? 0) + 1);
+  return [...counts.entries()]
+    .sort((a, b) => b[0] - a[0])
+    .map(([level, count]) => `${count}x Sov ${ROMAN[level - 1]}`)
+    .join(' + ');
+}
+
+/**
+ * Look for a level/count split that beats the requested one at the ACTUAL
+ * distances of the tiles that would be used (PRD §3.6).
+ *
+ * Both cost and bonus are linear in level, so for any plan placed on the `n`
+ * nearest tiles the bonus per RP collapses to `1 / (2 * mean_distance * f)` —
+ * level cancels out entirely. That has two consequences worth stating:
+ *
+ *  - A plan spread over MORE tiles can never win. Taking more of a
+ *    cheapest-first prefix can only raise the mean distance, so bonus-per-RP
+ *    can only fall. The PRD's illustrative "3x Sov II beats 1x Sov V" is in
+ *    fact unreachable under the linear model — which is the distance erosion
+ *    §3.6 warns about, taken to its conclusion.
+ *  - A win therefore always uses FEWER (or equally many) tiles at higher
+ *    levels, which RETURNS tiles to the food knapsack. The food plan can only
+ *    improve, so comparing milsov in isolation is conservative: this can never
+ *    recommend a split that quietly costs the site food. See scoreSite.
+ *
+ * The loop is left general rather than hard-coded to `n <= requested.length`,
+ * so the arithmetic — not an assumption — decides.
+ *
+ * `tiles` must be the full neighbour list sorted by ascending distance, i.e.
+ * the same cheapest-first order step 2 reserves from.
+ *
+ * Returns null (stay silent) unless the alternative is no worse on research,
+ * no worse on total bonus, and strictly better on at least one of the two —
+ * the only two criteria §3.6 names.
+ *
+ * Structure upkeep is reported, not filtered on. It doubles per level while
+ * bonus is linear, so a concentrating win almost always raises W/C/I/S upkeep;
+ * gating on that would suppress the feature entirely, and would do so on the
+ * strength of the placeholder yield behind T_res (mechanics open item 12). The
+ * note says so instead, and lets the user weigh it.
+ */
+export function milsovAdvice({ requested, tiles, chancery, maxBuildings = Infinity }) {
+  if (!requested || requested.length === 0) return null;
+
+  const f = chancery ? CHANCERY_FACTOR : 1;
+  const reqBonus = requested.reduce((n, a) => n + MILSOV_BONUS_PER_LEVEL * a.level, 0);
+  const reqRp = requested.reduce((n, a) => n + a.rp, 0);
+  const reqUpkeep = requested.reduce((n, a) => n + (MILSOV_UPKEEP_BY_LEVEL[a.level] ?? 0), 0);
+
+  const ds = tiles.map((t) => t.d);
+  const maxN = Math.min(ds.length, maxBuildings);
+  const EPS = 1e-9;
+  let best = null;
+
+  for (let n = 1; n <= maxN; n++) {
+    // Start every tile at Sov I, then bump levels one at a time. Bumping the
+    // nearest tile that is not yet at V is always the cheapest way to buy the
+    // next 5% of bonus, so this walks the exact cost-minimising frontier for
+    // each tile count.
+    const levels = new Array(n).fill(1);
+    let weighted = 0;                       // sum of level * distance
+    for (let i = 0; i < n; i++) weighted += ds[i];
+    let bonus = MILSOV_BONUS_PER_LEVEL * n;
+    let upkeep = MILSOV_UPKEEP_BY_LEVEL[1] * n;
+
+    for (;;) {
+      const rp = CLAIM_RP_PER_LEVEL_DISTANCE * weighted * f;
+      if (
+        rp <= reqRp + EPS &&
+        bonus >= reqBonus - EPS &&
+        (rp < reqRp - EPS || bonus > reqBonus + EPS) &&
+        (!best ||
+          bonus > best.bonus + EPS ||
+          (bonus >= best.bonus - EPS &&
+            (rp < best.rp - EPS || (rp <= best.rp + EPS && upkeep < best.upkeep))))
+      ) {
+        best = { levels: [...levels], rp, bonus, upkeep, tileCount: n };
+      }
+      if (bonus >= MILSOV_BONUS_PER_LEVEL * 5 * n) break;   // every tile at V
+      // Bump the nearest unsaturated tile — the cost of a bump is its distance
+      // alone, so that is always the cheapest next 5%. Ties in distance go to
+      // the lower-level tile: same research, but structure upkeep doubles per
+      // level, so 2x Sov III beats 1x Sov V + 1x Sov I on W/C/I/S for free.
+      let j = -1;
+      for (let i = 0; i < n; i++) {
+        if (levels[i] === 5) continue;
+        if (j === -1 || ds[i] < ds[j] - EPS || (ds[i] <= ds[j] + EPS && levels[i] < levels[j])) j = i;
+      }
+      upkeep += MILSOV_UPKEEP_BY_LEVEL[levels[j] + 1] - MILSOV_UPKEEP_BY_LEVEL[levels[j]];
+      levels[j] += 1;
+      weighted += ds[j];
+      bonus += MILSOV_BONUS_PER_LEVEL;
+    }
+  }
+
+  if (!best) return null;
+
+  const cheaper = best.rp < reqRp - EPS;
+  const stronger = best.bonus > reqBonus + EPS;
+  const research = cheaper
+    ? `would cost less research than your ${describeLevels(requested.map((a) => a.level))}`
+    : `would cost the same research as your ${describeLevels(requested.map((a) => a.level))}`;
+  const gain = stronger ? 'give more total bonus' : 'give the same total bonus';
+  // Fewer, higher-level structures cost more of each basic resource per hour.
+  const dearer = best.upkeep > reqUpkeep ? ', at higher structure upkeep' : '';
+
+  return {
+    text: `${describeLevels(best.levels)} ${research} and ${gain}${dearer}.`,
+    levels: best.levels,
+    rp: best.rp,
+    bonus: best.bonus,
+    upkeep: best.upkeep,
+    requestedRp: reqRp,
+    requestedBonus: reqBonus,
+    requestedUpkeep: reqUpkeep,
+    tileCount: best.tileCount,
+    requestedTileCount: requested.length,
+  };
+}
+
 /**
  * Score one candidate site. `neighbours` are the claimable tiles already
  * filtered per PRD §3.3, each { dx, dy, food, key, i }.
@@ -281,7 +409,12 @@ export function scoreSite({ neighbours, settings }) {
 
   const milsovAssignments = [];
   const reserved = new Set();
-  for (const quota of s.milsovQuota ?? []) {
+  // Highest level onto the nearest tile. PRD §3.5 step 2 says only "cheapest
+  // available tiles by distance"; ordering the quota entries this way is the
+  // cost-minimising reading of it and leaves the requested level/count pairs
+  // untouched. It also stops the §3.6 advisory firing on a mere re-ordering.
+  const quotaByLevel = [...(s.milsovQuota ?? [])].sort((a, b) => b.level - a.level);
+  for (const quota of quotaByLevel) {
     for (let c = 0; c < quota.count; c++) {
       const tile = byDistance.find((t) => !reserved.has(t.idx));
       if (!tile) break; // quota cannot be met — caller flags as a "maybe" site
@@ -292,6 +425,21 @@ export function scoreSite({ neighbours, settings }) {
   }
   const quotaRequested = (s.milsovQuota ?? []).reduce((n, q) => n + q.count, 0);
   const quotaMet = milsovAssignments.length === quotaRequested;
+
+  // PRD §3.6 — advisory only. The plan above is what the user asked for and is
+  // returned unchanged; this note is never acted on. Costs nothing when no
+  // milsov was requested, which is the common case across ~1,225 sites.
+  // Skipped when the quota could not be fitted at all: "2 milsov fits here, but
+  // only at 50% tax" (§3.7) is the honest message there, not a level tweak.
+  const advice =
+    milsovAssignments.length > 0 && quotaMet && (s.milsovAdvisory ?? true)
+      ? milsovAdvice({
+          requested: milsovAssignments,
+          tiles: byDistance,
+          chancery,
+          maxBuildings: s.maxBuildings ?? 20,
+        })
+      : null;
 
   const milsovRp = milsovAssignments.reduce((sum, a) => sum + a.rp, 0);
   const milsovGold = milsovAssignments.reduce((sum, a) => sum + a.gold, 0);
@@ -346,6 +494,8 @@ export function scoreSite({ neighbours, settings }) {
     ...winner,
     tiles,
     milsov: milsovAssignments,
+    milsovAdvice: advice,
+    milsovNote: advice ? advice.text : null,
     quotaMet,
     milsovGold,
     resIndicative: resCeiling.indicative,

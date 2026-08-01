@@ -16,6 +16,20 @@ export const FOOD_CLAIM_LEVEL = 5;
 // [F] Military sov structure upkeep, per hour, of EACH of wood/clay/iron/stone.
 export const MILSOV_UPKEEP_BY_LEVEL = { 1: 150, 2: 300, 3: 600, 4: 1200, 5: 2400 };
 
+// [D] Military sov production bonus, % per claimed tile, before the tile's
+// innate descriptor modifier. Derived from the [F] "+5% unit production per
+// building level" (mechanics §5.3) and cross-checked against the [F] worked
+// example in the same section: 8x Sov III + 12x Sov II = 8*15 + 12*10 = +240%,
+// the figure quoted there. Linear in level, as PRD §3.6 assumes.
+//
+// [?] Mechanics §5.3 states the bonus per *building* level and the upkeep per
+// *structure* level, while the claim cost (§5.2) is per *sovereignty* level.
+// This table follows the same convention the food case already uses — food sov
+// needs "level 5 sovereignty and a level 5 building" — i.e. claim level and
+// building level are kept equal. Descriptor modifiers are not applied.
+export const MILSOV_BONUS_BY_LEVEL = { 1: 5, 2: 10, 3: 15, 4: 20, 5: 25 };
+export const MILSOV_BONUS_PER_LEVEL = 5; // [F] the linear coefficient itself
+
 export const CITY_PROFILES = {
   standard: 32200, // [V]
   beer: 30800,     // [V]

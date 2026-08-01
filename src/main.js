@@ -11,6 +11,8 @@ const workerUrl = URL.createObjectURL(
   new Blob([__WORKER_SOURCE__], { type: 'text/javascript' }),
 );
 
+// The settings form owns the live values; this is only what the last scan ran
+// with. In memory for the session, never written to disk.
 let settings = { ...DEFAULT_SETTINGS };
 let lastResults = [];
 
@@ -35,6 +37,15 @@ const panel = createPanel({
 });
 
 function runScan() {
+  // Read the form at the moment of the press, so the last edit always reaches
+  // the worker and nothing at all happens between presses.
+  const read = panel.getSettings();
+  if (read.errors.length) {
+    panel.setStatus(read.errors.join(' '));
+    return;
+  }
+  settings = read.settings;
+
   const payload = getLatestPayload();
   if (!payload) {
     panel.setStatus('No map payload observed yet. Pan or zoom the map, then Scan.');
@@ -69,9 +80,11 @@ function runScan() {
   worker.postMessage({ payload, settings });
 }
 
-// Exposed for console tinkering during development only.
+// Exposed for console tinkering during development only — the settings form is
+// the supported route. Writes go through the form so the two cannot disagree:
+// runScan reads the form, not this variable.
 window.__sovScanner = {
-  get settings() { return settings; },
-  set settings(v) { settings = { ...DEFAULT_SETTINGS, ...v }; },
+  get settings() { return panel.getSettings().settings; },
+  set settings(v) { panel.setSettings({ ...DEFAULT_SETTINGS, ...v }); },
   probeInPageData,
 };

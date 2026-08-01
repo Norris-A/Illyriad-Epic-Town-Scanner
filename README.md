@@ -30,7 +30,8 @@ Tampermonkey editor.
 npm test
 ```
 
-Runs the scoring engine against the PRD §6 worked example.
+Runs the scoring engine against the PRD §6 worked example, plus the CSV writer
+and the settings-form validators.
 
 ## Layout
 
@@ -41,14 +42,15 @@ Runs the scoring engine against the PRD §6 worked example.
 | `src/payload.js` | Payload reading and the §3.2/§3.3 filters |
 | `src/capture.js` | Passive payload observation. Reader only — no requests |
 | `src/worker.js` | Web Worker entry; bundled to a string and inlined |
-| `src/panel.js` | Side panel UI (§5) |
+| `src/panel.js` | Side panel UI (§5), the §4 settings form, and the CSV writer |
 | `src/main.js` | Userscript entry; wires the three together |
 | `build.mjs` | Two-pass esbuild: worker → string → main bundle |
 
 ## Status
 
-Scaffold. The engine implements §3.4 and §3.5; the panel and capture layers are
-structural and unverified against the live client.
+The engine implements §3.4–§3.6, and the panel carries the full §4 settings
+form. Capture and the panel have been exercised against the live client — a
+scan returns a ranked table — but only the pure functions have automated tests.
 
 Known gaps, all deliberate:
 
@@ -57,13 +59,10 @@ Known gaps, all deliberate:
 - **`T_res` is indicative only** — per-plot yields for wood/clay/iron/stone are
   unmeasured (mechanics open item 12). Flagged in the UI. Food-only scans are
   unaffected.
-- **`recoverSet` does not handle the count-limited DP.** That path runs when
-  candidates exceed `max_buildings`, which at R_claim=2 does happen — 24
-  claimable neighbours against a cap of 20. `T_max` is correct there but the
-  tile list comes back empty. Needs 2-D parent tracking.
-- **The settings form is not built** — settings are edited via
-  `window.__sovScanner.settings` for now.
-- **§3.6 milsov advisory not implemented.**
+- **The settings form has no automated test of its DOM.** `createPanel` cannot
+  run under Node, so the field spec, the validators and the markup contract are
+  tested but the event wiring, gating and Prefill are not. Adding jsdom would
+  close it.
 
 ## First task
 

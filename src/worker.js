@@ -8,6 +8,7 @@ import {
   isCandidateSite,
   neighbourhood,
   parseKey,
+  parseRs,
 } from './payload.js';
 
 self.onmessage = (e) => {
@@ -34,7 +35,9 @@ self.onmessage = (e) => {
       } else {
         const plan = scoreSite({ neighbours, settings });
         if (plan && plan.tMax >= settings.tMin) {
-          results.push({ key, ...parseKey(key), ...plan });
+          // `rs` travels with the result so the panel's Prefill button can load
+          // the site's actual allocation into the settle-plot fields.
+          results.push({ key, ...parseKey(key), rs: parseRs(tile), ...plan });
         } else if (plan) {
           excluded['below-tmin'] = (excluded['below-tmin'] ?? 0) + 1;
         }

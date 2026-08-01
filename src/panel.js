@@ -18,6 +18,7 @@ const CSS = `
 .sov-row{cursor:pointer}
 .sov-detail{background:#222;font-size:11px}
 .sov-flag{color:#e94}
+.sov-advice{color:#6bf}
 .sov-collapsed .sov-body{display:none}
 `;
 
@@ -68,7 +69,9 @@ export function createPanel({ onScan, onExport }) {
           <td>${r.sFood.toFixed(0)}</td>
           <td>${r.uRp.toFixed(0)}</td>
           <td>${Math.round(r.goldNet).toLocaleString()}</td>
-          <td>${r.quotaMet ? '' : '<span class="sov-flag">maybe</span>'}</td>
+          <td>${r.quotaMet ? '' : '<span class="sov-flag">maybe</span>'}${
+            r.milsovNote ? '<span class="sov-advice" title="Milsov level advisory">advice</span>' : ''
+          }</td>
         </tr>`).join('');
       el.innerHTML = `
         <p>${summary}</p>
@@ -105,7 +108,12 @@ function toggleDetail(row, result) {
   }).join('');
   const mil = result.milsov.map((m) =>
     `<li>milsov Sov ${m.level} at d ${m.d.toFixed(2)} — ${m.rp.toFixed(0)} RP</li>`).join('');
-  tr.innerHTML = `<td colspan="7"><ul>${tiles}${mil}</ul>${
+  // PRD §3.6 — advisory only. The plan above is exactly what the user asked
+  // for; this is a note, never an applied change. Say so plainly.
+  const advice = result.milsovNote
+    ? `<p class="sov-advice">Advisory: ${escapeHtml(result.milsovNote)} Your requested levels are what is planned above.</p>`
+    : '';
+  tr.innerHTML = `<td colspan="7"><ul>${tiles}${mil}</ul>${advice}${
     result.resIndicative
       ? '<p class="sov-flag">Resource ceiling is indicative only — per-plot yields unmeasured (mechanics open item 12).</p>'
       : ''
@@ -113,10 +121,24 @@ function toggleDetail(row, result) {
   row.after(tr);
 }
 
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+}
+
+// RFC 4180 quoting. Every column goes through this rather than only the free
+// text one — the milsov advisory (PRD §3.6) is the first field that can carry a
+// comma, and picking which columns are "safe" is how that regresses later.
+export function csvField(v) {
+  const s = v === null || v === undefined ? '' : String(v);
+  return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
 export function toCsv(results) {
-  const head = ['x', 'y', 'T_max', 'binding', 'S_food', 'U_RP', 'U_gold', 'Gold_net', 'quota_met'];
+  const head = ['x', 'y', 'T_max', 'binding', 'S_food', 'U_RP', 'U_gold', 'Gold_net',
+    'quota_met', 'milsov_advisory'];
   const lines = results.map((r) =>
     [r.x, r.y, r.tMax.toFixed(2), r.binding, r.sFood.toFixed(0),
-     r.uRp.toFixed(0), r.uGold.toFixed(0), r.goldNet.toFixed(0), r.quotaMet].join(','));
+     r.uRp.toFixed(0), r.uGold.toFixed(0), r.goldNet.toFixed(0), r.quotaMet,
+     r.milsovNote ?? ''].map(csvField).join(','));
   return [head.join(','), ...lines].join('\n');
 }

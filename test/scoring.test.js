@@ -91,6 +91,76 @@ test('knapsack maximises food per RP and the set is recoverable', () => {
   assert.deepEqual(chosen, [0, 1]);
 });
 
+// --- Count-limited (building cap) knapsack ---------------------------------
+
+const sumBy = (items, field) => items.reduce((n, x) => n + x[field], 0);
+
+// Food is not ordered by weight, so the cap has to choose rather than take the
+// cheapest run.
+const capCandidates = [
+  { weight: 50, food: 4 }, { weight: 55, food: 9 }, { weight: 60, food: 2 },
+  { weight: 65, food: 8 }, { weight: 70, food: 5 }, { weight: 71, food: 11 },
+  { weight: 80, food: 3 }, { weight: 90, food: 7 }, { weight: 100, food: 6 },
+  { weight: 110, food: 10 },
+];
+
+test('the count-limited set is recoverable and matches best[spend]', () => {
+  const maxItems = 4;
+  const budget = 400;
+  const dp = knapsack(capCandidates, budget, maxItems);
+  assert.equal(dp.countLimited, true, 'the cap must actually bind');
+
+  const chosen = recoverSet(capCandidates, dp, budget);
+  const tiles = chosen.map((i) => capCandidates[i]);
+  assert.equal(tiles.length, maxItems, 'the cap binds, so exactly maxItems tiles');
+  close(sumBy(tiles, 'food'), dp.best[budget], 1e-9);
+  assert.deepEqual([...chosen].sort((a, b) => a - b), chosen, 'indices ascending');
+  assert.equal(new Set(chosen).size, chosen.length, 'no item claimed twice');
+});
+
+test('recovered weights never exceed the spend they were recovered at', () => {
+  const dp = knapsack(capCandidates, 400, 4);
+  for (let spend = 0; spend <= 400; spend++) {
+    const tiles = recoverSet(capCandidates, dp, spend).map((i) => capCandidates[i]);
+    assert.ok(sumBy(tiles, 'weight') <= spend, `spend ${spend} overspent`);
+    assert.ok(tiles.length <= 4, `spend ${spend} broke the building cap`);
+    close(sumBy(tiles, 'food'), dp.best[spend], 1e-9);
+  }
+});
+
+test('with the cap slack, the 1-D and 2-D paths agree on the same input', () => {
+  const budget = 400;
+  // maxItems >= candidates.length keeps the 1-D path; one below forces 2-D but
+  // cannot bind harder than the optimum at this budget.
+  const fast = knapsack(capCandidates, budget, capCandidates.length);
+  const slow = knapsack(capCandidates, budget, capCandidates.length - 1);
+  assert.equal(fast.countLimited, false);
+  assert.equal(slow.countLimited, true);
+  for (let spend = 0; spend <= budget; spend++) close(fast.best[spend], slow.best[spend], 1e-9);
+
+  const a = recoverSet(capCandidates, fast, budget).map((i) => capCandidates[i]);
+  const b = recoverSet(capCandidates, slow, budget).map((i) => capCandidates[i]);
+  close(sumBy(a, 'food'), sumBy(b, 'food'), 1e-9);
+  assert.ok(sumBy(a, 'weight') <= budget && sumBy(b, 'weight') <= budget);
+});
+
+test('scoreSite still reports its tile plan when the building cap binds', () => {
+  // 24 claimable neighbours against a cap of 20.
+  const neighbours = [];
+  for (let dx = -2; dx <= 2; dx++) {
+    for (let dy = -2; dy <= 2; dy++) {
+      if (dx === 0 && dy === 0) continue;
+      neighbours.push({ dx, dy, food: 2 + ((dx * 5 + dy + 12) % 7) });
+    }
+  }
+  assert.equal(neighbours.length, 24);
+  const plan = scoreSite({ neighbours, settings: { ...worked, tMin: 0, maxBuildings: 20 } });
+  assert.ok(plan.tiles.length > 0, 'the plan must not come back empty');
+  assert.ok(plan.tiles.length <= 20, 'the building cap must hold');
+  close(sumBy(plan.tiles, 'food'), plan.sFood, 1e-9);
+  assert.ok(sumBy(plan.tiles, 'weight') <= plan.uRp + 1e-9, 'plan must fit its own RP spend');
+});
+
 test('the optimum is where ceilings cross, not maximum food (PRD §3.4)', () => {
   // A ring of eight 7-food tiles plus one absurdly expensive 16-food water tile.
   const neighbours = [

@@ -162,11 +162,11 @@ export function knapsack(candidates, budget, maxItems = Infinity) {
   const needCountDim = candidates.length > maxItems;
   const width = budget + 1;
   const best = new Float64Array(width);
-  // Bitset of chosen items per (item, spend) so the winning set is recoverable.
-  const bytesPerItem = width;
-  const took = new Uint8Array(candidates.length * bytesPerItem);
 
   if (!needCountDim) {
+    // Bitset of chosen items per (item, spend) so the winning set is recoverable.
+    const bytesPerItem = width;
+    const took = new Uint8Array(candidates.length * bytesPerItem);
     for (let i = 0; i < candidates.length; i++) {
       const w = candidates[i].weight;
       const v = candidates[i].food;
@@ -206,19 +206,49 @@ export function knapsack(candidates, budget, maxItems = Infinity) {
       }
     }
   }
+  // best[cap] is the max over counts; bestCount records which count reached it,
+  // ties going to the smaller count.
+  const bestCount = new Int32Array(width);
   for (let cap = 0; cap <= budget; cap++) {
     let m = 0;
-    for (let c = 0; c <= maxItems; c++) if (dp[c][cap] > m) m = dp[c][cap];
+    let mc = 0;
+    for (let c = 0; c <= maxItems; c++) {
+      if (dp[c][cap] > m) {
+        m = dp[c][cap];
+        mc = c;
+      }
+    }
     best[cap] = m;
+    bestCount[cap] = mc;
   }
-  return { best, took: null, dp, choice, width, maxItems, countLimited: true };
+  return { best, took: null, dp, choice, bestCount, width, maxItems, countLimited: true };
 }
 
-/** Recover the item indices chosen at a given spend level (1-D DP only). */
+/**
+ * Recover the item indices chosen at a given spend level.
+ *
+ * Both DPs mark item i whenever it improves a cell, so a cell may carry marks
+ * from several items; the highest-indexed mark set the cell's final value.
+ * Scanning items downwards and continuing below each hit is therefore exact —
+ * when item i was processed its predecessor cell held the optimum over 0..i-1.
+ */
 export function recoverSet(candidates, dpResult, spend) {
-  if (dpResult.countLimited) return null; // TODO: recovery for the 2-D variant
   const chosen = [];
   let cap = spend;
+
+  if (dpResult.countLimited) {
+    const { choice, bestCount, width } = dpResult;
+    let count = bestCount[cap];
+    for (let i = candidates.length - 1; i >= 0 && count > 0; i--) {
+      if (choice[i][count * width + cap] === 1) {
+        chosen.push(i);
+        cap -= candidates[i].weight;
+        count--;
+      }
+    }
+    return chosen.reverse();
+  }
+
   for (let i = candidates.length - 1; i >= 0; i--) {
     if (dpResult.took[i * dpResult.bytesPerItem + cap] === 1) {
       chosen.push(i);

@@ -33,6 +33,44 @@ export const MILSOV_UPKEEP_BY_LEVEL = { 1: 150, 2: 300, 3: 600, 4: 1200, 5: 2400
 export const MILSOV_BONUS_BY_LEVEL = { 1: 5, 2: 10, 3: 15, 4: 20, 5: 25 };
 export const MILSOV_BONUS_PER_LEVEL = 5; // [F] the linear coefficient itself
 
+// [F] Every sovereignty structure, and the two fields the rest of the tool
+// reads off them. `type` is the whole of the arithmetic: a 'production'
+// structure pays MILSOV_UPKEEP_BY_LEVEL every hour, a 'resource' one pays
+// nothing beyond its claim's RP and gold. `boosts` is what a resource structure
+// raises, and is what keeps the food two out of the quota picker (see
+// SOV_QUOTA_STRUCTURES) without a second list to keep in step.
+export const SOV_STRUCTURES = [
+  { key: 'trainingGround', name: 'Training Ground', type: 'production' },
+  { key: 'targetRange', name: 'Target Range', type: 'production' },
+  { key: 'militaryAcademy', name: 'Military Academy', type: 'production' },
+  { key: 'joustingYard', name: 'Jousting Yard', type: 'production' },
+  { key: 'assemblyYard', name: 'Assembly Yard', type: 'production' },
+  { key: 'crafting', name: 'Crafting structure', type: 'production' },
+  { key: 'loggingCamp', name: 'Logging Camp', type: 'resource', boosts: 'wood' },
+  { key: 'earthworks', name: 'Earthworks', type: 'resource', boosts: 'clay' },
+  { key: 'mineshaft', name: 'Mineshaft', type: 'resource', boosts: 'iron' },
+  { key: 'gravelPit', name: 'Gravel Pit', type: 'resource', boosts: 'stone' },
+  { key: 'farmstead', name: 'Farmstead', type: 'resource', boosts: 'food' },
+  { key: 'fishery', name: 'Fishery', type: 'resource', boosts: 'food' },
+];
+
+export const SOV_STRUCTURE_BY_KEY = Object.fromEntries(SOV_STRUCTURES.map((s) => [s.key, s]));
+
+// What the quota form offers. Farmstead and Fishery are costed correctly by the
+// engine like any other resource structure, but they are not offered as a quota
+// row: the food claim plan already places them, and a row would reserve a tile
+// the knapsack then cannot claim for its food.
+export const SOV_QUOTA_STRUCTURES = SOV_STRUCTURES.filter((s) => s.boosts !== 'food');
+
+// A row that names no structure, or names one this table does not know, is a
+// Production Structure: that is what every quota meant before the field existed,
+// and it is the charged case, so the fallback errs toward billing rather than
+// toward a free claim.
+export const DEFAULT_SOV_STRUCTURE = 'trainingGround';
+
+// Sovereignty levels are written in Roman numerals wherever a level is shown.
+export const SOV_LEVEL_ROMAN = ['I', 'II', 'III', 'IV', 'V'];
+
 export const CITY_PROFILES = {
   standard: 32200, // [V]
   beer: 30800,     // [V]
@@ -78,8 +116,10 @@ export const DEFAULT_SETTINGS = {
   maxBuildings: 20,
   dOther: 10,
   dOwn: 3,
-  // One entry per building, e.g. a Sov V claim carrying a level 5 structure:
-  // [{ sovLevel: 5, buildingLevel: 5 }]. buildingLevel never exceeds sovLevel.
+  // One entry per building, e.g. a Sov V claim carrying a level 5 Training
+  // Ground: [{ structure: 'trainingGround', sovLevel: 5, buildingLevel: 5 }].
+  // buildingLevel never exceeds sovLevel; `structure` keys into SOV_STRUCTURES
+  // and decides whether the building is charged hourly upkeep at all.
   milsovQuota: [],
   milsovAdvisory: true,
   ownClaimsAvailable: false,

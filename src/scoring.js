@@ -12,6 +12,9 @@ import {
   FOOD_CLAIM_LEVEL,
   MILSOV_UPKEEP_BY_LEVEL,
   MILSOV_BONUS_PER_LEVEL,
+  SOV_STRUCTURE_BY_KEY,
+  DEFAULT_SOV_STRUCTURE,
+  SOV_LEVEL_ROMAN,
   CITY_PROFILES,
   FLOUR_MILL_L20,
   NATURES_BOUNTY_BY_RETREATS,
@@ -84,6 +87,38 @@ export function claimUpkeep(d, level, chancery) {
   };
 }
 
+// --- Structure upkeep ------------------------------------------------------
+
+/**
+ * The structure record a quota entry names. An entry naming none, or naming one
+ * the table does not know, resolves to the default — which is a Production
+ * Structure, so a blank or a typo errs toward billing rather than toward a free
+ * claim. Every reader goes through here, so that fallback is decided once.
+ */
+export function sovStructure(entry) {
+  return SOV_STRUCTURE_BY_KEY[entry?.structure] ?? SOV_STRUCTURE_BY_KEY[DEFAULT_SOV_STRUCTURE];
+}
+
+/** Whether a quota entry's structure is charged hourly upkeep at all. */
+export function isProductionStructure(entry) {
+  return sovStructure(entry).type === 'production';
+}
+
+/**
+ * Hourly cost of one entry's structure, of EACH of wood, clay, iron and stone.
+ * It keys off the BUILDING level; the claim's sovereignty level is paid in RP
+ * and gold instead. A Resource Structure costs nothing here at any level — its
+ * claim is the whole bill.
+ */
+export function structureUpkeep(entry) {
+  return isProductionStructure(entry) ? (MILSOV_UPKEEP_BY_LEVEL[entry?.buildingLevel] ?? 0) : 0;
+}
+
+/** The same, summed over a whole quota or reservation. */
+export function milsovUpkeep(entries) {
+  return (entries ?? []).reduce((sum, e) => sum + structureUpkeep(e), 0);
+}
+
 // --- The three ceilings (PRD §3.4) -----------------------------------------
 
 /** T_food = 125 + B_other + S_food - C/K */
@@ -101,10 +136,11 @@ export function tRp({ uRp, rRef }) {
  *
  * BLOCKED: mechanics open item 12 — per-plot yields and booster percentages for
  * wood/clay/iron/stone are not recorded, so basic resource production cannot be
- * computed. Returns Infinity (non-binding) when no milsov is requested, which
- * is the only case PRD §7 item 6 says is unaffected. When milsov IS requested
- * this returns a flagged, indicative figure — do not present it as reliable,
- * and see scoreSite for why an indicative ceiling never enters T_max.
+ * computed. Returns Infinity (non-binding, unflagged) whenever nothing in the
+ * quota is charged hourly upkeep: no milsov at all, or a quota of Resource
+ * Structures, which pay only their claims. When something IS charged this
+ * returns a flagged, indicative figure — do not present it as reliable, and see
+ * scoreSite for why an indicative ceiling never enters T_max.
  *
  * `impossible` marks a resource the settle tile has no plots of: it produces
  * nothing at any tax rate, so the ceiling is genuinely -Infinity rather than
@@ -117,14 +153,10 @@ export function tRp({ uRp, rRef }) {
 export function tRes({ milsovAssignments, plots }) {
   const none = { ceiling: Infinity, indicative: false, binding: null, impossible: false };
   if (!milsovAssignments || milsovAssignments.length === 0) return none;
-  // Upkeep is the structure's, so it keys off the building level. The claim's
-  // sovereignty level is paid in RP and gold and does not appear here.
-  const upkeep = milsovAssignments.reduce(
-    (sum, a) => sum + (MILSOV_UPKEEP_BY_LEVEL[a.buildingLevel] ?? 0),
-    0,
-  );
-  // Structures that cost nothing per hour impose no ceiling — including the
-  // degenerate case of a level with no entry in the upkeep table.
+  const upkeep = milsovUpkeep(milsovAssignments);
+  // Structures that cost nothing per hour impose no ceiling — a quota of
+  // nothing but Resource Structures, or the degenerate case of a level with no
+  // entry in the upkeep table.
   if (upkeep <= 0) return none;
   // TODO(mechanics open item 12): replace PLACEHOLDER_YIELD with measured
   // per-plot yield at L20 once available. Until then this is indicative only.
@@ -273,8 +305,6 @@ export function recoverSet(candidates, dpResult, spend) {
 
 // --- Milsov level advisory (PRD §3.6) --------------------------------------
 
-const ROMAN = ['I', 'II', 'III', 'IV', 'V'];
-
 /** "1x Sov V + 2x Sov III", levels descending. Alternatives keep both levels
  * equal, so one number describes them. */
 function describeLevels(levels) {
@@ -282,22 +312,24 @@ function describeLevels(levels) {
   for (const l of levels) counts.set(l, (counts.get(l) ?? 0) + 1);
   return [...counts.entries()]
     .sort((a, b) => b[0] - a[0])
-    .map(([level, count]) => `${count}x Sov ${ROMAN[level - 1]}`)
+    .map(([level, count]) => `${count}x Sov ${SOV_LEVEL_ROMAN[level - 1]}`)
     .join(' + ');
 }
 
 /**
  * The requested plan. A building below its claim's sovereignty level is named
  * outright — it is unusual enough to be worth reading back, since it costs
- * claim upkeep that buys no bonus.
+ * claim upkeep that buys no bonus. So is a Resource Structure, whose row costs
+ * research and a tile but no resources per hour.
  */
 function describePlan(entries) {
   const counts = new Map();
   const rank = new Map();
   for (const e of entries) {
-    const label = e.buildingLevel === e.sovLevel
-      ? `Sov ${ROMAN[e.sovLevel - 1]}`
-      : `Sov ${ROMAN[e.sovLevel - 1]} at building level ${e.buildingLevel}`;
+    let label = e.buildingLevel === e.sovLevel
+      ? `Sov ${SOV_LEVEL_ROMAN[e.sovLevel - 1]}`
+      : `Sov ${SOV_LEVEL_ROMAN[e.sovLevel - 1]} at building level ${e.buildingLevel}`;
+    if (!isProductionStructure(e)) label += ' (Resource Structure)';
     counts.set(label, (counts.get(label) ?? 0) + 1);
     rank.set(label, e.sovLevel * 10 + e.buildingLevel);
   }
@@ -305,6 +337,25 @@ function describePlan(entries) {
     .sort((a, b) => rank.get(b[0]) - rank.get(a[0]))
     .map(([label, count]) => `${count}x ${label}`)
     .join(' + ');
+}
+
+/**
+ * Hourly upkeep an alternative would pay, given how many of the requested
+ * buildings are charged at all.
+ *
+ * An alternative is a split of levels across tiles; which of those tiles would
+ * carry which structure is not something the search decides. So the charged
+ * ones are put on the highest levels, the dearest reading available, and the
+ * note only warns when even that is worse than what was requested. A quota with
+ * nothing charged comes back 0 at every split, so there is never a warning
+ * about upkeep the user does not pay.
+ */
+function planUpkeep(levels, chargedCount) {
+  if (chargedCount <= 0) return 0;
+  return [...levels]
+    .sort((a, b) => b - a)
+    .slice(0, chargedCount)
+    .reduce((n, l) => n + MILSOV_UPKEEP_BY_LEVEL[l], 0);
 }
 
 /**
@@ -349,7 +400,8 @@ function describePlan(entries) {
  * the only two criteria §3.6 names.
  *
  * Structure upkeep is reported, not filtered on. It doubles per level while
- * bonus is linear, so a concentrating win almost always raises W/C/I/S upkeep;
+ * bonus is linear, so a concentrating win on Production Structures almost
+ * always raises W/C/I/S upkeep;
  * gating on that would suppress the feature entirely, and would do so on the
  * strength of the placeholder yield behind T_res (mechanics open item 12). The
  * note says so instead, and lets the user weigh it.
@@ -362,10 +414,10 @@ export function milsovAdvice({ requested, tiles, chancery, maxBuildings = Infini
   const f = chancery ? CHANCERY_FACTOR : 1;
   const reqBonus = requested.reduce((n, a) => n + MILSOV_BONUS_PER_LEVEL * a.buildingLevel, 0);
   const reqRp = requested.reduce((n, a) => n + a.rp, 0);
-  const reqUpkeep = requested.reduce(
-    (n, a) => n + (MILSOV_UPKEEP_BY_LEVEL[a.buildingLevel] ?? 0),
-    0,
-  );
+  const reqUpkeep = milsovUpkeep(requested);
+  // Resource Structures pay nothing per hour, so they are not part of any
+  // upkeep an alternative would be charged either.
+  const chargedCount = requested.filter(isProductionStructure).length;
 
   const ds = tiles.map((t) => t.d);
   const maxN = Math.min(ds.length, maxBuildings);
@@ -381,20 +433,25 @@ export function milsovAdvice({ requested, tiles, chancery, maxBuildings = Infini
     let weighted = 0;                       // sum of level * distance
     for (let i = 0; i < n; i++) weighted += ds[i];
     let bonus = MILSOV_BONUS_PER_LEVEL * n;
-    let upkeep = MILSOV_UPKEEP_BY_LEVEL[1] * n;
 
     for (;;) {
       const rp = CLAIM_RP_PER_LEVEL_DISTANCE * weighted * f;
+      // Upkeep is only needed once a split has cleared the research and bonus
+      // gates, which is rare, so it is priced there rather than carried.
       if (
         rp <= reqRp + EPS &&
         bonus >= reqBonus - EPS &&
-        (rp < reqRp - EPS || bonus > reqBonus + EPS) &&
-        (!best ||
+        (rp < reqRp - EPS || bonus > reqBonus + EPS)
+      ) {
+        const upkeep = planUpkeep(levels, chargedCount);
+        if (
+          !best ||
           bonus > best.bonus + EPS ||
           (bonus >= best.bonus - EPS &&
-            (rp < best.rp - EPS || (rp <= best.rp + EPS && upkeep < best.upkeep))))
-      ) {
-        best = { levels: [...levels], rp, bonus, upkeep, tileCount: n };
+            (rp < best.rp - EPS || (rp <= best.rp + EPS && upkeep < best.upkeep)))
+        ) {
+          best = { levels: [...levels], rp, bonus, upkeep, tileCount: n };
+        }
       }
       if (bonus >= MILSOV_BONUS_PER_LEVEL * 5 * n) break;   // every tile at V
       // Bump the nearest unsaturated tile — the cost of a bump is its distance
@@ -406,7 +463,6 @@ export function milsovAdvice({ requested, tiles, chancery, maxBuildings = Infini
         if (levels[i] === 5) continue;
         if (j === -1 || ds[i] < ds[j] - EPS || (ds[i] <= ds[j] + EPS && levels[i] < levels[j])) j = i;
       }
-      upkeep += MILSOV_UPKEEP_BY_LEVEL[levels[j] + 1] - MILSOV_UPKEEP_BY_LEVEL[levels[j]];
       levels[j] += 1;
       weighted += ds[j];
       bonus += MILSOV_BONUS_PER_LEVEL;
@@ -492,6 +548,7 @@ export function scoreSite({ neighbours, settings }) {
       .sort((a, b) => a.d - b.d)
       .map((tile, i) => ({
         ...tile,
+        structure: quota[i].structure,
         sovLevel: quota[i].sovLevel,
         buildingLevel: quota[i].buildingLevel,
         ...claimUpkeep(tile.d, quota[i].sovLevel, chancery),

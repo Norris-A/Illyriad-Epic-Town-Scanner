@@ -494,6 +494,115 @@ test('a finite-but-absurd ceiling annotates the row instead of ranking it', () =
   assert.notEqual(plan.binding, 'res');
 });
 
+// --- Resource Structures pay only their claim -------------------------------
+
+/** `count` Resource Structure buildings at Sov `level`, e.g. a Mineshaft claim. */
+const res = (level, count = 1) =>
+  Array.from({ length: count }, () => ({
+    structure: 'mineshaft', sovLevel: level, buildingLevel: level,
+  }));
+
+test('a Resource Structure claim costs RP and gold but nothing per hour', () => {
+  // Same tile, same claim, same reservation as the military case — only the
+  // hourly wood/clay/iron/stone bill goes away.
+  const settings = { ...worked, tMin: 0, milsovQuota: res(5) };
+  const plan = scoreSite({ neighbours: ring8, settings });
+
+  assert.equal(plan.milsov.length, 1, 'the claim still occupies a tile');
+  assert.ok(plan.quotaMet);
+  close(plan.milsov[0].rp, 50, 1e-9);    // 10 x 5 x d, d = 1 — the claim is charged
+  close(plan.milsov[0].gold, 500, 1e-9);
+  close(plan.milsovGold, 500, 1e-9);
+
+  // Nothing is charged per hour, so the ceiling is absent rather than flagged.
+  assert.equal(plan.resIndicative, false);
+  assert.equal(plan.resCeiling, Infinity);
+  assert.equal(plan.resImpossible, false);
+  assert.notEqual(plan.binding, 'res');
+
+  // The military quota on the identical site is what it used to cost.
+  const military = scoreSite({ neighbours: ring8, settings: { ...settings, milsovQuota: sov(5) } });
+  assert.equal(military.resIndicative, true);
+  close(military.resCeiling, 85.28, 0.01);
+  // Both plans pay the same research, so they differ only in the hourly bill.
+  close(plan.uRp, military.uRp, 1e-9);
+});
+
+test('a zero-plot site survives a Resource Structure quota outright', () => {
+  // The impossible-ceiling path is about upkeep that cannot be paid. With
+  // nothing charged there is no ceiling to be impossible about, at any
+  // allocation — the site scores exactly as it would with no quota's structures.
+  const plots = { wood: 0, clay: 0, iron: 0, stone: 0, food: 25 };
+  const plan = scoreSite({
+    neighbours: ring8,
+    settings: { ...worked, tMin: 0, plots, milsovQuota: res(5) },
+  });
+  assert.equal(plan.resImpossible, false);
+  assert.equal(plan.resBinding, null);
+  assert.ok(Number.isFinite(plan.tMax));
+});
+
+test('a mixed quota is charged for its Production Structures alone', () => {
+  const mixed = [...sov(5), ...res(5, 3)];
+  const plan = scoreSite({ neighbours: ring8, settings: { ...worked, tMin: 0, milsovQuota: mixed } });
+  assert.equal(plan.milsov.length, 4, 'all four claims are reserved');
+
+  // One Sov V military structure — 2,400/hr, not the 9,600 four would cost.
+  close(plan.resCeiling, 125 - (100 * 2400) / (3 * 2014), 0.01);
+  close(plan.resCeiling, scoreSite({
+    neighbours: ring8, settings: { ...worked, tMin: 0, milsovQuota: sov(5) },
+  }).resCeiling, 1e-9);
+
+  // Each structure is charged on its own kind: tRes reads the assignment.
+  assert.equal(tRes({ milsovAssignments: mixed, plots: worked.plots }).ceiling, plan.resCeiling);
+  assert.deepEqual(
+    tRes({ milsovAssignments: res(5, 6), plots: worked.plots }),
+    { ceiling: Infinity, indicative: false, binding: null, impossible: false },
+  );
+});
+
+test('the food structures cost what every other Resource Structure costs', () => {
+  // The picker does not offer Farmstead or Fishery — the food plan places those
+  // — but the engine knows them, and knowing them must not mean a special case:
+  // a resource structure is a resource structure whatever it raises.
+  const none = { ceiling: Infinity, indicative: false, binding: null, impossible: false };
+  for (const structure of ['farmstead', 'fishery', 'loggingCamp']) {
+    const milsovAssignments = [{ structure, sovLevel: 5, buildingLevel: 5 }];
+    assert.deepEqual(tRes({ milsovAssignments, plots: worked.plots }), none, structure);
+  }
+});
+
+test('the advisory never claims upkeep a Resource Structure does not pay', () => {
+  // The same 3x Sov II -> 2x Sov III win as above. On military structures the
+  // note warns that concentrating doubles the hourly bill; on Resource
+  // Structures there is no bill, so there is nothing to warn about.
+  const plan = scoreSite({
+    neighbours: advisorySite,
+    settings: { ...worked, tMin: 0, milsovQuota: res(2, 3) },
+  });
+  assert.ok(plan.milsovNote, 'the research saving is the same either way');
+  assert.deepEqual(plan.milsovAdvice.levels, [3, 3]);
+  assert.equal(plan.milsovAdvice.upkeep, 0);
+  assert.equal(plan.milsovAdvice.requestedUpkeep, 0);
+  assert.ok(!/structure upkeep/.test(plan.milsovNote), plan.milsovNote);
+  assert.match(plan.milsovNote, /3x Sov II \(Resource Structure\)/);
+});
+
+test('a mixed advisory prices only the structures that are charged', () => {
+  // 2x military + 1x resource requested at Sov II: 2 x 300 = 600/hr. The 2x Sov
+  // III alternative can carry at most those same two charged structures, so its
+  // worst case is 2 x 600 = 1,200 — dearer, and said so. Pricing all three
+  // tiles as charged, or none, would misreport it in one direction or the other.
+  const plan = scoreSite({
+    neighbours: advisorySite,
+    settings: { ...worked, tMin: 0, milsovQuota: [...sov(2, 2), ...res(2)] },
+  });
+  assert.ok(plan.milsovNote, 'the note should still fire');
+  assert.equal(plan.milsovAdvice.requestedUpkeep, 600);
+  assert.equal(plan.milsovAdvice.upkeep, 1200);
+  assert.match(plan.milsovNote, /higher structure upkeep/);
+});
+
 test('the ceiling binds T_max again once it stops being indicative', () => {
   // The engine still applies a measured ceiling — only the placeholder is held
   // back. tMax is where that decision lands, so it is tested directly.

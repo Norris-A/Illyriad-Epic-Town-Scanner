@@ -15,9 +15,17 @@ import {
   NATURES_BOUNTY_BY_RETREATS,
   FAMINE_MANAGEMENT,
   SOIL_ENRICHMENT,
-  MILSOV_UPKEEP_BY_LEVEL,
+  SOV_QUOTA_STRUCTURES,
+  SOV_LEVEL_ROMAN,
 } from './constants.js';
-import { computeBOther, computeK } from './scoring.js';
+import {
+  computeBOther,
+  computeK,
+  sovStructure,
+  isProductionStructure,
+  structureUpkeep,
+  milsovUpkeep,
+} from './scoring.js';
 
 const CSS = `
 /* The panel is injected into the host page, so its elements are also matched by
@@ -65,8 +73,12 @@ const CSS = `
 .sov-derived .sov-off{color:#888}
 .sov-derived .sov-on{color:#6c6}
 .sov-hint{color:#a9a9a9;font-size:11px;margin:2px 0}
-.sov-milsov-row{display:flex;gap:4px;margin:2px 0;align-items:center}
-.sov-milsov-row select{flex:1;min-width:0}
+/* Three controls plus a button do not fit one 420px line, so the row wraps and
+   the structure name — the longest of them — takes what is left, dropping to a
+   line of its own rather than being squeezed to nothing. */
+.sov-milsov-row{display:flex;gap:4px;margin:2px 0;align-items:center;flex-wrap:wrap}
+.sov-milsov-row select{min-width:0}
+.sov-milsov-row select[data-milsov=structure]{flex:1 1 150px}
 .sov-milsov-row span{color:#a9a9a9;font-size:11px;white-space:nowrap}
 .sov-milsov-row button{padding:2px 8px}
 .sov-milsov-total{color:#b9c4b9}
@@ -79,8 +91,6 @@ export const PLOT_KEYS = ['wood', 'clay', 'iron', 'stone', 'food'];
 
 /** Every land tile has 25 plots, so an allocation has to spend exactly 25. */
 export const PLOT_TOTAL = 25;
-
-const SOV_ROMAN = ['I', 'II', 'III', 'IV', 'V'];
 
 /**
  * Read one number out of a form field. Blank (or unparseable) falls back rather
@@ -118,13 +128,14 @@ export function validatePlots(raw) {
 }
 
 /**
- * Turn the quota rows into the `[{sovLevel, buildingLevel}]` the engine expects
- * — **one entry per building**, since one row is one building.
+ * Turn the quota rows into the `[{structure, sovLevel, buildingLevel}]` the
+ * engine expects — **one entry per building**, since one row is one building.
  *
  * The building level is clamped to its claim's sovereignty level, which is the
- * game's own rule, and defaults to it when blank. Rows are returned highest
- * first, the order the engine assigns in, so the form lists them the way they
- * will be applied.
+ * game's own rule, and defaults to it when blank. The structure goes through
+ * sovStructure, so a blank or unknown one lands on the same default the engine
+ * would have charged it as. Rows are returned highest first, the order the
+ * engine assigns in, so the form lists them the way they will be applied.
  */
 export function normaliseMilsovQuota(rows) {
   const out = [];
@@ -132,14 +143,35 @@ export function normaliseMilsovQuota(rows) {
     const sovLevel = clampNumber(row?.sovLevel, { min: 1, max: 5, integer: true, fallback: 0 });
     if (sovLevel < 1) continue;
     const asked = clampNumber(row?.buildingLevel, { min: 1, max: 5, integer: true, fallback: sovLevel });
-    out.push({ sovLevel, buildingLevel: Math.min(asked, sovLevel) });
+    out.push({
+      structure: sovStructure(row).key,
+      sovLevel,
+      buildingLevel: Math.min(asked, sovLevel),
+    });
   }
   return out.sort((a, b) => b.sovLevel - a.sovLevel || b.buildingLevel - a.buildingLevel);
 }
 
-/** Structure upkeep of a whole quota, per hour, of each basic resource. */
-export function milsovUpkeep(quota) {
-  return (quota ?? []).reduce((n, q) => n + (MILSOV_UPKEEP_BY_LEVEL[q.buildingLevel] ?? 0), 0);
+/** How the quota's rows split between the charged kind and the free kind. */
+export function milsovStructureCounts(quota) {
+  const production = (quota ?? []).filter(isProductionStructure).length;
+  return { production, resource: (quota ?? []).length - production };
+}
+
+/**
+ * What the quota costs per hour, for the read-out under the rows. A quota with
+ * no Production Structure in it costs nothing per hour and has to say so —
+ * quoting a figure of 0/hr of four resources reads like an error, and quoting
+ * one that is not charged is worse.
+ */
+export function milsovTotalText(quota) {
+  const { resource } = milsovStructureCounts(quota);
+  const upkeep = milsovUpkeep(quota);
+  const free = resource === 0 ? ''
+    : resource === 1 ? " 1 Resource Structure costs only its claim's RP and gold."
+    : ` ${resource} Resource Structures cost only their claims' RP and gold.`;
+  if (upkeep === 0) return `no hourly resource cost.${free}`;
+  return `${upkeep.toLocaleString('en-GB')}/hr of each of wood, clay, iron and stone.${free}`;
 }
 
 /**
@@ -307,28 +339,51 @@ function calibrationFieldHtml(f, cal) {
 }
 
 /**
+ * The structure picker, grouped by whether the choice costs anything hourly —
+ * which is the only thing about it the score depends on, so it is what the
+ * groups are labelled with. A resource structure also says what it raises,
+ * since its name alone does not.
+ */
+function structureOptionsHtml(selected) {
+  const group = (label, type) =>
+    `<optgroup label="${escapeHtml(label)}">${SOV_QUOTA_STRUCTURES
+      .filter((s) => s.type === type)
+      .map((s) => `<option value="${s.key}"${s.key === selected ? ' selected' : ''}>${
+        escapeHtml(s.boosts ? `${s.name} (${s.boosts})` : s.name)}</option>`)
+      .join('')}</optgroup>`;
+  return group('Production Structures — 150–2,400/hr each W/C/I/S', 'production')
+    + group('Resource Structures — no hourly resource cost', 'resource');
+}
+
+/**
  * One row is ONE building, and it carries the two levels the game sets
  * separately: the claim's sovereignty level, which fixes its RP and gold and
  * scales with distance, and the level of the structure standing on it, which
- * fixes the production bonus and the flat wood/clay/iron/stone upkeep.
+ * fixes the production bonus and, for a Production Structure, the flat
+ * wood/clay/iron/stone upkeep.
+ *
+ * The third control decides whether that flat upkeep is charged at all. It is
+ * picked by name rather than by class because the name is what the user
+ * recognises; the class behind it is what the score reads.
  *
  * Building levels above the claim are rendered disabled rather than omitted —
- * the ceiling is part of what the control has to teach. Neither box is a count;
- * that ambiguity is what the labels exist to kill.
+ * the ceiling is part of what the control has to teach. No box is a count; that
+ * ambiguity is what the labels exist to kill.
  */
 function milsovRowHtml(row) {
   const sovLevel = row?.sovLevel ?? 5;
   const buildingLevel = Math.min(row?.buildingLevel ?? sovLevel, sovLevel);
+  const structure = sovStructure(row).key;
   const sov = [5, 4, 3, 2, 1].map((l) =>
-    `<option value="${l}"${l === sovLevel ? ' selected' : ''}>Sov ${SOV_ROMAN[l - 1]}</option>`).join('');
+    `<option value="${l}"${l === sovLevel ? ' selected' : ''}>Sov ${SOV_LEVEL_ROMAN[l - 1]}</option>`).join('');
   const building = [5, 4, 3, 2, 1].map((l) =>
     `<option value="${l}"${l === buildingLevel ? ' selected' : ''}${
       l > sovLevel ? ' disabled' : ''}>level ${l}</option>`).join('');
   return `<div class="sov-milsov-row">
       <select data-milsov="sovLevel" title="Sovereignty level of the claim — sets its RP and gold upkeep, which also scales with distance">${sov}</select>
       <span>carrying a</span>
-      <select data-milsov="buildingLevel" title="Level of the structure on that tile — sets the production bonus and the hourly wood/clay/iron/stone upkeep. Cannot exceed the claim's sovereignty level">${building}</select>
-      <span>building</span>
+      <select data-milsov="buildingLevel" title="Level of the structure on that tile — sets the production bonus and, on a Production Structure, the hourly wood/clay/iron/stone upkeep. Cannot exceed the claim's sovereignty level">${building}</select>
+      <select data-milsov="structure" title="Which structure stands on the tile. Production Structures cost 150–2,400/hr of each of wood, clay, iron and stone by building level; Resource Structures cost nothing beyond the claim's RP and gold">${structureOptionsHtml(structure)}</select>
       <button type="button" class="sov-milsov-del sec" title="Remove this building">&times;</button>
     </div>`;
 }
@@ -337,7 +392,8 @@ function milsovFieldHtml(f, quota) {
   return `<div class="sov-f-block" data-key="${f.key}">
       <p class="sov-hint">${escapeHtml(f.label)} — <strong>one row is one building</strong>,
         reserved on the nearest tiles before food claims are chosen. Add a row per
-        building you intend to place.</p>
+        building you intend to place. Food sovereignty is not entered here — the
+        Farmstead and Fishery claims are chosen by the food plan itself.</p>
       <div class="sov-milsov-rows">${(quota ?? []).map(milsovRowHtml).join('')}</div>
       <p class="sov-hint sov-milsov-empty">No military sovereignty requested.</p>
       <p class="sov-hint sov-milsov-total"></p>
@@ -435,11 +491,16 @@ export function createPanel({ onScan, onExport }) {
     return raw;
   }
 
-  function milsovRows() {
-    return [...form.querySelectorAll('.sov-milsov-row')].map((row) => ({
+  function milsovRow(row) {
+    return {
+      structure: row.querySelector('[data-milsov="structure"]').value,
       sovLevel: row.querySelector('[data-milsov="sovLevel"]').value,
       buildingLevel: row.querySelector('[data-milsov="buildingLevel"]').value,
-    }));
+    };
+  }
+
+  function milsovRows() {
+    return [...form.querySelectorAll('.sov-milsov-row')].map(milsovRow);
   }
 
   function readSettings() {
@@ -543,8 +604,7 @@ export function createPanel({ onScan, onExport }) {
     const quota = normaliseMilsovQuota(milsovRows());
     form.querySelector('.sov-milsov-empty').hidden = quota.length > 0;
     form.querySelector('.sov-milsov-total').textContent = quota.length
-      ? `${quota.length} building${quota.length === 1 ? '' : 's'} — ${
-        milsovUpkeep(quota).toLocaleString('en-GB')}/hr of each of wood, clay, iron and stone.`
+      ? `${quota.length} building${quota.length === 1 ? '' : 's'} — ${milsovTotalText(quota)}`
       : '';
 
     // An allocation that is not 25 plots is not a tile the game can produce,
@@ -565,12 +625,10 @@ export function createPanel({ onScan, onExport }) {
       el.value = validatePlots(plotInputs()).plots[el.dataset.plot];
     } else if (el.dataset.milsov) {
       // Lowering the claim has to drag the building down with it, and re-render
-      // which building levels are still reachable.
+      // which building levels are still reachable. The whole row is read back,
+      // so re-rendering it does not reset the structure to the default.
       const rowEl = el.closest('.sov-milsov-row');
-      const [row] = normaliseMilsovQuota([{
-        sovLevel: rowEl.querySelector('[data-milsov="sovLevel"]').value,
-        buildingLevel: rowEl.querySelector('[data-milsov="buildingLevel"]').value,
-      }]);
+      const [row] = normaliseMilsovQuota([milsovRow(rowEl)]);
       rowEl.outerHTML = milsovRowHtml(row);
     }
     refresh();
@@ -698,12 +756,18 @@ function toggleDetail(row, result) {
     const dxy = `${t.dx >= 0 ? '+' : ''}${t.dx},${t.dy >= 0 ? '+' : ''}${t.dy}`;
     return `<li>${dxy} — food ${t.food}, d ${t.d.toFixed(2)}, ${t.rp.toFixed(0)} RP, Sov ${t.level}</li>`;
   }).join('');
-  // One line per building, naming both levels — reading this back is how a
-  // quota that does not say what the user meant gets caught.
-  const mil = result.milsov.map((m) =>
-    `<li>milsov Sov ${m.sovLevel} claim at d ${m.d.toFixed(2)} carrying a level ${
-      m.buildingLevel} building — ${m.rp.toFixed(0)} RP, ${
-      (MILSOV_UPKEEP_BY_LEVEL[m.buildingLevel] ?? 0).toLocaleString('en-GB')}/hr each W/C/I/S, food ${m.food}</li>`).join('');
+  // One line per building, naming both levels and the structure — reading this
+  // back is how a quota that does not say what the user meant gets caught. A
+  // free structure says so in the same place the charged one states its bill.
+  const mil = result.milsov.map((m) => {
+    const upkeep = structureUpkeep(m);
+    const cost = upkeep
+      ? `${upkeep.toLocaleString('en-GB')}/hr each W/C/I/S`
+      : 'no hourly resource cost';
+    return `<li>milsov Sov ${m.sovLevel} claim at d ${m.d.toFixed(2)} carrying a level ${
+      m.buildingLevel} ${escapeHtml(sovStructure(m).name)} — ${m.rp.toFixed(0)} RP, ${
+      cost}, food ${m.food}</li>`;
+  }).join('');
   // Milsov normally sits on the nearest tiles, so a plan that reaches past them
   // has to say why rather than looking like a mistake.
   const traded = result.milsovTraded

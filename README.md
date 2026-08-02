@@ -57,7 +57,9 @@ Known gaps, all deliberate:
 - **`LIBRARY_BASE_RP_L20` is a placeholder** chosen to reproduce the §6 example
   (mechanics open item 2). Use the RP calibration override for real figures.
 - **`T_res` is indicative only** — per-plot yields for wood/clay/iron/stone are
-  unmeasured (mechanics open item 12). Flagged in the UI. Food-only scans are
+  unmeasured (mechanics open item 12). It annotates rows and is deliberately
+  kept out of `T_max`, so it cannot filter a site out on a borrowed figure
+  (PRD §3.7); it binds again once the yields land. Food-only scans are
   unaffected.
 - **The settings form has no automated test of its DOM.** `createPanel` cannot
   run under Node, so the field spec, the validators and the markup contract are

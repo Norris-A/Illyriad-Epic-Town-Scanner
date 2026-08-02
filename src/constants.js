@@ -14,6 +14,7 @@ export const CHANCERY_FACTOR = 0.6;               // [F] -40% at level 20
 export const FOOD_CLAIM_LEVEL = 5;
 
 // [F] Military sov structure upkeep, per hour, of EACH of wood/clay/iron/stone.
+// Keyed by BUILDING level, not by the claim's sovereignty level — see below.
 export const MILSOV_UPKEEP_BY_LEVEL = { 1: 150, 2: 300, 3: 600, 4: 1200, 5: 2400 };
 
 // [D] Military sov production bonus, % per claimed tile, before the tile's
@@ -22,11 +23,13 @@ export const MILSOV_UPKEEP_BY_LEVEL = { 1: 150, 2: 300, 3: 600, 4: 1200, 5: 2400
 // example in the same section: 8x Sov III + 12x Sov II = 8*15 + 12*10 = +240%,
 // the figure quoted there. Linear in level, as PRD §3.6 assumes.
 //
-// [?] Mechanics §5.3 states the bonus per *building* level and the upkeep per
-// *structure* level, while the claim cost (§5.2) is per *sovereignty* level.
-// This table follows the same convention the food case already uses — food sov
-// needs "level 5 sovereignty and a level 5 building" — i.e. claim level and
-// building level are kept equal. Descriptor modifiers are not applied.
+// A claimed tile carries two levels, set independently in game: the claim's
+// SOVEREIGNTY level, which fixes its RP and gold upkeep and rises with distance,
+// and the BUILDING level of the structure on it, which fixes this bonus and the
+// flat upkeep above. This table and MILSOV_UPKEEP_BY_LEVEL are both keyed by
+// building level; CLAIM_RP_PER_LEVEL_DISTANCE is keyed by sovereignty level. A
+// quota entry carries both, one per building. Descriptor modifiers are not
+// applied.
 export const MILSOV_BONUS_BY_LEVEL = { 1: 5, 2: 10, 3: 15, 4: 20, 5: 25 };
 export const MILSOV_BONUS_PER_LEVEL = 5; // [F] the linear coefficient itself
 
@@ -56,11 +59,16 @@ export const DEFAULT_SETTINGS = {
   cityProfile: 'standard',
   cityConsumptionOverride: null,
   flourMill: true,
-  naturesBounty: false,
-  geomancerRetreats: 0,
+  // The 22,400 baseline the model is calibrated against needs 18.89 points on
+  // top of the Flour Mill, which is Nature's Bounty at two retreats to within
+  // 0.7%. Defaulting the spell on rather than burying the same 20 points in
+  // otherFoodBonus keeps B_other at 60 while making the assumption one the user
+  // can see and untick — and stops it being counted twice.
+  naturesBounty: true,
+  geomancerRetreats: 2,
   cityCount: 1,
   isCapital: false,
-  otherFoodBonus: 20,      // PRD open item 1 — the unattributed residual
+  otherFoodBonus: 0,       // genuinely other: everything known has its own field
   libraryLevel: 20,
   allembine: true,
   overflowingInsight: false,
@@ -70,7 +78,9 @@ export const DEFAULT_SETTINGS = {
   maxBuildings: 20,
   dOther: 10,
   dOwn: 3,
-  milsovQuota: [],         // e.g. [{ level: 5, count: 1 }, { level: 3, count: 2 }]
+  // One entry per building, e.g. a Sov V claim carrying a level 5 structure:
+  // [{ sovLevel: 5, buildingLevel: 5 }]. buildingLevel never exceeds sovLevel.
+  milsovQuota: [],
   milsovAdvisory: true,
   ownClaimsAvailable: false,
   allianceClaimsAvailable: false,

@@ -15,6 +15,7 @@ import {
   NATURES_BOUNTY_BY_RETREATS,
   FAMINE_MANAGEMENT,
   SOIL_ENRICHMENT,
+  MILSOV_UPKEEP_BY_LEVEL,
 } from './constants.js';
 import { computeBOther, computeK } from './scoring.js';
 
@@ -65,9 +66,10 @@ const CSS = `
 .sov-derived .sov-on{color:#6c6}
 .sov-hint{color:#a9a9a9;font-size:11px;margin:2px 0}
 .sov-milsov-row{display:flex;gap:4px;margin:2px 0;align-items:center}
-.sov-milsov-row select{flex:1}
-.sov-milsov-row input{width:60px;text-align:right}
+.sov-milsov-row select{flex:1;min-width:0}
+.sov-milsov-row span{color:#a9a9a9;font-size:11px;white-space:nowrap}
 .sov-milsov-row button{padding:2px 8px}
+.sov-milsov-total{color:#b9c4b9}
 `;
 
 // --- Settings model ---------------------------------------------------------
@@ -116,21 +118,61 @@ export function validatePlots(raw) {
 }
 
 /**
- * Turn the quota rows into the `[{level, count}]` the engine expects: empty rows
- * dropped, duplicate levels merged, highest level first — the order the engine
- * assigns in, so the form lists them the way they will be applied.
+ * Turn the quota rows into the `[{sovLevel, buildingLevel}]` the engine expects
+ * — **one entry per building**, since one row is one building.
+ *
+ * The building level is clamped to its claim's sovereignty level, which is the
+ * game's own rule, and defaults to it when blank. Rows are returned highest
+ * first, the order the engine assigns in, so the form lists them the way they
+ * will be applied.
  */
 export function normaliseMilsovQuota(rows) {
-  const byLevel = new Map();
+  const out = [];
   for (const row of rows ?? []) {
-    const level = clampNumber(row?.level, { min: 1, max: 5, integer: true, fallback: 0 });
-    const count = clampNumber(row?.count, { min: 0, max: 99, integer: true, fallback: 0 });
-    if (level < 1 || count < 1) continue;
-    byLevel.set(level, (byLevel.get(level) ?? 0) + count);
+    const sovLevel = clampNumber(row?.sovLevel, { min: 1, max: 5, integer: true, fallback: 0 });
+    if (sovLevel < 1) continue;
+    const asked = clampNumber(row?.buildingLevel, { min: 1, max: 5, integer: true, fallback: sovLevel });
+    out.push({ sovLevel, buildingLevel: Math.min(asked, sovLevel) });
   }
-  return [...byLevel.entries()]
-    .sort((a, b) => b[0] - a[0])
-    .map(([level, count]) => ({ level, count }));
+  return out.sort((a, b) => b.sovLevel - a.sovLevel || b.buildingLevel - a.buildingLevel);
+}
+
+/** Structure upkeep of a whole quota, per hour, of each basic resource. */
+export function milsovUpkeep(quota) {
+  return (quota ?? []).reduce((n, q) => n + (MILSOV_UPKEEP_BY_LEVEL[q.buildingLevel] ?? 0), 0);
+}
+
+/**
+ * How a site's resource ceiling should read on its row.
+ *
+ * The engine reports this ceiling without applying it, because the yield behind
+ * it is borrowed rather than measured. That is the right call for ranking and
+ * the wrong one for silence: a site whose military sovereignty is unaffordable
+ * would otherwise sit in the table looking clean. So the row says so, and says
+ * that it did not affect the ranking.
+ *
+ * Returns null when there is nothing to report — no milsov quota, or a ceiling
+ * above the tax the site actually reaches, where the upkeep is already covered.
+ *
+ * @returns {{text: string, title: string} | null}
+ */
+export function resFlag(r) {
+  if (!r?.resIndicative) return null;
+  const caveat = 'Indicative only — per-plot yields for wood, clay, iron and '
+    + 'stone are unmeasured, so this figure does not affect the ranking.';
+  if (r.resImpossible) {
+    return {
+      text: `no ${r.resBinding}`,
+      title: `The settle allocation has no ${r.resBinding} plots, so the milsov `
+        + `upkeep cannot be paid at any tax rate. ${caveat}`,
+    };
+  }
+  if (!(r.resCeiling < r.tMax - 1e-9)) return null;
+  return {
+    text: `res ${r.resCeiling.toFixed(1)}%`,
+    title: `Milsov upkeep exhausts ${r.resBinding} above ${r.resCeiling.toFixed(1)}% tax, `
+      + `below this site's ${r.tMax.toFixed(1)}%. ${caveat}`,
+  };
 }
 
 /**
@@ -264,23 +306,42 @@ function calibrationFieldHtml(f, cal) {
     </div>`;
 }
 
+/**
+ * One row is ONE building, and it carries the two levels the game sets
+ * separately: the claim's sovereignty level, which fixes its RP and gold and
+ * scales with distance, and the level of the structure standing on it, which
+ * fixes the production bonus and the flat wood/clay/iron/stone upkeep.
+ *
+ * Building levels above the claim are rendered disabled rather than omitted —
+ * the ceiling is part of what the control has to teach. Neither box is a count;
+ * that ambiguity is what the labels exist to kill.
+ */
 function milsovRowHtml(row) {
-  const opts = [5, 4, 3, 2, 1].map((l) =>
-    `<option value="${l}"${l === row.level ? ' selected' : ''}>Sov ${SOV_ROMAN[l - 1]}</option>`).join('');
+  const sovLevel = row?.sovLevel ?? 5;
+  const buildingLevel = Math.min(row?.buildingLevel ?? sovLevel, sovLevel);
+  const sov = [5, 4, 3, 2, 1].map((l) =>
+    `<option value="${l}"${l === sovLevel ? ' selected' : ''}>Sov ${SOV_ROMAN[l - 1]}</option>`).join('');
+  const building = [5, 4, 3, 2, 1].map((l) =>
+    `<option value="${l}"${l === buildingLevel ? ' selected' : ''}${
+      l > sovLevel ? ' disabled' : ''}>level ${l}</option>`).join('');
   return `<div class="sov-milsov-row">
-      <select data-milsov="level">${opts}</select>
-      <input type="number" data-milsov="count" min="1" max="99" step="1" value="${row.count}">
-      <button type="button" class="sov-milsov-del sec" title="Remove">&times;</button>
+      <select data-milsov="sovLevel" title="Sovereignty level of the claim — sets its RP and gold upkeep, which also scales with distance">${sov}</select>
+      <span>carrying a</span>
+      <select data-milsov="buildingLevel" title="Level of the structure on that tile — sets the production bonus and the hourly wood/clay/iron/stone upkeep. Cannot exceed the claim's sovereignty level">${building}</select>
+      <span>building</span>
+      <button type="button" class="sov-milsov-del sec" title="Remove this building">&times;</button>
     </div>`;
 }
 
 function milsovFieldHtml(f, quota) {
   return `<div class="sov-f-block" data-key="${f.key}">
-      <p class="sov-hint">${escapeHtml(f.label)} — level/count pairs, reserved on the
-        nearest tiles before food claims are chosen.</p>
+      <p class="sov-hint">${escapeHtml(f.label)} — <strong>one row is one building</strong>,
+        reserved on the nearest tiles before food claims are chosen. Add a row per
+        building you intend to place.</p>
       <div class="sov-milsov-rows">${(quota ?? []).map(milsovRowHtml).join('')}</div>
       <p class="sov-hint sov-milsov-empty">No military sovereignty requested.</p>
-      <button type="button" class="sov-milsov-add sec">+ Add level</button>
+      <p class="sov-hint sov-milsov-total"></p>
+      <button type="button" class="sov-milsov-add sec">+ Add building</button>
     </div>`;
 }
 
@@ -376,8 +437,8 @@ export function createPanel({ onScan, onExport }) {
 
   function milsovRows() {
     return [...form.querySelectorAll('.sov-milsov-row')].map((row) => ({
-      level: row.querySelector('[data-milsov="level"]').value,
-      count: row.querySelector('[data-milsov="count"]').value,
+      sovLevel: row.querySelector('[data-milsov="sovLevel"]').value,
+      buildingLevel: row.querySelector('[data-milsov="buildingLevel"]').value,
     }));
   }
 
@@ -477,8 +538,14 @@ export function createPanel({ onScan, onExport }) {
     form.querySelector('.sov-derived-food').textContent =
       `B_other = ${computeBOther(s)} food points.`;
 
-    const rows = form.querySelectorAll('.sov-milsov-row').length;
-    form.querySelector('.sov-milsov-empty').hidden = rows > 0;
+    // What the quota actually asks for, in the units the ceiling is charged in.
+    // The row controls say what each building is; this says what they add up to.
+    const quota = normaliseMilsovQuota(milsovRows());
+    form.querySelector('.sov-milsov-empty').hidden = quota.length > 0;
+    form.querySelector('.sov-milsov-total').textContent = quota.length
+      ? `${quota.length} building${quota.length === 1 ? '' : 's'} — ${
+        milsovUpkeep(quota).toLocaleString('en-GB')}/hr of each of wood, clay, iron and stone.`
+      : '';
 
     // An allocation that is not 25 plots is not a tile the game can produce,
     // so there is nothing to score it against — block the scan outright.
@@ -496,6 +563,15 @@ export function createPanel({ onScan, onExport }) {
     const el = e.target;
     if (el.dataset.plot) {
       el.value = validatePlots(plotInputs()).plots[el.dataset.plot];
+    } else if (el.dataset.milsov) {
+      // Lowering the claim has to drag the building down with it, and re-render
+      // which building levels are still reachable.
+      const rowEl = el.closest('.sov-milsov-row');
+      const [row] = normaliseMilsovQuota([{
+        sovLevel: rowEl.querySelector('[data-milsov="sovLevel"]').value,
+        buildingLevel: rowEl.querySelector('[data-milsov="buildingLevel"]').value,
+      }]);
+      rowEl.outerHTML = milsovRowHtml(row);
     }
     refresh();
   });
@@ -505,7 +581,8 @@ export function createPanel({ onScan, onExport }) {
       e.target.closest('.sov-milsov-row').remove();
       refresh();
     } else if (e.target.closest('.sov-milsov-add')) {
-      form.querySelector('.sov-milsov-rows').insertAdjacentHTML('beforeend', milsovRowHtml({ level: 5, count: 1 }));
+      form.querySelector('.sov-milsov-rows')
+        .insertAdjacentHTML('beforeend', milsovRowHtml({ sovLevel: 5, buildingLevel: 5 }));
       refresh();
     } else if (e.target.closest('.sov-reset')) {
       writeSettings(DEFAULT_SETTINGS);
@@ -569,9 +646,7 @@ export function createPanel({ onScan, onExport }) {
           <td>${r.sFood.toFixed(0)}</td>
           <td>${r.uRp.toFixed(0)}</td>
           <td>${Math.round(r.goldNet).toLocaleString()}</td>
-          <td>${r.quotaMet ? '' : '<span class="sov-flag">maybe</span>'}${
-            r.milsovNote ? '<span class="sov-advice" title="Milsov level advisory">advice</span>' : ''
-          }</td>
+          <td>${flagsHtml(r)}</td>
         </tr>`).join('');
       el.innerHTML = `
         <p>${summary}</p>
@@ -599,6 +674,18 @@ export function createPanel({ onScan, onExport }) {
   };
 }
 
+/** The last column: whatever the row has to warn about, space-separated. */
+function flagsHtml(r) {
+  const flags = [];
+  if (!r.quotaMet) flags.push({ cls: 'sov-flag', text: 'maybe', title: 'The milsov quota does not fit on this site' });
+  const res = resFlag(r);
+  if (res) flags.push({ cls: 'sov-flag', ...res });
+  if (r.milsovNote) flags.push({ cls: 'sov-advice', text: 'advice', title: 'Milsov level advisory' });
+  return flags
+    .map((f) => `<span class="${f.cls}" title="${escapeHtml(f.title)}">${escapeHtml(f.text)}</span>`)
+    .join(' ');
+}
+
 function toggleDetail(row, result) {
   const next = row.nextElementSibling;
   if (next && next.classList.contains('sov-detail')) {
@@ -611,18 +698,35 @@ function toggleDetail(row, result) {
     const dxy = `${t.dx >= 0 ? '+' : ''}${t.dx},${t.dy >= 0 ? '+' : ''}${t.dy}`;
     return `<li>${dxy} — food ${t.food}, d ${t.d.toFixed(2)}, ${t.rp.toFixed(0)} RP, Sov ${t.level}</li>`;
   }).join('');
+  // One line per building, naming both levels — reading this back is how a
+  // quota that does not say what the user meant gets caught.
   const mil = result.milsov.map((m) =>
-    `<li>milsov Sov ${m.level} at d ${m.d.toFixed(2)} — ${m.rp.toFixed(0)} RP</li>`).join('');
+    `<li>milsov Sov ${m.sovLevel} claim at d ${m.d.toFixed(2)} carrying a level ${
+      m.buildingLevel} building — ${m.rp.toFixed(0)} RP, ${
+      (MILSOV_UPKEEP_BY_LEVEL[m.buildingLevel] ?? 0).toLocaleString('en-GB')}/hr each W/C/I/S, food ${m.food}</li>`).join('');
+  // Milsov normally sits on the nearest tiles, so a plan that reaches past them
+  // has to say why rather than looking like a mistake.
+  const traded = result.milsovTraded
+    ? '<p class="sov-hint">Milsov is hosted further out to leave a better food tile'
+      + ' to the claim plan — scored both ways, this one wins.</p>'
+    : '';
   // PRD §3.6 — advisory only. The plan above is exactly what the user asked
   // for; this is a note, never an applied change. Say so plainly.
   const advice = result.milsovNote
     ? `<p class="sov-advice">Advisory: ${escapeHtml(result.milsovNote)} Your requested levels are what is planned above.</p>`
     : '';
-  tr.innerHTML = `<td colspan="7"><ul>${tiles}${mil}</ul>${advice}${
-    result.resIndicative
-      ? '<p class="sov-flag">Resource ceiling is indicative only — per-plot yields unmeasured (mechanics open item 12).</p>'
-      : ''
-  }</td>`;
+  // The resource ceiling is stated here whether or not it bites, since the
+  // figure itself is the thing the user has to judge. The row flag above only
+  // appears when it would have cost them tax.
+  const ceiling = result.resImpossible
+    ? `is impossible — the settle allocation has no ${result.resBinding} plots`
+    : `is ${result.resCeiling?.toFixed(1)}% on ${result.resBinding}`;
+  const res = result.resIndicative
+    ? `<p class="sov-flag">Resource ceiling ${ceiling}. Indicative only — per-plot`
+      + ' yields unmeasured (mechanics open item 12), so it is reported here and'
+      + ' left out of T_max and the ranking.</p>'
+    : '';
+  tr.innerHTML = `<td colspan="7"><ul>${tiles}${mil}</ul>${traded}${advice}${res}</td>`;
   row.after(tr);
 }
 
@@ -638,12 +742,32 @@ export function csvField(v) {
   return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 
+/**
+ * `T_res` stays a number or blank, so a spreadsheet can total the column: the
+ * two cases that have no number — no milsov requested, and no plots of the
+ * binding resource — are told apart by `res_status` rather than by a sentinel
+ * in the numeric column. Blank status means the ceiling was applied for real.
+ */
+function resColumns(r) {
+  if (!r.resIndicative) {
+    const known = Number.isFinite(r.resCeiling);
+    return [known ? r.resCeiling.toFixed(2) : '', known ? r.resBinding : '', ''];
+  }
+  return r.resImpossible
+    ? ['', r.resBinding, 'impossible']
+    : [r.resCeiling.toFixed(2), r.resBinding, 'indicative'];
+}
+
 export function toCsv(results) {
+  // The free-text advisory stays last, so a column added later does not land
+  // after the one field that can carry a comma.
   const head = ['x', 'y', 'T_max', 'binding', 'S_food', 'U_RP', 'U_gold', 'Gold_net',
-    'quota_met', 'milsov_advisory'];
+    'quota_met', 'milsov_traded', 'T_res', 'res_binding', 'res_status', 'milsov_advisory'];
   const lines = results.map((r) =>
     [r.x, r.y, r.tMax.toFixed(2), r.binding, r.sFood.toFixed(0),
      r.uRp.toFixed(0), r.uGold.toFixed(0), r.goldNet.toFixed(0), r.quotaMet,
+     !!r.milsovTraded,
+     ...resColumns(r),
      r.milsovNote ?? ''].map(csvField).join(','));
   return [head.join(','), ...lines].join('\n');
 }

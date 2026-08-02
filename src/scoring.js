@@ -103,16 +103,29 @@ export function tRp({ uRp, rRef }) {
  * wood/clay/iron/stone are not recorded, so basic resource production cannot be
  * computed. Returns Infinity (non-binding) when no milsov is requested, which
  * is the only case PRD §7 item 6 says is unaffected. When milsov IS requested
- * this returns a flagged, indicative figure — do not present it as reliable.
+ * this returns a flagged, indicative figure — do not present it as reliable,
+ * and see scoreSite for why an indicative ceiling never enters T_max.
+ *
+ * `impossible` marks a resource the settle tile has no plots of: it produces
+ * nothing at any tax rate, so the ceiling is genuinely -Infinity rather than
+ * merely low. It is reported as a flag because a caller filtering on the number
+ * alone would drop the site without ever being able to say why.
+ *
+ * All four resources are checked even once one has come back impossible, so
+ * `binding` always names the worst of them rather than the first bad one.
  */
 export function tRes({ milsovAssignments, plots }) {
-  if (!milsovAssignments || milsovAssignments.length === 0) {
-    return { ceiling: Infinity, indicative: false, binding: null };
-  }
+  const none = { ceiling: Infinity, indicative: false, binding: null, impossible: false };
+  if (!milsovAssignments || milsovAssignments.length === 0) return none;
+  // Upkeep is the structure's, so it keys off the building level. The claim's
+  // sovereignty level is paid in RP and gold and does not appear here.
   const upkeep = milsovAssignments.reduce(
-    (sum, a) => sum + (MILSOV_UPKEEP_BY_LEVEL[a.level] ?? 0),
+    (sum, a) => sum + (MILSOV_UPKEEP_BY_LEVEL[a.buildingLevel] ?? 0),
     0,
   );
+  // Structures that cost nothing per hour impose no ceiling — including the
+  // degenerate case of a level with no entry in the upkeep table.
+  if (upkeep <= 0) return none;
   // TODO(mechanics open item 12): replace PLACEHOLDER_YIELD with measured
   // per-plot yield at L20 once available. Until then this is indicative only.
   const PLACEHOLDER_YIELD = 2014;
@@ -120,15 +133,14 @@ export function tRes({ milsovAssignments, plots }) {
   let binding = null;
   for (const res of ['wood', 'clay', 'iron', 'stone']) {
     const production = plots[res] * PLACEHOLDER_YIELD;
-    if (production <= 0) return { ceiling: -Infinity, indicative: true, binding: res };
     // production * (125 - T)/100 >= upkeep  =>  T <= 125 - 100*upkeep/production
-    const ceiling = PRODUCTION_BASE - (100 * upkeep) / production;
+    const ceiling = production > 0 ? PRODUCTION_BASE - (100 * upkeep) / production : -Infinity;
     if (ceiling < worst) {
       worst = ceiling;
       binding = res;
     }
   }
-  return { ceiling: worst, indicative: true, binding };
+  return { ceiling: worst, indicative: true, binding, impossible: worst === -Infinity };
 }
 
 /** T_max = min(100, T_food, T_rp, T_res), with the binding ceiling named. */
@@ -263,7 +275,8 @@ export function recoverSet(candidates, dpResult, spend) {
 
 const ROMAN = ['I', 'II', 'III', 'IV', 'V'];
 
-/** "1x Sov V + 2x Sov III", levels descending. */
+/** "1x Sov V + 2x Sov III", levels descending. Alternatives keep both levels
+ * equal, so one number describes them. */
 function describeLevels(levels) {
   const counts = new Map();
   for (const l of levels) counts.set(l, (counts.get(l) ?? 0) + 1);
@@ -274,8 +287,36 @@ function describeLevels(levels) {
 }
 
 /**
+ * The requested plan. A building below its claim's sovereignty level is named
+ * outright — it is unusual enough to be worth reading back, since it costs
+ * claim upkeep that buys no bonus.
+ */
+function describePlan(entries) {
+  const counts = new Map();
+  const rank = new Map();
+  for (const e of entries) {
+    const label = e.buildingLevel === e.sovLevel
+      ? `Sov ${ROMAN[e.sovLevel - 1]}`
+      : `Sov ${ROMAN[e.sovLevel - 1]} at building level ${e.buildingLevel}`;
+    counts.set(label, (counts.get(label) ?? 0) + 1);
+    rank.set(label, e.sovLevel * 10 + e.buildingLevel);
+  }
+  return [...counts.entries()]
+    .sort((a, b) => rank.get(b[0]) - rank.get(a[0]))
+    .map(([label, count]) => `${count}x ${label}`)
+    .join(' + ');
+}
+
+/**
  * Look for a level/count split that beats the requested one at the ACTUAL
  * distances of the tiles that would be used (PRD §3.6).
+ *
+ * Alternatives always put the building at its claim's sovereignty level. A
+ * lower building is dominated — the bonus and the resource upkeep follow the
+ * building, so the surplus sovereignty levels buy nothing and the same building
+ * on a cheaper claim beats it outright. So the search runs over one level per
+ * tile, and `levels` below means both. The REQUESTED plan may of course split
+ * them, which is why its cost and bonus are read from the assignment.
  *
  * Both cost and bonus are linear in level, so for any plan placed on the `n`
  * nearest tiles the bonus per RP collapses to `1 / (2 * mean_distance * f)` —
@@ -294,8 +335,14 @@ function describeLevels(levels) {
  * The loop is left general rather than hard-coded to `n <= requested.length`,
  * so the arithmetic — not an assumption — decides.
  *
- * `tiles` must be the full neighbour list sorted by ascending distance, i.e.
- * the same cheapest-first order step 2 reserves from.
+ * `tiles` must be the order the plan reserved from, cheapest-first within it,
+ * so that the first `n` are the tiles a quota of `n` would actually land on.
+ * Ascending distance is the usual such order and the one both conclusions above
+ * rest on. Pass any other order — the food-preserving hosting scoreSite trades
+ * into, say — only with `maxBuildings` capped at the requested tile count: that
+ * keeps a win a subset of the hosts already in use, which is what makes it
+ * harmless to the food plan, and costs only the chance of spotting a win the
+ * ascending case would have found.
  *
  * Returns null (stay silent) unless the alternative is no worse on research,
  * no worse on total bonus, and strictly better on at least one of the two —
@@ -310,10 +357,15 @@ function describeLevels(levels) {
 export function milsovAdvice({ requested, tiles, chancery, maxBuildings = Infinity }) {
   if (!requested || requested.length === 0) return null;
 
+  // Bonus and structure upkeep come from the building; the research cost is
+  // already on the assignment, charged at the claim's sovereignty level.
   const f = chancery ? CHANCERY_FACTOR : 1;
-  const reqBonus = requested.reduce((n, a) => n + MILSOV_BONUS_PER_LEVEL * a.level, 0);
+  const reqBonus = requested.reduce((n, a) => n + MILSOV_BONUS_PER_LEVEL * a.buildingLevel, 0);
   const reqRp = requested.reduce((n, a) => n + a.rp, 0);
-  const reqUpkeep = requested.reduce((n, a) => n + (MILSOV_UPKEEP_BY_LEVEL[a.level] ?? 0), 0);
+  const reqUpkeep = requested.reduce(
+    (n, a) => n + (MILSOV_UPKEEP_BY_LEVEL[a.buildingLevel] ?? 0),
+    0,
+  );
 
   const ds = tiles.map((t) => t.d);
   const maxN = Math.min(ds.length, maxBuildings);
@@ -366,8 +418,8 @@ export function milsovAdvice({ requested, tiles, chancery, maxBuildings = Infini
   const cheaper = best.rp < reqRp - EPS;
   const stronger = best.bonus > reqBonus + EPS;
   const research = cheaper
-    ? `would cost less research than your ${describeLevels(requested.map((a) => a.level))}`
-    : `would cost the same research as your ${describeLevels(requested.map((a) => a.level))}`;
+    ? `would cost less research than your ${describePlan(requested)}`
+    : `would cost the same research as your ${describePlan(requested)}`;
   const gain = stronger ? 'give more total bonus' : 'give the same total bonus';
   // Fewer, higher-level structures cost more of each basic resource per hour.
   const dearer = best.upkeep > reqUpkeep ? ', at higher structure upkeep' : '';
@@ -393,6 +445,9 @@ export function milsovAdvice({ requested, tiles, chancery, maxBuildings = Infini
  * Returns the winning plan. T_max may be negative — that is a real answer, not
  * an error. Ranking and the tMin filter are the caller's job (PRD §3.7).
  * Returns null only when there is nothing to evaluate at all.
+ *
+ * With a milsov quota set, two hostings for it are scored and the better plan
+ * returned — `milsovTraded` says which. See the trade below.
  */
 export function scoreSite({ neighbours, settings }) {
   const s = settings;
@@ -403,102 +458,187 @@ export function scoreSite({ neighbours, settings }) {
   const chancery = !!s.chancery;
 
   // Step 2 (PRD §3.5): reserve milsov on the cheapest tiles by distance.
+  //
+  // Equal distances break toward the lower food rating. Military sovereignty is
+  // paid for by distance alone and gains nothing from a tile's food, so among
+  // tiles that cost the same the one the food knapsack would miss least is free
+  // to take — whereas the scan order the dy/dx loops happen to produce would
+  // burn a 7-food tile while an equidistant 0-food one sat unused.
   const byDistance = neighbours
     .map((n, idx) => ({ ...n, idx, d: distance(n.dx, n.dy) }))
-    .sort((a, b) => a.d - b.d);
+    .sort((a, b) => a.d - b.d || a.food - b.food);
 
-  const milsovAssignments = [];
-  const reserved = new Set();
-  // Highest level onto the nearest tile. PRD §3.5 step 2 says only "cheapest
-  // available tiles by distance"; ordering the quota entries this way is the
-  // cost-minimising reading of it and leaves the requested level/count pairs
-  // untouched. It also stops the §3.6 advisory firing on a mere re-ordering.
-  const quotaByLevel = [...(s.milsovQuota ?? [])].sort((a, b) => b.level - a.level);
-  for (const quota of quotaByLevel) {
-    for (let c = 0; c < quota.count; c++) {
-      const tile = byDistance.find((t) => !reserved.has(t.idx));
-      if (!tile) break; // quota cannot be met — caller flags as a "maybe" site
-      reserved.add(tile.idx);
-      const up = claimUpkeep(tile.d, quota.level, chancery);
-      milsovAssignments.push({ ...tile, level: quota.level, ...up });
+  // One entry per building, dearest claim first.
+  const quota = [...(s.milsovQuota ?? [])]
+    .sort((a, b) => b.sovLevel - a.sovLevel || b.buildingLevel - a.buildingLevel);
+  const quotaRequested = quota.length;
+  const maxBuildings = s.maxBuildings ?? 20;
+
+  /**
+   * Take the first `quotaRequested` tiles of `order` and put the highest
+   * sovereignty level on the nearest of them. A short list is a quota that
+   * cannot be met, which the caller flags as a "maybe" site.
+   *
+   * Which tiles are taken is the order's business; how the buildings land on
+   * them is not. PRD §3.5 step 2 says only "cheapest available tiles by
+   * distance", and pairing the dearest claim with the nearest tile is the
+   * cost-minimising reading of it — claim upkeep is level times distance, so
+   * the two largest factors belong apart. It leaves the requested buildings
+   * untouched and stops the §3.6 advisory firing on a mere re-ordering.
+   */
+  function reserve(order) {
+    return order
+      .slice(0, quotaRequested)
+      .sort((a, b) => a.d - b.d)
+      .map((tile, i) => ({
+        ...tile,
+        sovLevel: quota[i].sovLevel,
+        buildingLevel: quota[i].buildingLevel,
+        ...claimUpkeep(tile.d, quota[i].sovLevel, chancery),
+      }));
+  }
+
+  /** Steps 1, 3 and 4 for one reservation: knapsack the rest, walk the frontier. */
+  function evaluate(milsovAssignments) {
+    const reserved = new Set(milsovAssignments.map((a) => a.idx));
+    const milsovRp = milsovAssignments.reduce((sum, a) => sum + a.rp, 0);
+    const milsovGold = milsovAssignments.reduce((sum, a) => sum + a.gold, 0);
+
+    // Step 1 + 3: build the food candidate list and run the knapsack.
+    const foodCandidates = byDistance
+      .filter((t) => !reserved.has(t.idx) && t.food > 0)
+      .map((t) => {
+        const up = claimUpkeep(t.d, FOOD_CLAIM_LEVEL, chancery);
+        return { ...t, level: FOOD_CLAIM_LEVEL, ...up, weight: Math.round(up.rp) };
+      });
+
+    const budget = Math.max(0, Math.round(rRef * 1.25 - milsovRp));
+    const buildingsLeft = Math.max(0, maxBuildings - milsovAssignments.length);
+    const dp = knapsack(foodCandidates, budget, buildingsLeft);
+
+    const resCeiling = tRes({ milsovAssignments, plots: s.plots });
+    // An indicative ceiling annotates the plan; it does not constrain it. The
+    // figure rests on a yield borrowed from the farm, so letting it into T_max
+    // would let a placeholder decide which sites survive the caller's tMin
+    // filter — and a resource with no plots would delete every site outright, at
+    // any tMin, with nothing on the result to say so. It travels on the result
+    // instead, for the caller to show, and binds only once the yield behind it
+    // is measured and tRes stops calling it indicative.
+    const resApplied = resCeiling.indicative ? Infinity : resCeiling.ceiling;
+
+    // Step 4: walk the DP frontier.
+    let winner = null;
+    for (let spend = 0; spend <= budget; spend++) {
+      const sFood = dp.best[spend];
+      const uRp = spend + milsovRp;
+      const t = tMax({
+        food: tFood({ bOther, sFood, consumption, k }),
+        rp: tRp({ uRp, rRef }),
+        res: resApplied,
+      });
+      // A negative T_max is a real answer — the site cannot feed a city at any
+      // tax. Report it and let the caller filter on tMin (PRD §3.7); swallowing
+      // it here would also hide "maybe" sites that miss a milsov quota.
+      // Gold upkeep tracks RP exactly 10:1 (mechanics §5.2).
+      const uGold = uRp * 10;
+      const net = goldNet({ tax: t.value, consumption, uGold });
+      if (!winner || betterPlan({ tMax: t.value, uRp, goldNet: net }, winner)) {
+        winner = { tMax: t.value, binding: t.binding, sFood, uRp, uGold, goldNet: net, spend };
+      }
+    }
+
+    if (!winner) return null;
+
+    const chosenIdx = recoverSet(foodCandidates, dp, winner.spend);
+    return {
+      ...winner,
+      tiles: chosenIdx ? chosenIdx.map((i) => foodCandidates[i]) : [],
+      milsov: milsovAssignments,
+      quotaMet: milsovAssignments.length === quotaRequested,
+      milsovGold,
+      resCeiling: resCeiling.ceiling,
+      resIndicative: resCeiling.indicative,
+      resBinding: resCeiling.binding,
+      resImpossible: resCeiling.impossible,
+    };
+  }
+
+  // The distance-for-food trade. Hosting milsov further out to keep a strong
+  // food tile costs research on both counts — the claim itself is dearer and the
+  // knapsack budget shrinks — so whether it wins cannot be reasoned about from
+  // the tile alone; it depends on what the knapsack would have done with the
+  // tile. Both hostings are therefore scored in full and the better plan kept,
+  // which is what makes this safe: the trade can never return a worse plan than
+  // the by-distance rule, since that rule's plan is one of the two candidates
+  // and wins every tie.
+  //
+  // This reaches past reserving by distance alone. It costs a
+  // second knapsack per site, and only when a milsov quota is set and the two
+  // hostings actually differ — a site whose tiles all carry the same food, and
+  // every site in a food-only scan, is untouched and pays nothing.
+  const primary = reserve(byDistance);
+  let plan = evaluate(primary);
+  let order = byDistance;          // the hosting the winning plan reserved from
+  let milsovTraded = false;
+  if (plan && quotaRequested > 0) {
+    // The tiles the food plan wants least, nearest first among equals.
+    const byFood = [...byDistance].sort((a, b) => a.food - b.food || a.d - b.d);
+    const alternative = reserve(byFood);
+    if (!sameTiles(primary, alternative)) {
+      const traded = evaluate(alternative);
+      if (traded && betterPlan(traded, plan)) {
+        plan = traded;
+        order = byFood;
+        milsovTraded = true;
+      }
     }
   }
-  const quotaRequested = (s.milsovQuota ?? []).reduce((n, q) => n + q.count, 0);
-  const quotaMet = milsovAssignments.length === quotaRequested;
+  if (!plan) return null;
 
   // PRD §3.6 — advisory only. The plan above is what the user asked for and is
   // returned unchanged; this note is never acted on. Costs nothing when no
   // milsov was requested, which is the common case across ~1,225 sites.
   // Skipped when the quota could not be fitted at all: "2 milsov fits here, but
   // only at 50% tax" (§3.7) is the honest message there, not a level tweak.
+  //
+  // It reasons over the hosting the plan actually used, so a traded plan is not
+  // told it could save research by moving back onto the tiles the trade paid to
+  // leave — that is a re-ordering, not a level split. Ascending distance is what
+  // lets the advisory work out for itself that a win never takes more tiles, and
+  // a traded order is not sorted that way, so there the tile count is capped
+  // explicitly. A win is then a subset of the hosts already in use, which returns
+  // tiles to the food knapsack and can only leave the site better off.
   const advice =
-    milsovAssignments.length > 0 && quotaMet && (s.milsovAdvisory ?? true)
+    plan.milsov.length > 0 && plan.quotaMet && (s.milsovAdvisory ?? true)
       ? milsovAdvice({
-          requested: milsovAssignments,
-          tiles: byDistance,
+          requested: plan.milsov,
+          tiles: order,
           chancery,
-          maxBuildings: s.maxBuildings ?? 20,
+          maxBuildings: milsovTraded ? Math.min(maxBuildings, plan.milsov.length) : maxBuildings,
         })
       : null;
 
-  const milsovRp = milsovAssignments.reduce((sum, a) => sum + a.rp, 0);
-  const milsovGold = milsovAssignments.reduce((sum, a) => sum + a.gold, 0);
-
-  // Step 1 + 3: build the food candidate list and run the knapsack.
-  const foodCandidates = byDistance
-    .filter((t) => !reserved.has(t.idx) && t.food > 0)
-    .map((t) => {
-      const up = claimUpkeep(t.d, FOOD_CLAIM_LEVEL, chancery);
-      return { ...t, level: FOOD_CLAIM_LEVEL, ...up, weight: Math.round(up.rp) };
-    });
-
-  const budget = Math.max(0, Math.round(rRef * 1.25 - milsovRp));
-  const buildingsLeft = Math.max(0, (s.maxBuildings ?? 20) - milsovAssignments.length);
-  const dp = knapsack(foodCandidates, budget, buildingsLeft);
-
-  const resCeiling = tRes({ milsovAssignments, plots: s.plots });
-
-  // Step 4: walk the DP frontier.
-  let winner = null;
-  for (let spend = 0; spend <= budget; spend++) {
-    const sFood = dp.best[spend];
-    const uRp = spend + milsovRp;
-    const t = tMax({
-      food: tFood({ bOther, sFood, consumption, k }),
-      rp: tRp({ uRp, rRef }),
-      res: resCeiling.ceiling,
-    });
-    // A negative T_max is a real answer — the site cannot feed a city at any
-    // tax. Report it and let the caller filter on tMin (PRD §3.7); swallowing
-    // it here would also hide "maybe" sites that miss a milsov quota.
-    // Gold upkeep tracks RP exactly 10:1 (mechanics §5.2).
-    const uGold = uRp * 10;
-    const net = goldNet({ tax: t.value, consumption, uGold });
-    if (
-      !winner ||
-      t.value > winner.tMax + 1e-9 ||
-      (Math.abs(t.value - winner.tMax) <= 1e-9 &&
-        (uRp < winner.uRp - 1e-9 ||
-          (Math.abs(uRp - winner.uRp) <= 1e-9 && net > winner.goldNet)))
-    ) {
-      winner = { tMax: t.value, binding: t.binding, sFood, uRp, uGold, goldNet: net, spend };
-    }
-  }
-
-  if (!winner) return null;
-
-  const chosenIdx = recoverSet(foodCandidates, dp, winner.spend);
-  const tiles = chosenIdx ? chosenIdx.map((i) => foodCandidates[i]) : [];
-
   return {
-    ...winner,
-    tiles,
-    milsov: milsovAssignments,
+    ...plan,
     milsovAdvice: advice,
     milsovNote: advice ? advice.text : null,
-    quotaMet,
-    milsovGold,
-    resIndicative: resCeiling.indicative,
-    resBinding: resCeiling.binding,
+    milsovTraded,
   };
+}
+
+/** Plan ordering: higher T_max, then lower U_RP, then higher Gold_net. */
+function betterPlan(a, b) {
+  const EPS = 1e-9;
+  if (a.tMax > b.tMax + EPS) return true;
+  if (a.tMax < b.tMax - EPS) return false;
+  if (a.uRp < b.uRp - EPS) return true;
+  if (a.uRp > b.uRp + EPS) return false;
+  return a.goldNet > b.goldNet;
+}
+
+/** Whether two reservations landed on the same tiles, levels aside. */
+function sameTiles(a, b) {
+  if (a.length !== b.length) return false;
+  const seen = new Set(a.map((t) => t.idx));
+  return b.every((t) => seen.has(t.idx));
 }

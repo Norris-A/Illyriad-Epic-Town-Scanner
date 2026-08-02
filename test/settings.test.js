@@ -12,6 +12,7 @@ import {
   clampNumber,
   validatePlots,
   normaliseMilsovQuota,
+  milsovUpkeep,
   parseRpCalibration,
   settingsFormHtml,
 } from '../src/panel.js';
@@ -46,14 +47,14 @@ test('the markup carries every hook createPanel reads back out of it', () => {
   // createPanel is the only DOM code here and cannot run under Node, so what is
   // checkable is its contract with the markup: a typo'd selector on either side
   // shows up as a missing hook rather than as a null dereference in the game.
-  const html = settingsFormHtml({ ...DEFAULT_SETTINGS, milsovQuota: [{ level: 3, count: 2 }] });
+  const html = settingsFormHtml({ ...DEFAULT_SETTINGS, milsovQuota: [{ sovLevel: 3, buildingLevel: 2 }] });
   const hooks = [
     'class="sov-form"',
     'class="sov-plot-total"', 'sov-prefill sec', 'sov-prefill-src',
     'sov-milsov-rows', 'sov-milsov-empty', 'sov-milsov-add', 'sov-milsov-del', 'sov-milsov-row',
     'class="sov-reset sec"', 'class="sov-derived"', 'sov-derived-food',
     'data-cal="observedRpPerHour"', 'data-cal="atTax"',
-    'data-milsov="level"', 'data-milsov="count"',
+    'data-milsov="sovLevel"', 'data-milsov="buildingLevel"', 'sov-milsov-total',
     ...PLOT_KEYS.map((p) => `data-plot="${p}"`),
   ];
   for (const hook of hooks) assert.ok(html.includes(hook), `markup is missing ${hook}`);
@@ -134,18 +135,58 @@ test('a prefilled water tile is flagged rather than silently scored', () => {
 
 // --- milsov quota rows ---
 
-test('quota rows become level/count pairs, merged and level-descending', () => {
+test('one row is one building, and rows come back level-descending', () => {
+  // The row carries two levels, not a level and a count. A quota of three rows
+  // is three buildings — never one building at "level 3".
   assert.deepEqual(
-    normaliseMilsovQuota([{ level: 3, count: 1 }, { level: 5, count: 1 }, { level: 3, count: 1 }]),
-    [{ level: 5, count: 1 }, { level: 3, count: 2 }],
+    normaliseMilsovQuota([
+      { sovLevel: 3, buildingLevel: 3 },
+      { sovLevel: 5, buildingLevel: 5 },
+      { sovLevel: 3, buildingLevel: 2 },
+    ]),
+    [
+      { sovLevel: 5, buildingLevel: 5 },
+      { sovLevel: 3, buildingLevel: 3 },
+      { sovLevel: 3, buildingLevel: 2 },
+    ],
   );
+});
+
+test('a single Sov V row is ONE building, whatever its building level', () => {
+  // The regression this whole schema exists for: the second control used to be
+  // a count, so "Sov V, level 5" scored as five structures — 12,000/hr of each
+  // basic resource instead of 2,400, which is the difference between a +85%
+  // resource ceiling and a −73.6% one.
+  for (const buildingLevel of [1, 2, 3, 4, 5]) {
+    const quota = normaliseMilsovQuota([{ sovLevel: 5, buildingLevel }]);
+    assert.equal(quota.length, 1, `building level ${buildingLevel} is still one building`);
+    assert.equal(quota[0].buildingLevel, buildingLevel);
+  }
+  assert.equal(milsovUpkeep(normaliseMilsovQuota([{ sovLevel: 5, buildingLevel: 5 }])), 2400);
+  assert.equal(milsovUpkeep(normaliseMilsovQuota(Array(5).fill({ sovLevel: 5, buildingLevel: 5 }))), 12000);
+});
+
+test('a building may not out-level its claim, and defaults to matching it', () => {
+  assert.deepEqual(normaliseMilsovQuota([{ sovLevel: 2, buildingLevel: 5 }]),
+    [{ sovLevel: 2, buildingLevel: 2 }]);
+  assert.deepEqual(normaliseMilsovQuota([{ sovLevel: 3, buildingLevel: '' }]),
+    [{ sovLevel: 3, buildingLevel: 3 }]);
 });
 
 test('empty rows are dropped and levels clamped to 1..5', () => {
   assert.deepEqual(normaliseMilsovQuota([]), []);
   assert.deepEqual(normaliseMilsovQuota(undefined), []);
-  assert.deepEqual(normaliseMilsovQuota([{ level: 5, count: 0 }, { level: '', count: 2 }]), []);
-  assert.deepEqual(normaliseMilsovQuota([{ level: 9, count: '2' }]), [{ level: 5, count: 2 }]);
+  assert.deepEqual(normaliseMilsovQuota([{ sovLevel: '', buildingLevel: 2 }]), []);
+  assert.deepEqual(normaliseMilsovQuota([{ sovLevel: 9, buildingLevel: '9' }]),
+    [{ sovLevel: 5, buildingLevel: 5 }]);
+});
+
+test('upkeep is charged on the building, never on the claim', () => {
+  // A Sov V claim carrying a level 1 building costs 150/hr, not 2,400 — the
+  // sovereignty level is paid in RP and gold instead.
+  assert.equal(milsovUpkeep([{ sovLevel: 5, buildingLevel: 1 }]), 150);
+  assert.equal(milsovUpkeep([{ sovLevel: 1, buildingLevel: 1 }]), 150);
+  assert.equal(milsovUpkeep([]), 0);
 });
 
 test('the default quota is empty, which is what keeps T_res non-binding', () => {

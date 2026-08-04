@@ -23,6 +23,9 @@ import {
   ALLEMBINE_RP_PER_LIBRARY_LEVEL,
   OVERFLOWING_INSIGHT_FACTOR,
   LIBRARY_BASE_RP_L20,
+  BASIC_RESOURCES,
+  RESOURCE_BOOSTER_BONUS,
+  BASIC_YIELD_L20,
 } from './constants.js';
 
 // --- Derived city figures (mechanics §4.1, §4.2, §6) ------------------------
@@ -66,6 +69,44 @@ export function computeRRef(s) {
   // here as part of R_ref, i.e. it does scale.
   if (s.allembine) base += ALLEMBINE_RP_PER_LIBRARY_LEVEL * (s.libraryLevel ?? 20);
   return s.overflowingInsight ? base * OVERFLOWING_INSIGHT_FACTOR : base;
+}
+
+// --- Basic resource production ---------------------------------------------
+
+/**
+ * Y — per-plot yield at level 20, shared by all four basic resources.
+ *
+ * A reading overrides the default, as it does for R_ref, dividing out both the
+ * tax multiplier and the booster that was running when it was taken. It is for
+ * a city the default does not describe.
+ *
+ * Both paths set `measured`, which is what lets tRes bind. The flag is carried
+ * so that a yield the engine cannot stand behind has somewhere to say so; the
+ * annotate-but-do-not-rank path it drives is subtle enough to keep wired.
+ */
+export function computeBasicYield(s) {
+  const cal = s.resourceCalibration;
+  if (cal && cal.observedPerHour > 0 && cal.plots > 0) {
+    const m = PRODUCTION_BASE - cal.atTax + (cal.booster ? RESOURCE_BOOSTER_BONUS : 0);
+    if (m > 0) {
+      return { yield: (cal.observedPerHour * 100) / (cal.plots * m), measured: true };
+    }
+  }
+  return { yield: BASIC_YIELD_L20, measured: true };
+}
+
+/** Points added to a resource's production percentage by its booster building. */
+export function boosterBonus(s, resource) {
+  return s.resourceBoosters?.[resource] ? RESOURCE_BOOSTER_BONUS : 0;
+}
+
+/**
+ * Hourly output of one basic resource at a given tax. Same additive shape as
+ * food: the booster is points on the production percentage, not a multiplier,
+ * so it is worth its face value in tax headroom.
+ */
+export function basicProduction({ plots, yield: y, bonus, tax }) {
+  return (plots * y * (PRODUCTION_BASE - tax + bonus)) / 100;
 }
 
 // --- Claim costs (mechanics §5.2) ------------------------------------------
@@ -134,13 +175,13 @@ export function tRp({ uRp, rRef }) {
 /**
  * T_res — per-resource ceiling from military sovereignty structure upkeep.
  *
- * BLOCKED: mechanics open item 12 — per-plot yields and booster percentages for
- * wood/clay/iron/stone are not recorded, so basic resource production cannot be
- * computed. Returns Infinity (non-binding, unflagged) whenever nothing in the
- * quota is charged hourly upkeep: no milsov at all, or a quota of Resource
- * Structures, which pay only their claims. When something IS charged this
- * returns a flagged, indicative figure — do not present it as reliable, and see
- * scoreSite for why an indicative ceiling never enters T_max.
+ * Returns Infinity (non-binding, unflagged) whenever nothing in the quota is
+ * charged hourly upkeep: no milsov at all, or a quota of Resource Structures,
+ * which pay only their claims.
+ *
+ * `indicative` says the ceiling rests on a yield the engine cannot stand behind,
+ * in which case scoreSite reports it without letting it into T_max. A measured
+ * yield does not set it — see computeBasicYield for why the flag is carried.
  *
  * `impossible` marks a resource the settle tile has no plots of: it produces
  * nothing at any tax rate, so the ceiling is genuinely -Infinity rather than
@@ -150,7 +191,7 @@ export function tRp({ uRp, rRef }) {
  * All four resources are checked even once one has come back impossible, so
  * `binding` always names the worst of them rather than the first bad one.
  */
-export function tRes({ milsovAssignments, plots }) {
+export function tRes({ milsovAssignments, plots, settings = {} }) {
   const none = { ceiling: Infinity, indicative: false, binding: null, impossible: false };
   if (!milsovAssignments || milsovAssignments.length === 0) return none;
   const upkeep = milsovUpkeep(milsovAssignments);
@@ -158,21 +199,55 @@ export function tRes({ milsovAssignments, plots }) {
   // nothing but Resource Structures, or the degenerate case of a level with no
   // entry in the upkeep table.
   if (upkeep <= 0) return none;
-  // TODO(mechanics open item 12): replace PLACEHOLDER_YIELD with measured
-  // per-plot yield at L20 once available. Until then this is indicative only.
-  const PLACEHOLDER_YIELD = 2014;
+  const { yield: y, measured } = computeBasicYield(settings);
   let worst = Infinity;
   let binding = null;
-  for (const res of ['wood', 'clay', 'iron', 'stone']) {
-    const production = plots[res] * PLACEHOLDER_YIELD;
-    // production * (125 - T)/100 >= upkeep  =>  T <= 125 - 100*upkeep/production
-    const ceiling = production > 0 ? PRODUCTION_BASE - (100 * upkeep) / production : -Infinity;
+  for (const res of BASIC_RESOURCES) {
+    // production(T) >= upkeep  =>  T <= 125 + booster - 100*upkeep/(plots*Y)
+    const perPoint = plots[res] * y;
+    const ceiling = perPoint > 0
+      ? PRODUCTION_BASE + boosterBonus(settings, res) - (100 * upkeep) / perPoint
+      : -Infinity;
     if (ceiling < worst) {
       worst = ceiling;
       binding = res;
     }
   }
-  return { ceiling: worst, indicative: true, binding, impossible: worst === -Infinity };
+  return { ceiling: worst, indicative: !measured, binding, impossible: worst === -Infinity };
+}
+
+/**
+ * What the city has left over per hour at a given tax, once the plan is paid
+ * for: the two ceilings' own quantities plus the four basic resources.
+ *
+ * These are the same equations as the ceilings, read as a balance instead of
+ * solved for T — so at T_max the binding one comes out at 0, which is what
+ * makes the row self-checking. Nothing here goes negative while every ceiling
+ * is applied: T_max is their minimum, so a lower tax only produces more. A
+ * figure at zero is the one that named the tax.
+ *
+ * `indicative` is copied from the yield and covers the four basic figures only;
+ * food and research do not depend on it.
+ */
+export function surplusAt({ tax, settings, sFood, uRp, milsovAssignments }) {
+  const s = settings;
+  const k = computeK(s.plots.food);
+  const upkeep = milsovUpkeep(milsovAssignments ?? []);
+  const { yield: y, measured } = computeBasicYield(s);
+
+  const out = {
+    tax,
+    food: k * (PRODUCTION_BASE - tax + computeBOther(s) + (sFood ?? 0)) - computeConsumption(s),
+    rp: (computeRRef(s) * (PRODUCTION_BASE - tax)) / 100 - (uRp ?? 0),
+    upkeep,
+    indicative: !measured,
+  };
+  for (const res of BASIC_RESOURCES) {
+    out[res] = basicProduction({
+      plots: s.plots[res], yield: y, bonus: boosterBonus(s, res), tax,
+    }) - upkeep;
+  }
+  return out;
 }
 
 /** T_max = min(100, T_food, T_rp, T_res), with the binding ceiling named. */
@@ -401,10 +476,10 @@ function planUpkeep(levels, chargedCount) {
  *
  * Structure upkeep is reported, not filtered on. It doubles per level while
  * bonus is linear, so a concentrating win on Production Structures almost
- * always raises W/C/I/S upkeep;
- * gating on that would suppress the feature entirely, and would do so on the
- * strength of the placeholder yield behind T_res (mechanics open item 12). The
- * note says so instead, and lets the user weigh it.
+ * always raises W/C/I/S upkeep, and gating on that would suppress the feature
+ * entirely. Whether the extra upkeep is affordable is already T_res's job, and
+ * it is answered per site rather than here. The note says so instead, and lets
+ * the user weigh it.
  */
 export function milsovAdvice({ requested, tiles, chancery, maxBuildings = Infinity }) {
   if (!requested || requested.length === 0) return null;
@@ -573,14 +648,12 @@ export function scoreSite({ neighbours, settings }) {
     const buildingsLeft = Math.max(0, maxBuildings - milsovAssignments.length);
     const dp = knapsack(foodCandidates, budget, buildingsLeft);
 
-    const resCeiling = tRes({ milsovAssignments, plots: s.plots });
-    // An indicative ceiling annotates the plan; it does not constrain it. The
-    // figure rests on a yield borrowed from the farm, so letting it into T_max
-    // would let a placeholder decide which sites survive the caller's tMin
-    // filter — and a resource with no plots would delete every site outright, at
-    // any tMin, with nothing on the result to say so. It travels on the result
-    // instead, for the caller to show, and binds only once the yield behind it
-    // is measured and tRes stops calling it indicative.
+    const resCeiling = tRes({ milsovAssignments, plots: s.plots, settings: s });
+    // An indicative ceiling annotates the plan; it does not constrain it. A
+    // figure the engine cannot stand behind must not decide which sites survive
+    // the caller's tMin filter — a resource with no plots would delete every
+    // site outright, at any tMin, with nothing on the result to say so. A
+    // measured ceiling constrains it like the other two.
     const resApplied = resCeiling.indicative ? Infinity : resCeiling.ceiling;
 
     // Step 4: walk the DP frontier.
@@ -607,8 +680,25 @@ export function scoreSite({ neighbours, settings }) {
     if (!winner) return null;
 
     const chosenIdx = recoverSet(foodCandidates, dp, winner.spend);
+    // What running this plan actually leaves per hour. Computed at the plan's
+    // own tax, so the binding ceiling reads 0 and the rest read as headroom.
+    //
+    // An infinite T_max has no balance to state — a resource the city has no
+    // plots of drives the tax to -Infinity, and multiplying no plots by an
+    // infinite production percentage is NaN, not a number worth showing. The
+    // impossible flag is what explains that site.
+    const surplus = Number.isFinite(winner.tMax)
+      ? surplusAt({
+          tax: winner.tMax,
+          settings: s,
+          sFood: winner.sFood,
+          uRp: winner.uRp,
+          milsovAssignments,
+        })
+      : null;
     return {
       ...winner,
+      surplus,
       tiles: chosenIdx ? chosenIdx.map((i) => foodCandidates[i]) : [],
       milsov: milsovAssignments,
       quotaMet: milsovAssignments.length === quotaRequested,

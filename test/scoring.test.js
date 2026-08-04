@@ -7,9 +7,9 @@ import assert from 'node:assert/strict';
 import {
   computeK, computeBOther, computeConsumption, computeRRef,
   tFood, tRp, tMax, goldNet, claimUpkeep, distance, knapsack, recoverSet, scoreSite,
-  milsovAdvice, tRes,
+  milsovAdvice, tRes, surplusAt, computeBasicYield,
 } from '../src/scoring.js';
-import { DEFAULT_SETTINGS } from '../src/constants.js';
+import { DEFAULT_SETTINGS, BASIC_YIELD_L20, BASIC_RESOURCES } from '../src/constants.js';
 
 const close = (a, b, eps = 0.05) =>
   assert.ok(Math.abs(a - b) < eps, `expected ${a} ≈ ${b}`);
@@ -217,7 +217,7 @@ test('milsov reserves the cheapest tiles by distance, not the best food', () => 
   assert.equal(plan.milsov.length, 1);
   assert.equal(plan.milsov[0].dx, 1, 'milsov should take the nearest tile');
   assert.ok(plan.quotaMet);
-  assert.ok(plan.resIndicative, 'T_res must be flagged indicative — open item 12');
+  assert.equal(plan.resIndicative, false, 'the yield behind T_res is measured');
 });
 
 test('among equidistant tiles the reservation takes the one worth least in food', () => {
@@ -411,25 +411,26 @@ test('a resource with no plots is flagged impossible, not returned as a number',
   const milsovAssignments = [{ sovLevel: 5, buildingLevel: 5 }];
   const r = tRes({ milsovAssignments, plots: { wood: 5, clay: 5, iron: 5, stone: 0, food: 10 } });
   assert.equal(r.impossible, true);
-  assert.equal(r.indicative, true);
+  assert.equal(r.indicative, false);
   assert.equal(r.binding, 'stone', 'the worst resource is named, not the first checked');
   assert.equal(r.ceiling, -Infinity, 'no production pays no upkeep at any tax');
 });
 
 test('one requested building is one structure, at one structure of upkeep', () => {
-  // 5x Sov V on 3 stone plots is 12,000/hr and a ceiling of -73.6%. ONE Sov V is
-  // 2,400/hr and +85.3%, which never flags. The quota is a list of buildings, so
+  // 5x Sov V on 3 stone plots is 12,000/hr and a ceiling of -32.6%. ONE Sov V is
+  // 2,400/hr and +93.5%, which never binds. The quota is a list of buildings, so
   // one entry can only ever mean one.
-  const settings = { ...worked, tMin: 0, milsovQuota: sov(5) };
+  const settings = { ...worked, tMin: -1000, milsovQuota: sov(5) };
   const plan = scoreSite({ neighbours: ring8, settings });
   assert.equal(plan.milsov.length, 1, 'one entry, one building');
-  close(plan.resCeiling, 85.28, 0.01);
-  assert.equal(plan.resIndicative, true);
+  close(plan.resCeiling, 93.48, 0.01);
+  assert.equal(plan.resIndicative, false);
 
   // And the value that made this visible: five buildings really is five.
   const five = scoreSite({ neighbours: ring8, settings: { ...settings, milsovQuota: sov(5, 5) } });
   assert.equal(five.milsov.length, 5);
-  close(five.resCeiling, -73.61, 0.01);
+  close(five.resCeiling, -32.60, 0.01);
+  assert.equal(five.binding, 'res', 'a negative measured ceiling is what binds here');
 });
 
 test('the claim is charged on its sovereignty level, the structure on its own', () => {
@@ -446,7 +447,7 @@ test('the claim is charged on its sovereignty level, the structure on its own', 
   close(plan.milsov[0].rp, 50, 1e-9);          // 10 x 5 x d, d = 1
   close(plan.milsov[0].gold, 500, 1e-9);
   // 150/hr against 3 stone plots, not the 2,400 the claim's level would imply.
-  close(plan.resCeiling, 125 - (100 * 150) / (3 * 2014), 0.01);
+  close(plan.resCeiling, 125 - (100 * 150) / (3 * BASIC_YIELD_L20), 0.01);
 });
 
 test('with no milsov quota the ceiling is absent rather than indicative', () => {
@@ -454,44 +455,54 @@ test('with no milsov quota the ceiling is absent rather than indicative', () => 
   assert.deepEqual(r, { ceiling: Infinity, indicative: false, binding: null, impossible: false });
 });
 
-test('a zero-plot allocation with a milsov quota does not delete the site', () => {
-  // 0/0/0/0/25 is a legitimate allocation and scores 100% with no milsov. Adding
-  // one Sov V used to drive T_max to -Infinity, which fails the caller's tMin
-  // test at every tMin — including 0 and negative — with nothing on the result
-  // to explain it. The site has to survive, carrying the flag.
+test('a zero-plot allocation cannot pay milsov upkeep, and now says so in T_max', () => {
+  // 0/0/0/0/25 is a legitimate allocation and scores 100% with no milsov. One
+  // Sov V on it is 2,400/hr of four resources the city does not produce at all,
+  // so no tax rate pays for it: -Infinity is the true answer, and now that the
+  // yield behind it is measured the ceiling is allowed to say so.
+  //
+  // What this must NOT do is disappear without a reason. The plan still carries
+  // the impossible flag and names the resource, so the caller can explain the
+  // exclusion rather than dropping the site blindly — which is what made the
+  // same behaviour unacceptable while the yield was borrowed.
   const plots = { wood: 0, clay: 0, iron: 0, stone: 0, food: 25 };
   const settings = { ...worked, tMin: 0, plots, milsovQuota: sov(5) };
   const plan = scoreSite({ neighbours: ring8, settings });
 
-  assert.ok(Number.isFinite(plan.tMax), `T_max must stay finite, got ${plan.tMax}`);
-  assert.notEqual(plan.binding, 'res', 'an indicative ceiling must not bind T_max');
+  assert.equal(plan.tMax, -Infinity);
+  assert.equal(plan.binding, 'res', 'a measured ceiling binds like any other');
   assert.equal(plan.resImpossible, true);
-  assert.equal(plan.resCeiling, -Infinity, 'the honest figure still travels with the result');
-  assert.equal(plan.resIndicative, true);
-  assert.ok(plan.quotaMet, 'the quota does fit — it is only unaffordable');
+  assert.equal(plan.resCeiling, -Infinity);
+  assert.equal(plan.resIndicative, false);
+  assert.ok(plan.quotaMet, 'the quota fits the tiles — it is the upkeep that cannot be paid');
+  assert.ok(plan.resBinding, 'the row can still name which resource killed it');
 
-  // The caller's filter, at every tMin a user could set.
-  for (const tMin of [-100, 0, 50, 100]) {
-    assert.equal(plan.tMax >= tMin, scoreSite({
-      neighbours: ring8, settings: { ...settings, milsovQuota: [] },
-    }).tMax >= tMin, `tMin ${tMin}: the quota changed whether the site survives`);
-  }
+  // Drop the quota and the same site is perfectly good, which is what makes the
+  // exclusion attributable to the quota rather than to the site.
+  const noQuota = scoreSite({ neighbours: ring8, settings: { ...settings, milsovQuota: [] } });
+  assert.ok(noQuota.tMax >= 50, `the site itself is fine: ${noQuota.tMax}`);
 });
 
-test('a finite-but-absurd ceiling annotates the row instead of ranking it', () => {
-  // 5/5/5/1/9: one stone plot puts the placeholder ceiling at 5.8%, which would
-  // have dragged a 76% site below any usable tMin on the strength of a borrowed
-  // yield figure.
+test('a low measured ceiling ranks the site rather than annotating it', () => {
+  // 5/5/5/1/9: one stone plot against 2,400/hr caps the site at 30.4% however
+  // much food it has. While the yield was borrowed this was reported and
+  // ignored; measured, it is the answer.
   const settings = {
     ...worked, tMin: 0,
     plots: { wood: 5, clay: 5, iron: 5, stone: 1, food: 9 },
     milsovQuota: sov(5),
   };
   const plan = scoreSite({ neighbours: ring8, settings });
-  close(plan.resCeiling, 5.83, 0.01);
+  close(plan.resCeiling, 30.44, 0.01);
   assert.equal(plan.resBinding, 'stone');
-  assert.ok(plan.tMax > 50, `T_max should be well above the 5.8% ceiling, got ${plan.tMax}`);
-  assert.notEqual(plan.binding, 'res');
+  assert.equal(plan.binding, 'res');
+  close(plan.tMax, plan.resCeiling, 1e-9);
+  // A second stone plot doubles what the city can pay and lifts the ceiling.
+  const twoStone = scoreSite({
+    neighbours: ring8,
+    settings: { ...settings, plots: { wood: 5, clay: 5, iron: 4, stone: 2, food: 9 } },
+  });
+  assert.ok(twoStone.tMax > plan.tMax, 'more stone must buy more tax');
 });
 
 // --- Resource Structures pay only their claim -------------------------------
@@ -514,16 +525,15 @@ test('a Resource Structure claim costs RP and gold but nothing per hour', () => 
   close(plan.milsov[0].gold, 500, 1e-9);
   close(plan.milsovGold, 500, 1e-9);
 
-  // Nothing is charged per hour, so the ceiling is absent rather than flagged.
-  assert.equal(plan.resIndicative, false);
+  // Nothing is charged per hour, so there is no ceiling at all — not merely a
+  // high one, which is what tells a reader the claim is free rather than cheap.
   assert.equal(plan.resCeiling, Infinity);
   assert.equal(plan.resImpossible, false);
   assert.notEqual(plan.binding, 'res');
 
-  // The military quota on the identical site is what it used to cost.
+  // The military quota on the identical site is what it costs.
   const military = scoreSite({ neighbours: ring8, settings: { ...settings, milsovQuota: sov(5) } });
-  assert.equal(military.resIndicative, true);
-  close(military.resCeiling, 85.28, 0.01);
+  close(military.resCeiling, 93.48, 0.01);
   // Both plans pay the same research, so they differ only in the hourly bill.
   close(plan.uRp, military.uRp, 1e-9);
 });
@@ -548,7 +558,7 @@ test('a mixed quota is charged for its Production Structures alone', () => {
   assert.equal(plan.milsov.length, 4, 'all four claims are reserved');
 
   // One Sov V military structure — 2,400/hr, not the 9,600 four would cost.
-  close(plan.resCeiling, 125 - (100 * 2400) / (3 * 2014), 0.01);
+  close(plan.resCeiling, 125 - (100 * 2400) / (3 * BASIC_YIELD_L20), 0.01);
   close(plan.resCeiling, scoreSite({
     neighbours: ring8, settings: { ...worked, tMin: 0, milsovQuota: sov(5) },
   }).resCeiling, 1e-9);
@@ -609,6 +619,118 @@ test('the ceiling binds T_max again once it stops being indicative', () => {
   const t = tMax({ food: 60, rp: 70, res: 20 });
   close(t.value, 20);
   assert.equal(t.binding, 'res');
+});
+
+// --- Boosters, calibrated yields and the surplus read-out -------------------
+
+test('a booster is worth exactly its face value in tax headroom', () => {
+  // The bonus is points on the production percentage, like the Flour Mill, so a
+  // Stonemason moves a stone-bound ceiling up by 40 and nothing else changes.
+  const settings = { ...worked, tMin: 0, milsovQuota: sov(5) };
+  const bare = scoreSite({ neighbours: ring8, settings });
+  const boosted = scoreSite({
+    neighbours: ring8,
+    settings: { ...settings, resourceBoosters: { wood: false, clay: false, iron: false, stone: true } },
+  });
+  assert.equal(bare.resBinding, 'stone', '3 stone plots against 5 of everything else');
+
+  // Boosting only the binding resource lifts it past the other three, so the
+  // ceiling stops being stone's and becomes theirs — it does not rise by 40.
+  assert.notEqual(boosted.resBinding, 'stone');
+  close(boosted.resCeiling, 125 - (100 * 2400) / (5 * BASIC_YIELD_L20), 0.01);
+
+  // With every booster on, all four move together and stone binds again.
+  const all = scoreSite({
+    neighbours: ring8,
+    settings: { ...settings, resourceBoosters: { wood: true, clay: true, iron: true, stone: true } },
+  });
+  close(all.resCeiling, bare.resCeiling + 40, 1e-9);
+  assert.equal(all.resBinding, 'stone');
+});
+
+test('a calibration reading overrides the default yield for that city', () => {
+  // A site rich enough in food and research that the resource ceiling is the
+  // lowest of the three — otherwise "it binds" would prove nothing.
+  const rich = ring8.map((t) => ({ ...t, food: 16 }));
+  const settings = {
+    ...worked, tMin: -1000, milsovQuota: sov(5, 4),
+    rpCalibration: { observedRpPerHour: 8000, atTax: 25 },
+    resourceCalibration: { observedPerHour: 15000, atTax: 25, plots: 5, booster: false },
+  };
+  const plan = scoreSite({ neighbours: rich, settings });
+  // 4x Sov V is 9,600/hr against 3 stone plots at the reading's 3,000 a plot.
+  close(plan.resCeiling, 125 - (100 * 9600) / (3 * 3000), 0.01);
+  assert.equal(plan.binding, 'res', 'a measured ceiling binds T_max');
+  close(plan.tMax, plan.resCeiling, 1e-9);
+
+  // Without the reading the same site uses the default yield, which is lower,
+  // so the ceiling is lower — and both are applied, neither is annotation.
+  const dflt = scoreSite({ neighbours: rich, settings: { ...settings, resourceCalibration: null } });
+  close(dflt.resCeiling, 125 - (100 * 9600) / (3 * BASIC_YIELD_L20), 0.01);
+  assert.equal(dflt.binding, 'res');
+  assert.ok(dflt.tMax < plan.tMax, 'the lower yield must give the lower ceiling');
+});
+
+test('the binding ceiling has exactly zero left over at T_max', () => {
+  // The surplus figures are the ceiling equations read as a balance, so this is
+  // the two derivations checking each other.
+  for (const quota of [[], sov(3, 2), [...sov(5), ...res(5, 2)]]) {
+    const plan = scoreSite({ neighbours: ring8, settings: { ...worked, tMin: 0, milsovQuota: quota } });
+    const s = plan.surplus;
+    close(s.tax, plan.tMax, 1e-9);
+    if (plan.binding === 'food') close(s.food, 0, 1e-6);
+    if (plan.binding === 'rp') close(s.rp, 0, 1e-6);
+    assert.ok(s.food >= -1e-6, `food deficit at T_max: ${s.food}`);
+    assert.ok(s.rp >= -1e-6, `research deficit at T_max: ${s.rp}`);
+  }
+});
+
+test('the surplus states the milsov bill against every basic resource', () => {
+  // 4x Sov V is 9,600/hr of EACH of the four, so each is its own production
+  // less the same figure — and on 3 stone plots that is a deficit, which is the
+  // whole point of showing it.
+  const settings = { ...worked, tMin: -1000, milsovQuota: sov(5, 4) };
+  const plan = scoreSite({ neighbours: ring8, settings });
+  const { yield: y } = computeBasicYield(settings);
+  assert.equal(plan.surplus.upkeep, 9600);
+  for (const r of ['wood', 'clay', 'iron', 'stone']) {
+    const expected = (worked.plots[r] * y * (125 - plan.tMax)) / 100 - 9600;
+    close(plan.surplus[r], expected, 1e-6);
+  }
+  assert.equal(plan.surplus.indicative, false, 'the yield behind them is measured');
+
+  // Stone is the tightest of the four, on three plots against five — which is
+  // what makes it the resource T_res names. It is still positive here because
+  // food binds at a lower tax than the stone ceiling, and a lower tax produces
+  // more of everything: no basic resource can run a deficit once the ceiling
+  // that binds is a measured one.
+  assert.equal(plan.resBinding, 'stone');
+  for (const r of BASIC_RESOURCES) {
+    assert.ok(plan.surplus[r] >= -1e-6, `${r} must not be in deficit: ${plan.surplus[r]}`);
+    if (r !== 'stone') assert.ok(plan.surplus[r] > plan.surplus.stone, `${r} beats stone`);
+  }
+  assert.ok(plan.tMax <= plan.resCeiling + 1e-9, 'the tax never exceeds the resource ceiling');
+});
+
+test('a Resource Structure quota leaves the basic resources untouched', () => {
+  // Nothing is charged per hour, so the surplus is pure production — the same
+  // figure a site with no quota at all would report at the same tax.
+  const settings = { ...worked, tMin: 0, milsovQuota: res(5, 3) };
+  const plan = scoreSite({ neighbours: ring8, settings });
+  assert.equal(plan.surplus.upkeep, 0);
+  const { yield: y } = computeBasicYield(settings);
+  close(plan.surplus.stone, (worked.plots.stone * y * (125 - plan.tMax)) / 100, 1e-6);
+  assert.ok(plan.surplus.stone > 0);
+});
+
+test('surplusAt is callable on its own, at any tax the user asks about', () => {
+  // The engine reports at the plan's tax; the function itself is not tied to it.
+  const at = (tax) => surplusAt({ tax, settings: worked, sFood: 0, uRp: 0, milsovAssignments: [] });
+  assert.ok(at(0).food > at(50).food, 'less tax must leave more food');
+  close(at(25).rp, 1600, 1e-6);              // R_ref x (125-25)/100
+  close(at(0).rp - at(100).rp, 1600, 1e-6);  // 100 points of production
+  // Food at 25% tax: K x (100 + 60) - 32,200.
+  close(at(25).food, computeK(7) * 160 - 32200, 1e-6);
 });
 
 // --- Milsov level advisory (PRD §3.6) --------------------------------------

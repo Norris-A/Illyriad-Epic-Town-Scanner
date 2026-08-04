@@ -17,10 +17,14 @@ import {
   SOIL_ENRICHMENT,
   SOV_QUOTA_STRUCTURES,
   SOV_LEVEL_ROMAN,
+  BASIC_RESOURCES,
+  RESOURCE_BOOSTERS,
+  RESOURCE_BOOSTER_BONUS,
 } from './constants.js';
 import {
   computeBOther,
   computeK,
+  computeBasicYield,
   sovStructure,
   isProductionStructure,
   structureUpkeep,
@@ -82,6 +86,8 @@ const CSS = `
 .sov-milsov-row span{color:#a9a9a9;font-size:11px;white-space:nowrap}
 .sov-milsov-row button{padding:2px 8px}
 .sov-milsov-total{color:#b9c4b9}
+.sov-balance{margin:4px 0}
+.sov-balance td:nth-child(2){font-variant-numeric:tabular-nums}
 `;
 
 // --- Settings model ---------------------------------------------------------
@@ -175,16 +181,52 @@ export function milsovTotalText(quota) {
 }
 
 /**
- * How a site's resource ceiling should read on its row.
+ * The per-hour balance of a plan, as rows of `{label, value, note}`.
  *
- * The engine reports this ceiling without applying it, because the yield behind
- * it is borrowed rather than measured. That is the right call for ranking and
- * the wrong one for silence: a site whose military sovereignty is unaffordable
- * would otherwise sit in the table looking clean. So the row says so, and says
- * that it did not affect the ranking.
+ * Everything is stated at the plan's own tax, so the ceiling that binds reads 0
+ * — that is the arithmetic checking itself in front of the user, not a rounding
+ * artefact. Zero is therefore the figure to read, not a deficit: while every
+ * ceiling is applied nothing can go negative, since a lower tax only produces
+ * more. The deficit note is kept for a ceiling that was reported but not
+ * applied, which is the only way a plan can be shown outspending the city.
+ */
+export function surplusRows(surplus, binding) {
+  if (!surplus) return [];
+  const rows = [
+    { key: 'food', label: 'Food' },
+    { key: 'rp', label: 'Research' },
+    ...BASIC_RESOURCES.map((res) => ({
+      key: res,
+      label: `${res[0].toUpperCase()}${res.slice(1)}`,
+      basic: true,
+    })),
+  ];
+  return rows.map((r) => {
+    const value = surplus[r.key] ?? 0;
+    const notes = [];
+    // The ceiling that set the tax is at 0 by construction; say which it was so
+    // a row of zero does not read as a failure to compute.
+    if (binding === r.key || (binding === 'res' && r.basic && Math.abs(value) < 0.5)) {
+      notes.push('binds');
+    }
+    if (value < 0) notes.push('deficit');
+    if (r.basic && surplus.indicative) notes.push('indicative');
+    return { ...r, value, note: notes.join(', ') };
+  });
+}
+
+/**
+ * How a site's resource ceiling should read on its row, in the case where the
+ * engine reported it without applying it.
  *
- * Returns null when there is nothing to report — no milsov quota, or a ceiling
- * above the tax the site actually reaches, where the upkeep is already covered.
+ * A ceiling left out of the ranking is the right call for ranking and the wrong
+ * one for silence: a site whose military sovereignty is unaffordable would
+ * otherwise sit in the table looking clean. So the row says so, and says that it
+ * did not affect the ranking. An applied ceiling needs none of this — it is in
+ * T_max, and the binding column already names it.
+ *
+ * Returns null when there is nothing to report — an applied ceiling, no milsov
+ * quota, or one above the tax the site reaches, where the upkeep is covered.
  *
  * @returns {{text: string, title: string} | null}
  */
@@ -216,6 +258,34 @@ export function parseRpCalibration(observed, atTax) {
   const rp = clampNumber(observed, { min: 0, fallback: 0 });
   if (rp <= 0) return null;
   return { observedRpPerHour: rp, atTax: clampNumber(atTax, { min: 0, max: 100, fallback: 0 }) };
+}
+
+/**
+ * Read the basic-resource yield calibration. One reading is enough for all four,
+ * since they share a per-plot yield — so it asks for the reading's own plot
+ * count and booster state rather than borrowing the settle allocation, which
+ * describes the site being planned and not the city the reading came from.
+ *
+ * A reading without plots cannot be divided and is treated as absent, which
+ * falls back to the default yield rather than to nothing.
+ */
+export function parseResourceCalibration({ observed, atTax, plots, booster }) {
+  const perHour = clampNumber(observed, { min: 0, fallback: 0 });
+  const p = clampNumber(plots, { min: 0, max: PLOT_TOTAL, integer: true, fallback: 0 });
+  if (perHour <= 0 || p <= 0) return null;
+  return {
+    observedPerHour: perHour,
+    atTax: clampNumber(atTax, { min: 0, max: 100, fallback: 0 }),
+    plots: p,
+    booster: !!booster,
+  };
+}
+
+/** Read the four booster tick-boxes, defaulting each to off. */
+export function parseResourceBoosters(raw) {
+  const out = {};
+  for (const res of BASIC_RESOURCES) out[res] = !!raw?.[res];
+  return out;
 }
 
 /**
@@ -274,6 +344,19 @@ export const SETTINGS_FIELDS = [
   { key: 'allembine', group: 'Research', label: 'Allembine Research', type: 'checkbox' },
   { key: 'overflowingInsight', group: 'Research', label: 'Overflowing Insight (x1.5)', type: 'checkbox' },
   { key: 'rpCalibration', group: 'Research', label: 'RP calibration override', type: 'calibration' },
+
+  {
+    key: 'resourceBoosters',
+    group: 'Basic resources',
+    label: 'Booster buildings at L20',
+    type: 'boosters',
+  },
+  {
+    key: 'resourceCalibration',
+    group: 'Basic resources',
+    label: 'Per-plot yield calibration',
+    type: 'resourceCalibration',
+  },
 
   { key: 'chancery', group: 'Sovereignty', label: 'Chancery of Estates (x0.6 upkeep)', type: 'checkbox' },
   { key: 'rClaim', group: 'Sovereignty', label: 'Claim radius R_claim', type: 'number', min: 1, max: 6, integer: true, fallback: 2 },
@@ -335,6 +418,46 @@ function calibrationFieldHtml(f, cal) {
       <div class="sov-f"><span>…at tax (%)</span>
         <input type="number" data-cal="atTax" min="0" max="100" step="any"
           value="${cal?.atTax ?? 0}"></div>
+    </div>`;
+}
+
+/** One tick-box per booster, named after the building the user would recognise. */
+function boostersFieldHtml(f, boosters) {
+  const boxes = BASIC_RESOURCES.map((res) =>
+    `<label class="sov-f" data-booster-row="${res}"><span>${RESOURCE_BOOSTERS[res]} — ${res}
+      (+${RESOURCE_BOOSTER_BONUS})</span>
+      <input type="checkbox" data-booster="${res}"${boosters?.[res] ? ' checked' : ''}></label>`).join('');
+  return `<div class="sov-f-block" data-key="${f.key}">
+      <p class="sov-hint">${escapeHtml(f.label)} — each adds ${RESOURCE_BOOSTER_BONUS} points to that
+        resource's production, the same way the Flour Mill adds to food, and so is
+        worth ${RESOURCE_BOOSTER_BONUS} points of tax headroom against its ceiling.</p>
+      ${boxes}
+    </div>`;
+}
+
+/**
+ * The yield reading. Everything the back-solve needs travels with the reading
+ * itself, so a figure copied off a city that is not the one being planned still
+ * divides out correctly.
+ */
+function resourceCalibrationFieldHtml(f, cal) {
+  return `<div class="sov-f-block" data-key="${f.key}">
+      <p class="sov-hint">${escapeHtml(f.label)} — optional. The default yield is measured, so
+        this is only for a city that reads differently; one reading from any city
+        fixes all four resources. Read an hourly rate off the city, then say what
+        produced it.</p>
+      <div class="sov-f"><span>Observed /hr of one resource</span>
+        <input type="number" data-res-cal="observed" min="0" step="any"
+          placeholder="blank = off"${attr('value', cal?.observedPerHour)}></div>
+      <div class="sov-f"><span>…at tax (%)</span>
+        <input type="number" data-res-cal="atTax" min="0" max="100" step="any"
+          value="${cal?.atTax ?? 0}"></div>
+      <div class="sov-f"><span>…from this many plots</span>
+        <input type="number" data-res-cal="plots" min="0" max="${PLOT_TOTAL}" step="1"
+          value="${cal?.plots ?? 0}"></div>
+      <div class="sov-f"><span>…with that booster at L20</span>
+        <input type="checkbox" data-res-cal="booster"${cal?.booster ? ' checked' : ''}></div>
+      <p class="sov-hint sov-yield-read"></p>
     </div>`;
 }
 
@@ -408,6 +531,8 @@ function fieldHtml(f, settings) {
     case 'select': return selectFieldHtml(f, v);
     case 'plots': return plotsFieldHtml(f, v);
     case 'calibration': return calibrationFieldHtml(f, v);
+    case 'boosters': return boostersFieldHtml(f, v);
+    case 'resourceCalibration': return resourceCalibrationFieldHtml(f, v);
     case 'milsov': return milsovFieldHtml(f, v);
     default: return numberFieldHtml(f, v ?? f.fallback);
   }
@@ -531,6 +656,22 @@ export function createPanel({ onScan, onExport }) {
             form.querySelector('[data-cal="atTax"]').value,
           );
           break;
+        case 'boosters': {
+          const raw = {};
+          for (const res of BASIC_RESOURCES) {
+            raw[res] = form.querySelector(`[data-booster="${res}"]`).checked;
+          }
+          out.resourceBoosters = parseResourceBoosters(raw);
+          break;
+        }
+        case 'resourceCalibration':
+          out.resourceCalibration = parseResourceCalibration({
+            observed: form.querySelector('[data-res-cal="observed"]').value,
+            atTax: form.querySelector('[data-res-cal="atTax"]').value,
+            plots: form.querySelector('[data-res-cal="plots"]').value,
+            booster: form.querySelector('[data-res-cal="booster"]').checked,
+          });
+          break;
         default:
           out[f.key] = clampNumber(form.querySelector(`input[data-key="${f.key}"]`).value, f);
       }
@@ -562,6 +703,17 @@ export function createPanel({ onScan, onExport }) {
         case 'calibration':
           form.querySelector('[data-cal="observedRpPerHour"]').value = v?.observedRpPerHour ?? '';
           form.querySelector('[data-cal="atTax"]').value = v?.atTax ?? 0;
+          break;
+        case 'boosters':
+          for (const res of BASIC_RESOURCES) {
+            form.querySelector(`[data-booster="${res}"]`).checked = !!v?.[res];
+          }
+          break;
+        case 'resourceCalibration':
+          form.querySelector('[data-res-cal="observed"]').value = v?.observedPerHour ?? '';
+          form.querySelector('[data-res-cal="atTax"]').value = v?.atTax ?? 0;
+          form.querySelector('[data-res-cal="plots"]').value = v?.plots ?? 0;
+          form.querySelector('[data-res-cal="booster"]').checked = !!v?.booster;
           break;
         default:
           form.querySelector(`input[data-key="${f.key}"]`).value = v ?? f.fallback ?? '';
@@ -598,6 +750,14 @@ export function createPanel({ onScan, onExport }) {
     form.querySelector('.sov-derived').innerHTML = capitalDerivedHtml(s);
     form.querySelector('.sov-derived-food').textContent =
       `B_other = ${computeBOther(s)} food points.`;
+
+    // The back-solved yield, shown as it is entered — a reading that produces an
+    // implausible figure is far easier to spot here than in a results row.
+    const { yield: y } = computeBasicYield(s);
+    form.querySelector('.sov-yield-read').textContent = s.resourceCalibration
+      ? `Y = ${y.toFixed(0)}/hr per plot at L20, from your reading.`
+      : `Y = ${y.toFixed(0)}/hr per plot at L20, the measured default. `
+        + 'Fill this in only for a city that reads differently.';
 
     // What the quota actually asks for, in the units the ceiling is charged in.
     // The row controls say what each building is; this says what they add up to.
@@ -768,6 +928,19 @@ function toggleDetail(row, result) {
       m.buildingLevel} ${escapeHtml(sovStructure(m).name)} — ${m.rp.toFixed(0)} RP, ${
       cost}, food ${m.food}</li>`;
   }).join('');
+  // The balance sheet: what running this plan leaves per hour, at its own tax.
+  const rows = surplusRows(result.surplus, result.binding);
+  const balance = rows.length
+    ? `<table class="sov-balance"><thead><tr><th>Per hour at ${
+      result.tMax.toFixed(1)}% tax</th><th>Left over</th><th></th></tr></thead><tbody>${
+      rows.map((r) => `<tr><td>${r.label}</td><td class="${
+        r.value < 0 ? 'sov-bad' : 'sov-ok'}">${
+        Math.round(r.value).toLocaleString('en-GB')}</td><td class="sov-hint">${r.note}</td></tr>`).join('')
+    }</tbody></table>${result.surplus.upkeep
+      ? `<p class="sov-hint">Each of wood, clay, iron and stone is already net of the ${
+        result.surplus.upkeep.toLocaleString('en-GB')}/hr of milsov structure upkeep.</p>`
+      : ''}`
+    : '';
   // Milsov normally sits on the nearest tiles, so a plan that reaches past them
   // has to say why rather than looking like a mistake.
   const traded = result.milsovTraded
@@ -785,12 +958,18 @@ function toggleDetail(row, result) {
   const ceiling = result.resImpossible
     ? `is impossible — the settle allocation has no ${result.resBinding} plots`
     : `is ${result.resCeiling?.toFixed(1)}% on ${result.resBinding}`;
-  const res = result.resIndicative
-    ? `<p class="sov-flag">Resource ceiling ${ceiling}. Indicative only — per-plot`
-      + ' yields unmeasured (mechanics open item 12), so it is reported here and'
-      + ' left out of T_max and the ranking.</p>'
-    : '';
-  tr.innerHTML = `<td colspan="7"><ul>${tiles}${mil}</ul>${traded}${advice}${res}</td>`;
+  // Stated whenever there is one to state. An indicative ceiling has to explain
+  // why it did not rank the site; a measured one did rank it, and the figure is
+  // still what the user judges the quota by.
+  const res = !Number.isFinite(result.resCeiling) && !result.resImpossible
+    ? ''
+    : result.resIndicative
+      ? `<p class="sov-flag">Resource ceiling ${ceiling}. Indicative only — the per-plot`
+        + ' yield behind it is not measured, so it is reported here and left out of'
+        + ' T_max and the ranking.</p>'
+      : `<p class="sov-hint">Resource ceiling ${ceiling}, from a measured per-plot yield —`
+        + ' applied to T_max like the food and research ceilings.</p>';
+  tr.innerHTML = `<td colspan="7"><ul>${tiles}${mil}</ul>${balance}${traded}${advice}${res}</td>`;
   row.after(tr);
 }
 

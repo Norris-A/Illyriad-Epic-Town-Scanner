@@ -15,16 +15,22 @@ import {
   milsovStructureCounts,
   milsovTotalText,
   parseRpCalibration,
+  parseResourceBoosters,
+  parseResourceCalibration,
+  surplusRows,
   settingsFormHtml,
 } from '../src/panel.js';
 import {
   DEFAULT_SETTINGS,
+  BASIC_RESOURCES,
+  BASIC_YIELD_L20,
+  FARM_YIELD_L20,
   SOV_STRUCTURES,
   SOV_QUOTA_STRUCTURES,
   SOV_STRUCTURE_BY_KEY,
   DEFAULT_SOV_STRUCTURE,
 } from '../src/constants.js';
-import { computeK, computeRRef, milsovUpkeep } from '../src/scoring.js';
+import { computeK, computeRRef, milsovUpkeep, computeBasicYield } from '../src/scoring.js';
 
 /** The structure a row that names none falls back to — the charged kind. */
 const prod = DEFAULT_SOV_STRUCTURE;
@@ -64,6 +70,9 @@ test('the markup carries every hook createPanel reads back out of it', () => {
     'sov-milsov-rows', 'sov-milsov-empty', 'sov-milsov-add', 'sov-milsov-del', 'sov-milsov-row',
     'class="sov-reset sec"', 'class="sov-derived"', 'sov-derived-food',
     'data-cal="observedRpPerHour"', 'data-cal="atTax"',
+    'data-res-cal="observed"', 'data-res-cal="atTax"', 'data-res-cal="plots"',
+    'data-res-cal="booster"', 'sov-yield-read',
+    ...BASIC_RESOURCES.map((r) => `data-booster="${r}"`),
     'data-milsov="sovLevel"', 'data-milsov="buildingLevel"', 'data-milsov="structure"',
     'sov-milsov-total',
     ...PLOT_KEYS.map((p) => `data-plot="${p}"`),
@@ -77,7 +86,7 @@ test('the markup carries every hook createPanel reads back out of it', () => {
       assert.ok(html.includes(`<input type="checkbox" data-key="${f.key}"`), `${f.key} is not a checkbox input`);
     } else if (f.type === 'select') {
       assert.ok(html.includes(`<select data-key="${f.key}"`), `${f.key} is not a select`);
-    } else if (!['plots', 'milsov', 'calibration'].includes(f.type)) {
+    } else if (!['plots', 'milsov', 'calibration', 'boosters', 'resourceCalibration'].includes(f.type)) {
       assert.ok(html.includes(`<input type="number" data-key="${f.key}"`), `${f.key} is not a number input`);
     }
   }
@@ -311,6 +320,56 @@ test('the structure picker offers both classes and no food structure', () => {
 
 test('the default quota is empty, which is what keeps T_res non-binding', () => {
   assert.deepEqual(normaliseMilsovQuota(DEFAULT_SETTINGS.milsovQuota), []);
+});
+
+// --- basic resource boosters and the yield calibration ---
+
+test('the four boosters read back as booleans, defaulting to off', () => {
+  assert.deepEqual(parseResourceBoosters({}), { wood: false, clay: false, iron: false, stone: false });
+  assert.deepEqual(parseResourceBoosters({ stone: true, iron: 'yes' }),
+    { wood: false, clay: false, iron: true, stone: true });
+  assert.deepEqual(parseResourceBoosters(undefined), parseResourceBoosters({}));
+  assert.deepEqual(DEFAULT_SETTINGS.resourceBoosters, parseResourceBoosters({}),
+    'the default city has none of them');
+});
+
+test('a reading without plots cannot be divided, so it is treated as absent', () => {
+  assert.equal(parseResourceCalibration({ observed: '', atTax: '', plots: '', booster: false }), null);
+  assert.equal(parseResourceCalibration({ observed: '5000', plots: '0' }), null);
+  assert.equal(parseResourceCalibration({ observed: '0', plots: '5' }), null);
+  // An absent reading falls back to the measured default, not to nothing.
+  const fallback = computeBasicYield({ resourceCalibration: null });
+  assert.equal(fallback.measured, true);
+  close(fallback.yield, BASIC_YIELD_L20, 1e-9);
+});
+
+test('a reading back-solves the per-plot yield, dividing out tax and booster', () => {
+  // 5 plots at 25% tax with no booster: M = 100, so 15,000/hr is 3,000 a plot.
+  const plain = parseResourceCalibration({ observed: '15000', atTax: '25', plots: '5' });
+  assert.deepEqual(plain, { observedPerHour: 15000, atTax: 25, plots: 5, booster: false });
+  const yPlain = computeBasicYield({ resourceCalibration: plain });
+  close(yPlain.yield, 3000);
+  assert.equal(yPlain.measured, true);
+
+  // The same output with the booster running means a LOWER underlying yield:
+  // M = 140, so the booster was doing 40 of the 140 points of the work.
+  const boosted = parseResourceCalibration({ observed: '15000', atTax: '25', plots: '5', booster: true });
+  close(computeBasicYield({ resourceCalibration: boosted }).yield, (15000 * 100) / (5 * 140));
+});
+
+test('the default yield is the measured 2,538, not the farm figure', () => {
+  const { yield: y, measured } = computeBasicYield(DEFAULT_SETTINGS);
+  assert.equal(measured, true);
+  close(y, 2538, 1e-9);
+  assert.notEqual(BASIC_YIELD_L20, FARM_YIELD_L20,
+    'borrowing the farm yield is the mistake this constant exists to end');
+
+  // 25% tax with no booster is M = 100, so a reading taken there IS the yield —
+  // which is why a figure quoted as "per hour per plot" needs no adjustment.
+  const atQuarter = computeBasicYield({
+    resourceCalibration: { observedPerHour: 2538 * 5, atTax: 25, plots: 5, booster: false },
+  });
+  close(atQuarter.yield, BASIC_YIELD_L20, 1e-9);
 });
 
 // --- RP calibration override ---

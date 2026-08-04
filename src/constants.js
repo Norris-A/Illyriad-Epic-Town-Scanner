@@ -3,7 +3,7 @@
 // the ones to re-check when output looks wrong.
 
 export const PRODUCTION_BASE = 125;        // [V] production% = 125 - tax
-export const FARM_YIELD_L20 = 2014;        // [F] food/hr per farm plot at L20
+export const FARM_YIELD_L20 = 2014;        // [V] food/hr per farm plot at L20
 export const GOLD_PER_TAX_POP = 0.04;      // [F] Gold_income = 0.04 * T * Pop
 
 export const CLAIM_RP_PER_LEVEL_DISTANCE = 10;    // [F] RP/hr = 10 * L * d
@@ -71,6 +71,25 @@ export const DEFAULT_SOV_STRUCTURE = 'trainingGround';
 // Sovereignty levels are written in Roman numerals wherever a level is shown.
 export const SOV_LEVEL_ROMAN = ['I', 'II', 'III', 'IV', 'V'];
 
+// The four basic resources, in the order the panel shows them. Food is scored
+// on its own everywhere and is deliberately not in this list.
+export const BASIC_RESOURCES = ['wood', 'clay', 'iron', 'stone'];
+
+// [V] The level 20 booster building for each, worth the same +40 points the
+// Flour Mill gives food — additive on the production percentage, not a
+// multiplier, so it reads as 40 points of tax headroom.
+export const RESOURCE_BOOSTERS = {
+  wood: 'Carpentry',
+  clay: 'Kiln',
+  iron: 'Foundry',
+  stone: 'Stonemason',
+};
+export const RESOURCE_BOOSTER_BONUS = 40;
+
+// [V] Per-plot yield at L20, the same for all four basic resources. Multiplied
+// by the plot count and the production percentage to give hourly output.
+export const BASIC_YIELD_L20 = 2538;
+
 export const CITY_PROFILES = {
   standard: 32200, // [V]
   beer: 30800,     // [V]
@@ -111,6 +130,12 @@ export const DEFAULT_SETTINGS = {
   allembine: true,
   overflowingInsight: false,
   rpCalibration: null,     // { observedRpPerHour, atTax } back-solves R_ref
+  // Which of the four booster buildings the city has at level 20. Each is worth
+  // RESOURCE_BOOSTER_BONUS points against that resource's ceiling.
+  resourceBoosters: { wood: false, clay: false, iron: false, stone: false },
+  // { observedPerHour, atTax, plots, booster } back-solves the per-plot yield,
+  // the way rpCalibration back-solves R_ref. Null uses BASIC_YIELD_L20.
+  resourceCalibration: null,
   chancery: false,
   rClaim: 2,
   maxBuildings: 20,

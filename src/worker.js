@@ -1,5 +1,5 @@
 // Web Worker entry. Bundled to a string by build.mjs and instantiated from a
-// Blob URL — there is no file to load from (PRD §1.2 forbids network requests).
+// Blob URL — there is no file to load from, and fetching one would be a request.
 
 import { scoreSite } from './scoring.js';
 import {
@@ -34,7 +34,11 @@ self.onmessage = (e) => {
         excluded.incomplete = (excluded.incomplete ?? 0) + 1;
       } else {
         const plan = scoreSite({ neighbours, settings });
-        if (plan && plan.tMax >= settings.tMin) {
+        if (plan && plan.milsovShortfall) {
+          // Counted apart from below-tmin: the site is fine and its tax is fine,
+          // it just does not host enough military to be worth the trip.
+          excluded['below-milsov'] = (excluded['below-milsov'] ?? 0) + 1;
+        } else if (plan && plan.tMax >= settings.tMin) {
           // `rs` travels with the result so the panel's Prefill button can load
           // the site's actual allocation into the settle-plot fields.
           results.push({ key, ...parseKey(key), rs: parseRs(tile), ...plan });
@@ -49,7 +53,7 @@ self.onmessage = (e) => {
     }
   }
 
-  // PRD §3.7 — T_max descending, secondary on Gold_net.
+  // T_max descending, secondary on Gold_net.
   results.sort((a, b) => b.tMax - a.tMax || b.goldNet - a.goldNet);
 
   self.postMessage({

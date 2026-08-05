@@ -1,5 +1,5 @@
 // Passive observation of map payloads the game has ALREADY requested.
-// PRD §1.2: this module is a reader, never a requester. It must contain no
+// This module is a reader, never a requester. It must contain no
 // fetch/XHR/WebSocket construction of its own — only wrappers that observe.
 //
 // Before relying on the interceptor, probeInPageData() checks whether the client
@@ -12,7 +12,7 @@ export function getLatestPayload() {
   return latestPayload;
 }
 
-/** PRD §1.2: cleared on Scan, replaced on every new map response. Never persisted. */
+/** Cleared on Scan, replaced on every new map response. Never persisted. */
 export function clearPayload() {
   latestPayload = null;
 }
@@ -37,7 +37,7 @@ function accept(obj) {
 }
 
 /**
- * Step one, per PRD §1.2. Walks a shortlist of plausible in-page globals and the
+ * Walks a shortlist of plausible in-page globals and the
  * mapSVG element for already-parsed map data.
  *
  * The candidate names are guesses — run this in the console on a live map and

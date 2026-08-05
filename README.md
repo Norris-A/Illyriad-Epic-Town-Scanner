@@ -38,13 +38,31 @@ and the settings-form validators.
 | Path | Role |
 |---|---|
 | `src/constants.js` | Game constants, each traced to a mechanics §; confidence markers preserved |
-| `src/scoring.js` | Pure engine — the three ceilings, knapsack, frontier walk. No DOM. Imported by both the worker and the tests |
+| `src/scoring.js` | Pure engine — the three ceilings, the food knapsack and frontier walk, then the military plan fitted into what they leave. No DOM. Imported by both the worker and the tests |
 | `src/payload.js` | Payload reading and the §3.2/§3.3 filters |
 | `src/capture.js` | Passive payload observation. Reader only — no requests |
 | `src/worker.js` | Web Worker entry; bundled to a string and inlined |
 | `src/panel.js` | Side panel UI (§5), the §4 settings form, and the CSV writer |
 | `src/main.js` | Userscript entry; wires the three together |
 | `build.mjs` | Two-pass esbuild: worker → string → main bundle |
+
+## How a site is scored
+
+**Food first, alone.** It is the only claim that gives the city anything back,
+and the tax it can sustain is the site's answer (PRD §3.4–§3.5).
+
+**Military sovereignty then takes what is left over** — the research the food
+plan did not spend, the tiles it did not claim, the building slots it did not
+use, and what the city can still afford to run. It never costs the site a point
+of tax, so the military column never moves the ranking. You pick the structure;
+the tool works out how many, at what levels, and on which squares.
+
+That last part is a real trade rather than a rule of thumb. Research cost per
+point of bonus is `2 × distance` at *any* level, so research wants the plan
+concentrated on near tiles — while the hourly upkeep table is convex
+(150/300/600/1,200/2,400), so upkeep wants it spread over many low-level
+buildings. Which wins depends on the site, and each site says what it chose and
+what one more point of tax would have bought (§3.6).
 
 ## Status
 
@@ -56,11 +74,13 @@ Known gaps, all deliberate:
 
 - **`LIBRARY_BASE_RP_L20` is a placeholder** chosen to reproduce the §6 example
   (mechanics open item 2). Use the RP calibration override for real figures.
-- **`T_res` is indicative only** — per-plot yields for wood/clay/iron/stone are
-  unmeasured (mechanics open item 12). It annotates rows and is deliberately
-  kept out of `T_max`, so it cannot filter a site out on a borrowed figure
-  (PRD §3.7); it binds again once the yields land. Food-only scans are
-  unaffected.
+- **Resource sovereignty is not placed.** Logging Camp, Earthworks, Mineshaft
+  and Gravel Pit are costed correctly wherever they appear but are absent from
+  the picker. They pay their claim's RP and gold like any other claim, exactly as
+  a Farmstead or Fishery does — what they do not pay is the hourly
+  wood/clay/iron/stone bill a military structure carries. With no hourly bill to
+  limit it, nothing would stop the planner claiming every spare tile with one,
+  and the host tile's resource rating that would justify doing so is not scored.
 - **The settings form has no automated test of its DOM.** `createPanel` cannot
   run under Node, so the field spec, the validators and the markup contract are
   tested but the event wiring, gating and Prefill are not. Adding jsdom would

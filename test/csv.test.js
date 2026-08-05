@@ -1,20 +1,31 @@
-// CSV export (PRD §5). panel.js only touches the DOM inside createPanel, so the
+// CSV export. panel.js only touches the DOM inside createPanel, so the
 // exporter is importable here without a browser.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { toCsv, csvField, resFlag } from '../src/panel.js';
+import { toCsv, csvField, resFlag, milsovPlanText } from '../src/panel.js';
 
-const COLUMNS = 14;
+const COLUMNS = 17;
 
 // The no-milsov shape: T_res is Infinity and carries no flag, which is what
 // scoreSite returns for the common case.
 const row = (over = {}) => ({
   x: 360, y: -3178, tMax: 56.6, binding: 'food', sFood: 100,
-  uRp: 1000, uGold: 10000, goldNet: 62901, quotaMet: true, milsovNote: null,
+  uRp: 1000, uGold: 10000, goldNet: 62901,
+  milsov: [], milsovBonus: 0, milsovUpkeep: 0, milsovRp: 0, milsovPrice: 0,
   resCeiling: Infinity, resIndicative: false, resBinding: null, resImpossible: false,
-  milsovTraded: false,
+  ...over,
+});
+
+/** A plan with military sovereignty on it, as scoreSite returns one. */
+const withMil = (over = {}) => row({
+  milsov: [
+    { buildingLevel: 3, sovLevel: 3 },
+    { buildingLevel: 1, sovLevel: 1 },
+    { buildingLevel: 1, sovLevel: 1 },
+  ],
+  milsovBonus: 25, milsovUpkeep: 900, milsovRp: 120.4, milsovPrice: 5,
   ...over,
 });
 
@@ -29,32 +40,46 @@ test('fields are quoted only when they need it (RFC 4180)', () => {
   assert.equal(csvField('two\nlines'), '"two\nlines"');
 });
 
-test('a row without an advisory keeps its columns unquoted and trailing-empty', () => {
+test('a food-only row keeps its columns unquoted and trailing-empty', () => {
   const [head, line] = toCsv([row()]).split('\n');
   assert.equal(head.split(',').length, COLUMNS);
-  assert.equal(head.split(',').at(-1), 'milsov_advisory');
-  assert.equal(line, '360,-3178,56.60,food,100,1000,10000,62901,true,false,,,,');
+  assert.equal(head.split(',').at(-1), 'milsov_plan');
+  assert.equal(line, '360,-3178,56.60,food,100,1000,10000,62901,0,0,0,0,0,,,,');
 });
 
-test('the advisory note survives export with its comma intact', () => {
-  // The real §3.6 wording — the upkeep clause is what puts a comma in it.
-  const note = '2x Sov III would cost less research than your 3x Sov II and give '
-    + 'the same total bonus, at higher structure upkeep.';
-  const line = toCsv([row({ milsovNote: note })]).split('\n')[1];
-  assert.ok(line.endsWith(`,"${note}"`), 'the note must be quoted, not split');
+test('the military plan survives export with its commas intact', () => {
+  const line = toCsv([withMil()]).split('\n')[1];
+  const plan = milsovPlanText(withMil());
+  assert.ok(plan.includes(','), 'precondition: the plan text carries a comma');
+  assert.ok(line.endsWith(`,"${plan}"`), 'the plan must be quoted, not split');
   // Column count is what a naive join would have broken.
   assert.equal(cells(line).length, COLUMNS);
 });
 
-test('a traded milsov hosting is auditable from the export', () => {
-  const col = (r) => {
-    const csv = toCsv([r]).split('\n');
-    return csv[1].split(',')[csv[0].split(',').indexOf('milsov_traded')];
-  };
-  assert.equal(col(row({ milsovTraded: true })), 'true');
-  assert.equal(col(row()), 'false');
-  // A result from before the field existed must not export as blank.
-  assert.equal(col(row({ milsovTraded: undefined })), 'false');
+test('what the engine chose is auditable from the export', () => {
+  const csv = toCsv([withMil()]).split('\n');
+  const head = csv[0].split(',');
+  const line = csv[1].split(',');
+  const col = (name) => line[head.indexOf(name)];
+  assert.equal(col('milsov_buildings'), '3');
+  assert.equal(col('milsov_bonus'), '25');
+  assert.equal(col('milsov_upkeep'), '900');
+  assert.equal(col('milsov_RP'), '120');
+  assert.equal(col('milsov_price'), '5');
+});
+
+test('a result from before these fields existed still exports as zero', () => {
+  const csv = toCsv([{ ...row(), milsov: undefined, milsovBonus: undefined,
+    milsovUpkeep: undefined, milsovRp: undefined, milsovPrice: undefined }]).split('\n');
+  assert.equal(csv[1], '360,-3178,56.60,food,100,1000,10000,62901,0,0,0,0,0,,,,');
+});
+
+test('the plan text reads as a level split, not as a tile list', () => {
+  assert.equal(
+    milsovPlanText(withMil()),
+    '1x Sov III + 2x Sov I — +25% production, 900/hr of each of wood, clay, iron and stone.',
+  );
+  assert.equal(milsovPlanText(row()), '', 'nothing placed, nothing to say');
 });
 
 // --- the resource ceiling travels with the row ------------------------------
@@ -84,7 +109,7 @@ test('a zero-plot resource exports as impossible, not as a numeric sentinel', ()
   assert.equal(cells(toCsv([r]).split('\n')[1]).length, COLUMNS);
 });
 
-test('no milsov quota exports three blanks, not a ceiling of Infinity', () => {
+test('no military sovereignty exports three blanks, not a ceiling of Infinity', () => {
   assert.deepEqual(resCells(row()), { T_res: '', res_binding: '', res_status: '' });
 });
 

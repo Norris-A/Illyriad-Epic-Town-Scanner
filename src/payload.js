@@ -1,5 +1,5 @@
-// Reading the map payload — PRD §2, mechanics §1.
-// Rule zero: never classify on the `t` sprite name (mechanics §1.3). Flags and
+// Reading the map payload.
+// Rule zero: never classify on the `t` sprite name. Flags and
 // `rs` only. Read food from rs[4]; `i` is for the descriptor lookup only.
 
 /** Tile keys are "y|x" — y first. Town strings in `t` are "x|y". Don't mix them up. */
@@ -27,7 +27,7 @@ export function foodOf(tile) {
 
 /**
  * Index the auxiliary blocks into lookups keyed by "y|x".
- * mechanics §1.5: block coverage is NOT aligned with `data` — the `s` block can
+ * Block coverage is NOT aligned with `data` — the `s` block can
  * reference tiles outside the returned grid. Never infer presence across blocks.
  */
 export function indexPayload(payload) {
@@ -46,14 +46,14 @@ export function indexPayload(payload) {
   return { claims, towns, unknownTerrain };
 }
 
-/** PRD §3.3 — is this neighbour available to claim? */
+/** Is this neighbour available to claim? */
 export function isClaimable(tile, key, idx, settings) {
   if (!tile || tile.sov !== 1) return false;
   if (tile.imp || tile.brg) return false;
 
   const claim = idx.claims.get(key);
   if (claim) {
-    // sov:1 means eligible, not available (mechanics §1.5) — cross-check `s`.
+    // sov:1 means eligible, not available — cross-check `s`.
     const rd = claim.rd;
     if (rd === 'Yours' && settings.ownClaimsAvailable) return true;
     if (rd === 'Alliance' && settings.allianceClaimsAvailable) return true;
@@ -62,7 +62,7 @@ export function isClaimable(tile, key, idx, settings) {
   return true;
 }
 
-/** PRD §3.2 — does this tile qualify as a candidate settle site? */
+/** Does this tile qualify as a candidate settle site? */
 export function isCandidateSite(tile, key, idx, settings, towns) {
   if (!tile || tile.set !== 1) return { ok: false, reason: 'not-settleable' };
   if (idx.claims.has(key)) return { ok: false, reason: 'already-claimed' };
@@ -83,7 +83,7 @@ export function isCandidateSite(tile, key, idx, settings, towns) {
 /**
  * Town positions from the `t` block. The pipe string is
  * "name|townID|x|y|population|playerID|..." — x|y, note the inversion vs keys.
- * Several positions remain unidentified (mechanics §1.5); only read what's known.
+ * Several positions remain unidentified; only read what's known.
  */
 export function extractTowns(payload) {
   const out = [];
@@ -100,8 +100,8 @@ export function extractTowns(payload) {
 
 /**
  * Collect the R_claim neighbourhood of a site.
- * Returns null if ANY tile in the ring is missing — PRD §3.1 forbids scoring on
- * partial data, and such sites are reported separately as Incomplete.
+ * Returns null if ANY tile in the ring is missing — never score on
+ * partial data; such sites are reported separately as Incomplete.
  */
 export function neighbourhood(payload, key, rClaim, idx, settings) {
   const { x, y } = parseKey(key);

@@ -73,7 +73,7 @@ function runScan() {
     panel.renderIncomplete(msg.incomplete);
     panel.setStatus('');
     worker.terminate();
-    // PRD §1.2: nothing is retained across views.
+    // Nothing is retained across views.
     clearPayload();
   };
 

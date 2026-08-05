@@ -1,4 +1,4 @@
-// Side panel UI — PRD §5. v1 is panel-only; the map overlay is v2 and
+// Side panel UI. v1 is panel-only; the map overlay is v2 and
 // deliberately deferred (it couples to the game DOM and will break).
 //
 // Coordinates are DISPLAYED as "x|y" to match in-game convention, even though
@@ -15,7 +15,7 @@ import {
   NATURES_BOUNTY_BY_RETREATS,
   FAMINE_MANAGEMENT,
   SOIL_ENRICHMENT,
-  SOV_QUOTA_STRUCTURES,
+  MILSOV_STRUCTURES,
   SOV_LEVEL_ROMAN,
   BASIC_RESOURCES,
   RESOURCE_BOOSTERS,
@@ -26,9 +26,7 @@ import {
   computeK,
   computeBasicYield,
   sovStructure,
-  isProductionStructure,
   structureUpkeep,
-  milsovUpkeep,
 } from './scoring.js';
 
 const CSS = `
@@ -55,7 +53,6 @@ const CSS = `
 .sov-row{cursor:pointer}
 .sov-detail{background:#222;font-size:11px}
 .sov-flag{color:#e94}
-.sov-advice{color:#6bf}
 .sov-collapsed .sov-body{display:none}
 .sov-selected>td{background:#243}
 .sov-form fieldset{border:1px solid #333;margin:0 0 8px;padding:4px 8px 6px}
@@ -77,15 +74,6 @@ const CSS = `
 .sov-derived .sov-off{color:#888}
 .sov-derived .sov-on{color:#6c6}
 .sov-hint{color:#a9a9a9;font-size:11px;margin:2px 0}
-/* Three controls plus a button do not fit one 420px line, so the row wraps and
-   the structure name — the longest of them — takes what is left, dropping to a
-   line of its own rather than being squeezed to nothing. */
-.sov-milsov-row{display:flex;gap:4px;margin:2px 0;align-items:center;flex-wrap:wrap}
-.sov-milsov-row select{min-width:0}
-.sov-milsov-row select[data-milsov=structure]{flex:1 1 150px}
-.sov-milsov-row span{color:#a9a9a9;font-size:11px;white-space:nowrap}
-.sov-milsov-row button{padding:2px 8px}
-.sov-milsov-total{color:#b9c4b9}
 .sov-balance{margin:4px 0}
 .sov-balance td:nth-child(2){font-variant-numeric:tabular-nums}
 `;
@@ -134,51 +122,40 @@ export function validatePlots(raw) {
 }
 
 /**
- * Turn the quota rows into the `[{structure, sovLevel, buildingLevel}]` the
- * engine expects — **one entry per building**, since one row is one building.
- *
- * The building level is clamped to its claim's sovereignty level, which is the
- * game's own rule, and defaults to it when blank. The structure goes through
- * sovStructure, so a blank or unknown one lands on the same default the engine
- * would have charged it as. Rows are returned highest first, the order the
- * engine assigns in, so the form lists them the way they will be applied.
+ * Read the military structure choice. Blank is "none", which is a food-only
+ * scan; anything the structure table does not know is refused rather than
+ * silently charged as the default, since the only way to type one here is for
+ * the picker and the table to have drifted apart.
  */
-export function normaliseMilsovQuota(rows) {
-  const out = [];
-  for (const row of rows ?? []) {
-    const sovLevel = clampNumber(row?.sovLevel, { min: 1, max: 5, integer: true, fallback: 0 });
-    if (sovLevel < 1) continue;
-    const asked = clampNumber(row?.buildingLevel, { min: 1, max: 5, integer: true, fallback: sovLevel });
-    out.push({
-      structure: sovStructure(row).key,
-      sovLevel,
-      buildingLevel: Math.min(asked, sovLevel),
-    });
-  }
-  return out.sort((a, b) => b.sovLevel - a.sovLevel || b.buildingLevel - a.buildingLevel);
-}
-
-/** How the quota's rows split between the charged kind and the free kind. */
-export function milsovStructureCounts(quota) {
-  const production = (quota ?? []).filter(isProductionStructure).length;
-  return { production, resource: (quota ?? []).length - production };
+export function parseMilsovStructure(raw) {
+  const key = String(raw ?? '').trim();
+  return MILSOV_STRUCTURES.some((s) => s.key === key) ? key : null;
 }
 
 /**
- * What the quota costs per hour, for the read-out under the rows. A quota with
- * no Production Structure in it costs nothing per hour and has to say so —
- * quoting a figure of 0/hr of four resources reads like an error, and quoting
- * one that is not charged is worse.
+ * The plan's military sovereignty, in one line — the count, the level split and
+ * what it costs per hour. Levels descend, since that is the order the plan puts
+ * them on the tiles.
  */
-export function milsovTotalText(quota) {
-  const { resource } = milsovStructureCounts(quota);
-  const upkeep = milsovUpkeep(quota);
-  const free = resource === 0 ? ''
-    : resource === 1 ? " 1 Resource Structure costs only its claim's RP and gold."
-    : ` ${resource} Resource Structures cost only their claims' RP and gold.`;
-  if (upkeep === 0) return `no hourly resource cost.${free}`;
-  return `${upkeep.toLocaleString('en-GB')}/hr of each of wood, clay, iron and stone.${free}`;
+export function milsovPlanText(plan) {
+  if (!plan?.milsov?.length) return '';
+  const counts = new Map();
+  for (const m of plan.milsov) counts.set(m.buildingLevel, (counts.get(m.buildingLevel) ?? 0) + 1);
+  const split = [...counts.entries()]
+    .sort((a, b) => b[0] - a[0])
+    .map(([level, count]) => `${count}x Sov ${SOV_LEVEL_ROMAN[level - 1]}`)
+    .join(' + ');
+  return `${split} — +${plan.milsovBonus}% production, ${
+    (plan.milsovUpkeep ?? 0).toLocaleString('en-GB')}/hr of each of wood, clay, iron and stone.`;
 }
+
+/** Why a site got no military sovereignty, in the user's terms. */
+export const MILSOV_BLOCKED_TEXT = {
+  tiles: 'every claimable tile went to the food plan',
+  slots: 'the food plan used every building slot',
+  upkeep: 'the city produces too little wood, clay, iron or stone to run one',
+  rp: 'the food plan spent the research this site produces',
+};
 
 /**
  * The per-hour balance of a plan, as rows of `{label, value, note}`.
@@ -361,8 +338,18 @@ export const SETTINGS_FIELDS = [
   { key: 'chancery', group: 'Sovereignty', label: 'Chancery of Estates (x0.6 upkeep)', type: 'checkbox' },
   { key: 'rClaim', group: 'Sovereignty', label: 'Claim radius R_claim', type: 'number', min: 1, max: 6, integer: true, fallback: 2 },
   { key: 'maxBuildings', group: 'Sovereignty', label: 'Max buildings', type: 'number', min: 0, max: 200, integer: true, fallback: 20 },
-  { key: 'milsovQuota', group: 'Sovereignty', label: 'Milsov quota', type: 'milsov' },
-  { key: 'milsovAdvisory', group: 'Sovereignty', label: 'Milsov level advisory', type: 'checkbox' },
+  { key: 'milsovStructure', group: 'Sovereignty', label: 'Military structure', type: 'milsov' },
+  {
+    key: 'milsovMinBonus',
+    group: 'Sovereignty',
+    label: 'Minimum military bonus (%)',
+    type: 'number',
+    min: 0,
+    max: 1000,
+    integer: true,
+    fallback: 0,
+    enabledWhen: (s) => !!s.milsovStructure,
+  },
 
   { key: 'dOther', group: 'Neighbours', label: 'Min distance, other players', type: 'number', min: 0, max: 100 },
   { key: 'dOwn', group: 'Neighbours', label: 'Min distance, own cities', type: 'number', min: 0, max: 100 },
@@ -462,65 +449,28 @@ function resourceCalibrationFieldHtml(f, cal) {
 }
 
 /**
- * The structure picker, grouped by whether the choice costs anything hourly —
- * which is the only thing about it the score depends on, so it is what the
- * groups are labelled with. A resource structure also says what it raises,
- * since its name alone does not.
- */
-function structureOptionsHtml(selected) {
-  const group = (label, type) =>
-    `<optgroup label="${escapeHtml(label)}">${SOV_QUOTA_STRUCTURES
-      .filter((s) => s.type === type)
-      .map((s) => `<option value="${s.key}"${s.key === selected ? ' selected' : ''}>${
-        escapeHtml(s.boosts ? `${s.name} (${s.boosts})` : s.name)}</option>`)
-      .join('')}</optgroup>`;
-  return group('Production Structures — 150–2,400/hr each W/C/I/S', 'production')
-    + group('Resource Structures — no hourly resource cost', 'resource');
-}
-
-/**
- * One row is ONE building, and it carries the two levels the game sets
- * separately: the claim's sovereignty level, which fixes its RP and gold and
- * scales with distance, and the level of the structure standing on it, which
- * fixes the production bonus and, for a Production Structure, the flat
- * wood/clay/iron/stone upkeep.
+ * Which military structure to place — the only thing about military sovereignty
+ * the user still sets. How many, at what levels and on which squares is the
+ * engine's answer, since it depends on what the food plan left behind and that
+ * differs at every site.
  *
- * The third control decides whether that flat upkeep is charged at all. It is
- * picked by name rather than by class because the name is what the user
- * recognises; the class behind it is what the score reads.
- *
- * Building levels above the claim are rendered disabled rather than omitted —
- * the ceiling is part of what the control has to teach. No box is a count; that
- * ambiguity is what the labels exist to kill.
+ * Only Production Structures are offered. A Resource Structure has no hourly
+ * upkeep, so nothing would stop the search claiming every spare tile with one,
+ * while the host tile's resource rating that would justify it is not scored.
  */
-function milsovRowHtml(row) {
-  const sovLevel = row?.sovLevel ?? 5;
-  const buildingLevel = Math.min(row?.buildingLevel ?? sovLevel, sovLevel);
-  const structure = sovStructure(row).key;
-  const sov = [5, 4, 3, 2, 1].map((l) =>
-    `<option value="${l}"${l === sovLevel ? ' selected' : ''}>Sov ${SOV_LEVEL_ROMAN[l - 1]}</option>`).join('');
-  const building = [5, 4, 3, 2, 1].map((l) =>
-    `<option value="${l}"${l === buildingLevel ? ' selected' : ''}${
-      l > sovLevel ? ' disabled' : ''}>level ${l}</option>`).join('');
-  return `<div class="sov-milsov-row">
-      <select data-milsov="sovLevel" title="Sovereignty level of the claim — sets its RP and gold upkeep, which also scales with distance">${sov}</select>
-      <span>carrying a</span>
-      <select data-milsov="buildingLevel" title="Level of the structure on that tile — sets the production bonus and, on a Production Structure, the hourly wood/clay/iron/stone upkeep. Cannot exceed the claim's sovereignty level">${building}</select>
-      <select data-milsov="structure" title="Which structure stands on the tile. Production Structures cost 150–2,400/hr of each of wood, clay, iron and stone by building level; Resource Structures cost nothing beyond the claim's RP and gold">${structureOptionsHtml(structure)}</select>
-      <button type="button" class="sov-milsov-del sec" title="Remove this building">&times;</button>
-    </div>`;
-}
-
-function milsovFieldHtml(f, quota) {
+function milsovFieldHtml(f, structure) {
+  const opts = MILSOV_STRUCTURES.map((s) =>
+    `<option value="${s.key}"${s.key === structure ? ' selected' : ''}>${escapeHtml(s.name)}</option>`).join('');
   return `<div class="sov-f-block" data-key="${f.key}">
-      <p class="sov-hint">${escapeHtml(f.label)} — <strong>one row is one building</strong>,
-        reserved on the nearest tiles before food claims are chosen. Add a row per
-        building you intend to place. Food sovereignty is not entered here — the
-        Farmstead and Fishery claims are chosen by the food plan itself.</p>
-      <div class="sov-milsov-rows">${(quota ?? []).map(milsovRowHtml).join('')}</div>
-      <p class="sov-hint sov-milsov-empty">No military sovereignty requested.</p>
-      <p class="sov-hint sov-milsov-total"></p>
-      <button type="button" class="sov-milsov-add sec">+ Add building</button>
+      <label class="sov-f"><span>${escapeHtml(f.label)}</span>
+        <select data-key="${f.key}" title="Which structure to place on the tiles the food plan leaves free">
+          <option value=""${structure ? '' : ' selected'}>None — food only</option>${opts}</select></label>
+      <p class="sov-hint">Food is planned first and sets the tax. Military sovereignty is
+        then fitted into what that plan leaves over — the research it did not spend, the
+        tiles it did not claim, and what the city can still afford to run — so it never
+        costs the site a point of tax. Each result says how much it fitted and what one
+        more point of tax would buy. The minimum below drops sites that fit less than
+        you want; it does not make them fit more.</p>
     </div>`;
 }
 
@@ -616,18 +566,6 @@ export function createPanel({ onScan, onExport }) {
     return raw;
   }
 
-  function milsovRow(row) {
-    return {
-      structure: row.querySelector('[data-milsov="structure"]').value,
-      sovLevel: row.querySelector('[data-milsov="sovLevel"]').value,
-      buildingLevel: row.querySelector('[data-milsov="buildingLevel"]').value,
-    };
-  }
-
-  function milsovRows() {
-    return [...form.querySelectorAll('.sov-milsov-row')].map(milsovRow);
-  }
-
   function readSettings() {
     const errors = [];
     const out = {};
@@ -648,7 +586,9 @@ export function createPanel({ onScan, onExport }) {
           break;
         }
         case 'milsov':
-          out.milsovQuota = normaliseMilsovQuota(milsovRows());
+          out.milsovStructure = parseMilsovStructure(
+            form.querySelector(`select[data-key="${f.key}"]`).value,
+          );
           break;
         case 'calibration':
           out.rpCalibration = parseRpCalibration(
@@ -698,7 +638,7 @@ export function createPanel({ onScan, onExport }) {
           writePlots(v);
           break;
         case 'milsov':
-          form.querySelector('.sov-milsov-rows').innerHTML = (v ?? []).map(milsovRowHtml).join('');
+          form.querySelector(`select[data-key="${f.key}"]`).value = v ?? '';
           break;
         case 'calibration':
           form.querySelector('[data-cal="observedRpPerHour"]').value = v?.observedRpPerHour ?? '';
@@ -759,14 +699,6 @@ export function createPanel({ onScan, onExport }) {
       : `Y = ${y.toFixed(0)}/hr per plot at L20, the measured default. `
         + 'Fill this in only for a city that reads differently.';
 
-    // What the quota actually asks for, in the units the ceiling is charged in.
-    // The row controls say what each building is; this says what they add up to.
-    const quota = normaliseMilsovQuota(milsovRows());
-    form.querySelector('.sov-milsov-empty').hidden = quota.length > 0;
-    form.querySelector('.sov-milsov-total').textContent = quota.length
-      ? `${quota.length} building${quota.length === 1 ? '' : 's'} — ${milsovTotalText(quota)}`
-      : '';
-
     // An allocation that is not 25 plots is not a tile the game can produce,
     // so there is nothing to score it against — block the scan outright.
     scanBtn.disabled = !plots.ok;
@@ -783,26 +715,12 @@ export function createPanel({ onScan, onExport }) {
     const el = e.target;
     if (el.dataset.plot) {
       el.value = validatePlots(plotInputs()).plots[el.dataset.plot];
-    } else if (el.dataset.milsov) {
-      // Lowering the claim has to drag the building down with it, and re-render
-      // which building levels are still reachable. The whole row is read back,
-      // so re-rendering it does not reset the structure to the default.
-      const rowEl = el.closest('.sov-milsov-row');
-      const [row] = normaliseMilsovQuota([milsovRow(rowEl)]);
-      rowEl.outerHTML = milsovRowHtml(row);
     }
     refresh();
   });
 
   form.addEventListener('click', (e) => {
-    if (e.target.closest('.sov-milsov-del')) {
-      e.target.closest('.sov-milsov-row').remove();
-      refresh();
-    } else if (e.target.closest('.sov-milsov-add')) {
-      form.querySelector('.sov-milsov-rows')
-        .insertAdjacentHTML('beforeend', milsovRowHtml({ sovLevel: 5, buildingLevel: 5 }));
-      refresh();
-    } else if (e.target.closest('.sov-reset')) {
+    if (e.target.closest('.sov-reset')) {
       writeSettings(DEFAULT_SETTINGS);
     } else if (e.target.closest('.sov-prefill')) {
       prefill();
@@ -864,13 +782,14 @@ export function createPanel({ onScan, onExport }) {
           <td>${r.sFood.toFixed(0)}</td>
           <td>${r.uRp.toFixed(0)}</td>
           <td>${Math.round(r.goldNet).toLocaleString()}</td>
+          <td>${r.milsovBonus ? `+${r.milsovBonus}%` : ''}</td>
           <td>${flagsHtml(r)}</td>
         </tr>`).join('');
       el.innerHTML = `
         <p>${summary}</p>
         <table>
           <thead><tr><th>Site</th><th>T_max</th><th>Binds</th><th>Food</th>
-            <th>RP</th><th>Net gold</th><th></th></tr></thead>
+            <th>RP</th><th>Net gold</th><th title="Free military production bonus — costs this site no tax">Mil</th><th></th></tr></thead>
           <tbody>${rows}</tbody>
         </table>`;
 
@@ -895,10 +814,16 @@ export function createPanel({ onScan, onExport }) {
 /** The last column: whatever the row has to warn about, space-separated. */
 function flagsHtml(r) {
   const flags = [];
-  if (!r.quotaMet) flags.push({ cls: 'sov-flag', text: 'maybe', title: 'The milsov quota does not fit on this site' });
   const res = resFlag(r);
   if (res) flags.push({ cls: 'sov-flag', ...res });
-  if (r.milsovNote) flags.push({ cls: 'sov-advice', text: 'advice', title: 'Milsov level advisory' });
+  if (r.milsovBlocked) {
+    flags.push({
+      cls: 'sov-flag',
+      text: 'no mil',
+      title: `No military sovereignty fits here for free — ${
+        MILSOV_BLOCKED_TEXT[r.milsovBlocked] ?? 'nothing was left over'}.`,
+    });
+  }
   return flags
     .map((f) => `<span class="${f.cls}" title="${escapeHtml(f.title)}">${escapeHtml(f.text)}</span>`)
     .join(' ');
@@ -916,17 +841,12 @@ function toggleDetail(row, result) {
     const dxy = `${t.dx >= 0 ? '+' : ''}${t.dx},${t.dy >= 0 ? '+' : ''}${t.dy}`;
     return `<li>${dxy} — food ${t.food}, d ${t.d.toFixed(2)}, ${t.rp.toFixed(0)} RP, Sov ${t.level}</li>`;
   }).join('');
-  // One line per building, naming both levels and the structure — reading this
-  // back is how a quota that does not say what the user meant gets caught. A
-  // free structure says so in the same place the charged one states its bill.
+  // One line per building the engine placed, on the square it chose.
   const mil = result.milsov.map((m) => {
-    const upkeep = structureUpkeep(m);
-    const cost = upkeep
-      ? `${upkeep.toLocaleString('en-GB')}/hr each W/C/I/S`
-      : 'no hourly resource cost';
-    return `<li>milsov Sov ${m.sovLevel} claim at d ${m.d.toFixed(2)} carrying a level ${
-      m.buildingLevel} ${escapeHtml(sovStructure(m).name)} — ${m.rp.toFixed(0)} RP, ${
-      cost}, food ${m.food}</li>`;
+    const dxy = `${m.dx >= 0 ? '+' : ''}${m.dx},${m.dy >= 0 ? '+' : ''}${m.dy}`;
+    return `<li>${dxy} — Sov ${m.sovLevel} claim carrying a level ${m.buildingLevel} ${
+      escapeHtml(sovStructure(m).name)}, d ${m.d.toFixed(2)}, ${m.rp.toFixed(0)} RP, ${
+      structureUpkeep(m).toLocaleString('en-GB')}/hr each W/C/I/S</li>`;
   }).join('');
   // The balance sheet: what running this plan leaves per hour, at its own tax.
   const rows = surplusRows(result.surplus, result.binding);
@@ -941,17 +861,21 @@ function toggleDetail(row, result) {
         result.surplus.upkeep.toLocaleString('en-GB')}/hr of milsov structure upkeep.</p>`
       : ''}`
     : '';
-  // Milsov normally sits on the nearest tiles, so a plan that reaches past them
-  // has to say why rather than looking like a mistake.
-  const traded = result.milsovTraded
-    ? '<p class="sov-hint">Milsov is hosted further out to leave a better food tile'
-      + ' to the claim plan — scored both ways, this one wins.</p>'
+  // What the military plan is, and what going further would cost. The price is
+  // the whole reason to state it: a site where the next point of tax buys +8%
+  // is a different proposition from one where it buys +1%, and the free figure
+  // alone does not tell them apart.
+  const price = result.milsovPrice > 0
+    ? ` Each further point of tax would buy +${result.milsovPrice}%.`
     : '';
-  // PRD §3.6 — advisory only. The plan above is exactly what the user asked
-  // for; this is a note, never an applied change. Say so plainly.
-  const advice = result.milsovNote
-    ? `<p class="sov-advice">Advisory: ${escapeHtml(result.milsovNote)} Your requested levels are what is planned above.</p>`
-    : '';
+  const milPlan = result.milsov.length
+    ? `<p class="sov-hint">Military sovereignty: ${escapeHtml(milsovPlanText(result))}
+        Free at this site's tax — the food plan is untouched.${escapeHtml(price)}</p>`
+    : result.milsovBlocked
+      ? `<p class="sov-flag">No military sovereignty fits here for free — ${
+        escapeHtml(MILSOV_BLOCKED_TEXT[result.milsovBlocked] ?? 'nothing was left over')}.${
+        escapeHtml(price)}</p>`
+      : '';
   // The resource ceiling is stated here whether or not it bites, since the
   // figure itself is the thing the user has to judge. The row flag above only
   // appears when it would have cost them tax.
@@ -969,7 +893,7 @@ function toggleDetail(row, result) {
         + ' T_max and the ranking.</p>'
       : `<p class="sov-hint">Resource ceiling ${ceiling}, from a measured per-plot yield —`
         + ' applied to T_max like the food and research ceilings.</p>';
-  tr.innerHTML = `<td colspan="7"><ul>${tiles}${mil}</ul>${balance}${traded}${advice}${res}</td>`;
+  tr.innerHTML = `<td colspan="8"><ul>${tiles}${mil}</ul>${balance}${milPlan}${res}</td>`;
   row.after(tr);
 }
 
@@ -978,7 +902,7 @@ function escapeHtml(s) {
 }
 
 // RFC 4180 quoting. Every column goes through this rather than only the free
-// text one — the milsov advisory (PRD §3.6) is the first field that can carry a
+// text one — the military plan is the first field that can carry a
 // comma, and picking which columns are "safe" is how that regresses later.
 export function csvField(v) {
   const s = v === null || v === undefined ? '' : String(v);
@@ -1002,15 +926,17 @@ function resColumns(r) {
 }
 
 export function toCsv(results) {
-  // The free-text advisory stays last, so a column added later does not land
-  // after the one field that can carry a comma.
+  // The one free-text field stays last, so a column added later does not land
+  // after the only one that can carry a comma.
   const head = ['x', 'y', 'T_max', 'binding', 'S_food', 'U_RP', 'U_gold', 'Gold_net',
-    'quota_met', 'milsov_traded', 'T_res', 'res_binding', 'res_status', 'milsov_advisory'];
+    'milsov_buildings', 'milsov_bonus', 'milsov_upkeep', 'milsov_RP', 'milsov_price',
+    'T_res', 'res_binding', 'res_status', 'milsov_plan'];
   const lines = results.map((r) =>
     [r.x, r.y, r.tMax.toFixed(2), r.binding, r.sFood.toFixed(0),
-     r.uRp.toFixed(0), r.uGold.toFixed(0), r.goldNet.toFixed(0), r.quotaMet,
-     !!r.milsovTraded,
+     r.uRp.toFixed(0), r.uGold.toFixed(0), r.goldNet.toFixed(0),
+     r.milsov?.length ?? 0, r.milsovBonus ?? 0, r.milsovUpkeep ?? 0,
+     (r.milsovRp ?? 0).toFixed(0), r.milsovPrice ?? 0,
      ...resColumns(r),
-     r.milsovNote ?? ''].map(csvField).join(','));
+     milsovPlanText(r)].map(csvField).join(','));
   return [head.join(','), ...lines].join('\n');
 }

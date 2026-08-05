@@ -11,9 +11,9 @@ import {
   PLOT_TOTAL,
   clampNumber,
   validatePlots,
-  normaliseMilsovQuota,
-  milsovStructureCounts,
-  milsovTotalText,
+  parseMilsovStructure,
+  milsovPlanText,
+  MILSOV_BLOCKED_TEXT,
   parseRpCalibration,
   parseResourceBoosters,
   parseResourceCalibration,
@@ -26,14 +26,13 @@ import {
   BASIC_YIELD_L20,
   FARM_YIELD_L20,
   SOV_STRUCTURES,
-  SOV_QUOTA_STRUCTURES,
+  MILSOV_STRUCTURES,
+  MILSOV_UPKEEP_BY_LEVEL,
+  MILSOV_UPKEEP_STEP,
   SOV_STRUCTURE_BY_KEY,
   DEFAULT_SOV_STRUCTURE,
 } from '../src/constants.js';
 import { computeK, computeRRef, milsovUpkeep, computeBasicYield } from '../src/scoring.js';
-
-/** The structure a row that names none falls back to — the charged kind. */
-const prod = DEFAULT_SOV_STRUCTURE;
 
 const close = (a, b, eps = 0.05) =>
   assert.ok(Math.abs(a - b) < eps, `expected ${a} ≈ ${b}`);
@@ -63,18 +62,16 @@ test('the markup carries every hook createPanel reads back out of it', () => {
   // createPanel is the only DOM code here and cannot run under Node, so what is
   // checkable is its contract with the markup: a typo'd selector on either side
   // shows up as a missing hook rather than as a null dereference in the game.
-  const html = settingsFormHtml({ ...DEFAULT_SETTINGS, milsovQuota: [{ sovLevel: 3, buildingLevel: 2 }] });
+  const html = settingsFormHtml({ ...DEFAULT_SETTINGS, milsovStructure: 'targetRange' });
   const hooks = [
     'class="sov-form"',
     'class="sov-plot-total"', 'sov-prefill sec', 'sov-prefill-src',
-    'sov-milsov-rows', 'sov-milsov-empty', 'sov-milsov-add', 'sov-milsov-del', 'sov-milsov-row',
     'class="sov-reset sec"', 'class="sov-derived"', 'sov-derived-food',
     'data-cal="observedRpPerHour"', 'data-cal="atTax"',
     'data-res-cal="observed"', 'data-res-cal="atTax"', 'data-res-cal="plots"',
     'data-res-cal="booster"', 'sov-yield-read',
     ...BASIC_RESOURCES.map((r) => `data-booster="${r}"`),
-    'data-milsov="sovLevel"', 'data-milsov="buildingLevel"', 'data-milsov="structure"',
-    'sov-milsov-total',
+    'select data-key="milsovStructure"',
     ...PLOT_KEYS.map((p) => `data-plot="${p}"`),
   ];
   for (const hook of hooks) assert.ok(html.includes(hook), `markup is missing ${hook}`);
@@ -153,52 +150,42 @@ test('a prefilled water tile is flagged rather than silently scored', () => {
   assert.equal(r.message, '16 short');
 });
 
-// --- milsov quota rows ---
+// --- the military structure choice ------------------------------------------
 
-test('one row is one building, and rows come back level-descending', () => {
-  // The row carries two levels, not a level and a count. A quota of three rows
-  // is three buildings — never one building at "level 3".
-  assert.deepEqual(
-    normaliseMilsovQuota([
-      { sovLevel: 3, buildingLevel: 3 },
-      { sovLevel: 5, buildingLevel: 5 },
-      { sovLevel: 3, buildingLevel: 2 },
-    ]),
-    [
-      { structure: prod, sovLevel: 5, buildingLevel: 5 },
-      { structure: prod, sovLevel: 3, buildingLevel: 3 },
-      { structure: prod, sovLevel: 3, buildingLevel: 2 },
-    ],
-  );
-});
-
-test('a single Sov V row is ONE building, whatever its building level', () => {
-  // The regression this whole schema exists for: the second control used to be
-  // a count, so "Sov V, level 5" scored as five structures — 12,000/hr of each
-  // basic resource instead of 2,400, which is the difference between a +85%
-  // resource ceiling and a −73.6% one.
-  for (const buildingLevel of [1, 2, 3, 4, 5]) {
-    const quota = normaliseMilsovQuota([{ sovLevel: 5, buildingLevel }]);
-    assert.equal(quota.length, 1, `building level ${buildingLevel} is still one building`);
-    assert.equal(quota[0].buildingLevel, buildingLevel);
+test('the structure is the only thing the user still sets', () => {
+  // Count, levels and squares are the engine's answer, so there is one control
+  // and it names a building — never a number.
+  for (const s of MILSOV_STRUCTURES) {
+    assert.equal(parseMilsovStructure(s.key), s.key);
   }
-  assert.equal(milsovUpkeep(normaliseMilsovQuota([{ sovLevel: 5, buildingLevel: 5 }])), 2400);
-  assert.equal(milsovUpkeep(normaliseMilsovQuota(Array(5).fill({ sovLevel: 5, buildingLevel: 5 }))), 12000);
+  assert.equal(parseMilsovStructure(''), null, 'blank is a food-only scan');
+  assert.equal(parseMilsovStructure(undefined), null);
+  assert.equal(parseMilsovStructure(null), null);
 });
 
-test('a building may not out-level its claim, and defaults to matching it', () => {
-  assert.deepEqual(normaliseMilsovQuota([{ sovLevel: 2, buildingLevel: 5 }]),
-    [{ structure: prod, sovLevel: 2, buildingLevel: 2 }]);
-  assert.deepEqual(normaliseMilsovQuota([{ sovLevel: 3, buildingLevel: '' }]),
-    [{ structure: prod, sovLevel: 3, buildingLevel: 3 }]);
+test('a structure the picker does not offer is refused, not quietly charged', () => {
+  // The only way to type one of these is for the picker and the table to have
+  // drifted apart, and the engine would then place buildings the user cannot
+  // have chosen. Nothing is safer than none.
+  for (const key of ['nonsense', 'TRAININGGROUND', 'farmstead', 'fishery', 'mineshaft']) {
+    assert.equal(parseMilsovStructure(key), null, `${key} should not be selectable`);
+  }
 });
 
-test('empty rows are dropped and levels clamped to 1..5', () => {
-  assert.deepEqual(normaliseMilsovQuota([]), []);
-  assert.deepEqual(normaliseMilsovQuota(undefined), []);
-  assert.deepEqual(normaliseMilsovQuota([{ sovLevel: '', buildingLevel: 2 }]), []);
-  assert.deepEqual(normaliseMilsovQuota([{ sovLevel: 9, buildingLevel: '9' }]),
-    [{ structure: prod, sovLevel: 5, buildingLevel: 5 }]);
+test('the default is no military sovereignty, which keeps T_res non-binding', () => {
+  assert.equal(DEFAULT_SETTINGS.milsovStructure, null);
+  assert.equal(parseMilsovStructure(DEFAULT_SETTINGS.milsovStructure), null);
+  assert.equal(DEFAULT_SETTINGS.milsovMinBonus, 0, 'and no site is filtered on military');
+});
+
+test('the minimum bonus is disabled until a structure is named', () => {
+  // It filters on how much military a site fits, so with none asked for there
+  // is nothing for it to read — leave it visibly off rather than silently
+  // ignored.
+  const field = SETTINGS_FIELDS.find((f) => f.key === 'milsovMinBonus');
+  assert.ok(field.enabledWhen, 'the field must be gated');
+  assert.equal(field.enabledWhen({ milsovStructure: null }), false);
+  assert.equal(field.enabledWhen({ milsovStructure: 'trainingGround' }), true);
 });
 
 test('upkeep is charged on the building, never on the claim', () => {
@@ -209,26 +196,21 @@ test('upkeep is charged on the building, never on the claim', () => {
   assert.equal(milsovUpkeep([]), 0);
 });
 
-// --- structure type ---------------------------------------------------------
+// --- the structure table ----------------------------------------------------
 
-test('a row keeps the structure it names, and an unknown one is charged', () => {
-  // Every structure in the table survives the round trip, including the two the
-  // picker does not offer — the engine costs them like any other.
-  for (const s of SOV_STRUCTURES) {
-    assert.deepEqual(
-      normaliseMilsovQuota([{ structure: s.key, sovLevel: 5, buildingLevel: 5 }]),
-      [{ structure: s.key, sovLevel: 5, buildingLevel: 5 }],
-    );
+test('the upkeep steps are the table read as increments, and are convex', () => {
+  // The planner spends against the steps, not the totals. They have to add back
+  // up to the table, and they have to RISE — that convexity is the whole reason
+  // several low-level buildings can be cheaper to run than one high one.
+  let running = 0;
+  for (let level = 1; level <= 5; level++) {
+    running += MILSOV_UPKEEP_STEP[level - 1];
+    assert.equal(running, MILSOV_UPKEEP_BY_LEVEL[level], `level ${level} does not add up`);
   }
-  // A value the table does not know must not buy a free claim by accident.
-  for (const structure of [undefined, '', 'nonsense', 'RESOURCE']) {
-    assert.deepEqual(
-      normaliseMilsovQuota([{ structure, sovLevel: 5, buildingLevel: 5 }]),
-      [{ structure: prod, sovLevel: 5, buildingLevel: 5 }],
-      `${structure} should fall back to a Production Structure`,
-    );
-    assert.equal(milsovUpkeep(normaliseMilsovQuota([{ structure, sovLevel: 5, buildingLevel: 5 }])), 2400);
+  for (let i = 1; i < MILSOV_UPKEEP_STEP.length; i++) {
+    assert.ok(MILSOV_UPKEEP_STEP[i] >= MILSOV_UPKEEP_STEP[i - 1], 'the steps must not fall');
   }
+  assert.ok(MILSOV_UPKEEP_STEP.at(-1) > MILSOV_UPKEEP_STEP[0], 'and must actually rise');
 });
 
 test('every structure in the table is one kind or the other, and named', () => {
@@ -244,82 +226,63 @@ test('every structure in the table is one kind or the other, and named', () => {
   assert.equal(SOV_STRUCTURE_BY_KEY[DEFAULT_SOV_STRUCTURE].type, 'production',
     'the fallback has to be the charged kind');
 
-  // The picker is the table minus the food two, derived rather than retyped.
+  // The picker is the table filtered to the charged kind, derived rather than
+  // retyped — a Resource Structure has no hourly bill, so nothing would stop the
+  // planner claiming every spare tile with one for a bonus that is not scored.
   assert.deepEqual(
-    SOV_QUOTA_STRUCTURES.map((s) => s.key),
-    SOV_STRUCTURES.filter((s) => s.boosts !== 'food').map((s) => s.key),
+    MILSOV_STRUCTURES.map((s) => s.key),
+    SOV_STRUCTURES.filter((s) => s.type === 'production').map((s) => s.key),
   );
+  assert.ok(MILSOV_STRUCTURES.every((s) => milsovUpkeep([{ structure: s.key, buildingLevel: 5 }]) === 2400),
+    'every offered structure must actually be charged');
   assert.deepEqual(
     SOV_STRUCTURES.filter((s) => s.boosts === 'food').map((s) => s.name),
     ['Farmstead', 'Fishery'],
   );
 });
 
-test('a Resource Structure adds nothing to the hourly quota upkeep', () => {
-  const resource = normaliseMilsovQuota(
-    Array(4).fill({ structure: 'gravelPit', sovLevel: 5, buildingLevel: 5 }),
-  );
-  assert.equal(resource.length, 4, 'the rows are still four buildings');
-  assert.equal(milsovUpkeep(resource), 0);
-  assert.deepEqual(milsovStructureCounts(resource), { production: 0, resource: 4 });
-
-  // The same four rows as military structures are the 2,400/hr each case.
-  const production = normaliseMilsovQuota(
-    Array(4).fill({ structure: 'targetRange', sovLevel: 5, buildingLevel: 5 }),
-  );
-  assert.equal(milsovUpkeep(production), 9600);
+test('a Resource Structure is still costed for free wherever one appears', () => {
+  // Out of the picker, not out of the engine: the table is what the cost model
+  // reads, and it must not grow a special case just because nothing selects it.
+  for (const key of ['gravelPit', 'loggingCamp', 'mineshaft', 'earthworks', 'farmstead', 'fishery']) {
+    assert.equal(milsovUpkeep([{ structure: key, buildingLevel: 5 }]), 0, key);
+  }
+  assert.equal(milsovUpkeep(Array(4).fill({ structure: 'targetRange', buildingLevel: 5 })), 9600);
 });
 
-test('a mixed quota is billed for its Production Structures only', () => {
-  const quota = normaliseMilsovQuota([
-    { structure: 'trainingGround', sovLevel: 3, buildingLevel: 3 },  // 600
-    { structure: 'loggingCamp', sovLevel: 5, buildingLevel: 5 },     // free
-    { structure: 'assemblyYard', sovLevel: 2, buildingLevel: 2 },    // 300
-    { structure: 'earthworks', sovLevel: 4, buildingLevel: 4 },      // free
-  ]);
-  assert.equal(quota.length, 4);
-  assert.equal(milsovUpkeep(quota), 900);
-  assert.deepEqual(milsovStructureCounts(quota), { production: 2, resource: 2 });
-});
-
-test('the read-out never quotes upkeep a Resource Structure does not pay', () => {
-  const resource = normaliseMilsovQuota([{ structure: 'mineshaft', sovLevel: 5, buildingLevel: 5 }]);
-  const text = milsovTotalText(resource);
-  assert.match(text, /no hourly resource cost/);
-  assert.ok(!/\/hr of each/.test(text), `the free case must quote no figure: ${text}`);
-  assert.match(text, /1 Resource Structure costs only its claim/);
-
-  const mixed = normaliseMilsovQuota([
-    { structure: 'trainingGround', sovLevel: 5, buildingLevel: 5 },
-    { structure: 'mineshaft', sovLevel: 5, buildingLevel: 5 },
-    { structure: 'gravelPit', sovLevel: 3, buildingLevel: 3 },
-  ]);
-  assert.match(milsovTotalText(mixed), /^2,400\/hr of each of wood, clay, iron and stone\./);
-  assert.match(milsovTotalText(mixed), /2 Resource Structures cost only their claims/);
-
-  const production = normaliseMilsovQuota([{ structure: 'joustingYard', sovLevel: 4, buildingLevel: 4 }]);
-  assert.equal(milsovTotalText(production), '1,200/hr of each of wood, clay, iron and stone.');
-});
-
-test('the structure picker offers both classes and no food structure', () => {
-  const html = settingsFormHtml({
-    ...DEFAULT_SETTINGS,
-    milsovQuota: [{ structure: 'mineshaft', sovLevel: 5, buildingLevel: 5 }],
-  });
-  assert.ok(html.includes('data-milsov="structure"'), 'the row has no structure control');
-  assert.ok(html.includes('<option value="mineshaft" selected>'), 'the chosen structure is not selected');
-  for (const s of SOV_QUOTA_STRUCTURES) {
+test('the picker offers the military structures and a way to ask for none', () => {
+  const html = settingsFormHtml({ ...DEFAULT_SETTINGS, milsovStructure: 'joustingYard' });
+  assert.ok(html.includes('<option value="joustingYard" selected>'), 'the choice is not selected');
+  assert.ok(/<option value=""[^>]*>None/.test(html), 'there must be a way to ask for none');
+  for (const s of MILSOV_STRUCTURES) {
     assert.ok(html.includes(`value="${s.key}"`), `${s.key} is missing from the picker`);
   }
-  assert.ok(html.includes('Mineshaft (iron)'), 'a resource structure should say what it raises');
-  // Farmstead and Fishery are the food claim plan, not a quota row: offering
-  // them here would let one tile be reserved and then claimed for its food.
-  assert.ok(!/<option value="(farmstead|fishery)"/i.test(html),
-    'food sovereignty must not be pickable as a milsov row');
+  // Resource sovereignty is not placed automatically, so it is not offered.
+  assert.ok(!/<option value="(farmstead|fishery|mineshaft|loggingCamp|earthworks|gravelPit)"/i.test(html),
+    'a Resource Structure must not be pickable');
+  // Nothing in the form asks for a count or a level any more.
+  assert.ok(!/data-milsov=/.test(html), 'the quota rows should be gone');
+
+  const blank = settingsFormHtml(DEFAULT_SETTINGS);
+  assert.ok(/<option value="" selected>None/.test(blank), 'the default should select None');
 });
 
-test('the default quota is empty, which is what keeps T_res non-binding', () => {
-  assert.deepEqual(normaliseMilsovQuota(DEFAULT_SETTINGS.milsovQuota), []);
+test('the plan read-out describes what was placed, and blocking says why not', () => {
+  assert.equal(
+    milsovPlanText({
+      milsov: [{ buildingLevel: 2 }, { buildingLevel: 2 }, { buildingLevel: 1 }],
+      milsovBonus: 25,
+      milsovUpkeep: 750,
+    }),
+    '2x Sov II + 1x Sov I — +25% production, 750/hr of each of wood, clay, iron and stone.',
+  );
+  assert.equal(milsovPlanText({ milsov: [] }), '');
+  assert.equal(milsovPlanText(null), '');
+
+  // Every reason the engine can return has wording waiting for it.
+  for (const reason of ['tiles', 'slots', 'upkeep', 'rp']) {
+    assert.ok(MILSOV_BLOCKED_TEXT[reason], `no wording for "${reason}"`);
+  }
 });
 
 // --- basic resource boosters and the yield calibration ---

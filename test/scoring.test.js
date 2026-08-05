@@ -1,5 +1,6 @@
-// The PRD §6 worked example is the oracle for this engine. If these fail, the
-// model has drifted from the document — fix one or the other deliberately.
+// The worked example below is the oracle for this engine: a 7-food site with a
+// standard city, reaching 56.6% tax on 100 food for 1,000 RP. If these fail, the
+// model has drifted — fix the model or the expectation deliberately, not both.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -7,27 +8,25 @@ import assert from 'node:assert/strict';
 import {
   computeK, computeBOther, computeConsumption, computeRRef,
   tFood, tRp, tMax, goldNet, claimUpkeep, distance, knapsack, recoverSet, scoreSite,
-  milsovAdvice, tRes, surplusAt, computeBasicYield,
+  milsovHeadroom, planMilsov, tRes, surplusAt, computeBasicYield,
 } from '../src/scoring.js';
-import { DEFAULT_SETTINGS, BASIC_YIELD_L20, BASIC_RESOURCES } from '../src/constants.js';
+import {
+  DEFAULT_SETTINGS, BASIC_YIELD_L20, BASIC_RESOURCES,
+  MILSOV_UPKEEP_BY_LEVEL, MILSOV_BONUS_PER_LEVEL, CHANCERY_FACTOR,
+} from '../src/constants.js';
 
 const close = (a, b, eps = 0.05) =>
   assert.ok(Math.abs(a - b) < eps, `expected ${a} ≈ ${b}`);
 
-/**
- * `count` buildings, each one a Sov `level` claim carrying a level `level`
- * structure — the ordinary case, where the two levels match. The quota is one
- * entry per building, so this is what a run of identical rows produces.
- */
-const sov = (level, count = 1) =>
-  Array.from({ length: count }, () => ({ sovLevel: level, buildingLevel: level }));
-
-// Defaults of the worked example: 7-food site, standard city, Flour Mill on,
+// The worked example's settings: 7-food site, standard city, Flour Mill on,
 // Nature's Bounty at 2 retreats, no other bonus, Library 20 with Allembine, no
-// Insight, no Chancery.
+// Insight, no Chancery, no military sovereignty.
 const worked = { ...DEFAULT_SETTINGS };
 
-test('K = 7 x 2014 / 100 = 140.98 (mechanics §4.1)', () => {
+/** The same settings with a military structure asked for. */
+const withMil = (extra = {}) => ({ ...worked, milsovStructure: 'trainingGround', ...extra });
+
+test('K = 7 x 2014 / 100 = 140.98', () => {
   close(computeK(7), 140.98);
   close(computeK(5), 100.70);
 });
@@ -64,12 +63,12 @@ test('R_ref = 1,600 at Library 20 with Allembine', () => {
   close(computeRRef(worked), 1600);
 });
 
-test('R_ref calibration back-solves from an observed reading (mechanics §6)', () => {
+test('R_ref calibration back-solves from an observed reading', () => {
   // 800 RP/hr observed at 25% tax -> 800 * 100/100 = 800
   close(computeRRef({ ...worked, rpCalibration: { observedRpPerHour: 800, atTax: 25 } }), 800);
 });
 
-test('PRD §6: S_food 100 at 1,000 RP is food-bound at 56.6%', () => {
+test('S_food 100 at 1,000 RP is food-bound at 56.6%', () => {
   const k = computeK(7);
   const bOther = computeBOther(worked);
   const consumption = computeConsumption(worked);
@@ -87,7 +86,7 @@ test('PRD §6: S_food 100 at 1,000 RP is food-bound at 56.6%', () => {
   close(goldNet({ tax: t.value, consumption, uGold: 10000 }), 62901, 5);
 });
 
-test('claim upkeep matches the mechanics §5.2 reference table', () => {
+test('claim upkeep matches the reference table', () => {
   close(claimUpkeep(distance(1, 0), 5, false).rp, 50.0);
   close(claimUpkeep(distance(1, 1), 5, false).rp, 70.7);
   close(claimUpkeep(distance(2, 0), 5, false).rp, 100.0);
@@ -174,15 +173,30 @@ test('with the cap slack, the 1-D and 2-D paths agree on the same input', () => 
   assert.ok(sumBy(a, 'weight') <= budget && sumBy(b, 'weight') <= budget);
 });
 
-test('scoreSite still reports its tile plan when the building cap binds', () => {
-  // 24 claimable neighbours against a cap of 20.
-  const neighbours = [];
+/** The full R=2 neighbourhood, food from a callback. */
+const ring = (food) => {
+  const out = [];
   for (let dx = -2; dx <= 2; dx++) {
     for (let dy = -2; dy <= 2; dy++) {
       if (dx === 0 && dy === 0) continue;
-      neighbours.push({ dx, dy, food: 2 + ((dx * 5 + dy + 12) % 7) });
+      out.push({ dx, dy, food: food(dx, dy) });
     }
   }
+  return out;
+};
+
+// A ring of eight 7-food tiles: comfortably scoreable, so anything that removes
+// it from the results came from the resource ceiling and nothing else.
+const ring8 = [[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]]
+  .map(([dx, dy]) => ({ dx, dy, food: 7 }));
+
+// Eight inner tiles the food plan wants and sixteen outer ones it will not
+// touch — the ordinary shape of a site with military sovereignty to spare.
+const spare = ring((dx, dy) => (Math.abs(dx) <= 1 && Math.abs(dy) <= 1 ? 9 : 0));
+
+test('scoreSite still reports its tile plan when the building cap binds', () => {
+  // 24 claimable neighbours against a cap of 20.
+  const neighbours = ring((dx, dy) => 2 + ((dx * 5 + dy + 12) % 7));
   assert.equal(neighbours.length, 24);
   const plan = scoreSite({ neighbours, settings: { ...worked, tMin: 0, maxBuildings: 20 } });
   assert.ok(plan.tiles.length > 0, 'the plan must not come back empty');
@@ -191,221 +205,362 @@ test('scoreSite still reports its tile plan when the building cap binds', () => 
   assert.ok(sumBy(plan.tiles, 'weight') <= plan.uRp + 1e-9, 'plan must fit its own RP spend');
 });
 
-test('the optimum is where ceilings cross, not maximum food (PRD §3.4)', () => {
+test('the optimum is where ceilings cross, not maximum food', () => {
   // A ring of eight 7-food tiles plus one absurdly expensive 16-food water tile.
-  const neighbours = [
-    ...[[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]].map(([dx,dy]) => ({ dx, dy, food: 7 })),
-    { dx: 2, dy: 2, food: 16 },
-  ];
+  const neighbours = [...ring8, { dx: 2, dy: 2, food: 16 }];
   const plan = scoreSite({ neighbours, settings: { ...worked, tMin: 0 } });
   assert.ok(plan, 'a plan should be found');
   assert.ok(plan.tMax > 0);
   assert.ok(['food', 'rp', 'cap'].includes(plan.binding));
-  // Every claimed tile is level 5 — food bonus requires it (mechanics §5.3).
+  // Every claimed tile is level 5 — the food bonus requires it.
   for (const t of plan.tiles) assert.equal(t.level, 5);
 });
 
-test('milsov reserves the cheapest tiles by distance, not the best food', () => {
-  const neighbours = [
-    { dx: 1, dy: 0, food: 2 },   // nearest, worst food
-    { dx: 2, dy: 2, food: 16 },  // furthest, best food
-  ];
-  const plan = scoreSite({
-    neighbours,
-    settings: { ...worked, tMin: 0, milsovQuota: sov(3) },
-  });
-  assert.equal(plan.milsov.length, 1);
-  assert.equal(plan.milsov[0].dx, 1, 'milsov should take the nearest tile');
-  assert.ok(plan.quotaMet);
-  assert.equal(plan.resIndicative, false, 'the yield behind T_res is measured');
-});
+// --- Food first, military out of the change --------------------------------
 
-test('among equidistant tiles the reservation takes the one worth least in food', () => {
-  // Four tiles at d = 1. Distance alone cannot choose between them, and milsov
-  // gets nothing from food, so taking the 0-food tile costs the knapsack nothing.
-  const neighbours = [
-    { dx: 1, dy: 0, food: 7 },
-    { dx: 0, dy: 1, food: 0 },
-    { dx: -1, dy: 0, food: 7 },
-    { dx: 0, dy: -1, food: 7 },
-    { dx: 2, dy: 0, food: 9 },
-  ];
-  const settings = { ...worked, tMin: 0, milsovQuota: sov(3) };
-  const plan = scoreSite({ neighbours, settings });
-  assert.equal(plan.milsov.length, 1);
-  close(plan.milsov[0].d, 1);
-  assert.equal(plan.milsov[0].food, 0, 'the 0-food tile is the free one to burn');
-
-  // The reservation must not cost food the site could have kept: with a 0-food
-  // host available at the same distance, S_food is untouched by the quota.
-  const noMilsov = scoreSite({ neighbours, settings: { ...settings, milsovQuota: [] } });
-  close(plan.sFood, noMilsov.sFood, 1e-9);
-});
-
-test('a high-food tile is never taken over an equidistant lower-food one', () => {
-  // The scan order the payload loops produce is dx then dy, so a plain distance
-  // sort leaves the first-scanned tile in front regardless of its food. Sweep
-  // every rotation of the ring: the reserved tile is the ring minimum every time.
-  const ring = [[1, 0], [0, 1], [-1, 0], [0, -1]];
-  for (let start = 0; start < ring.length; start++) {
-    const neighbours = ring.map(([dx, dy], i) => ({
-      dx, dy, food: [9, 3, 7, 5][(i + start) % 4],
-    }));
-    const plan = scoreSite({
-      neighbours,
-      settings: { ...worked, tMin: 0, milsovQuota: sov(5) },
-    });
-    assert.equal(plan.milsov[0].food, 3, `rotation ${start} burned a better tile`);
-  }
-});
-
-// --- The distance-for-food trade -------------------------------------------
-
-// Zeroing the food on the tiles the by-distance rule reserves pins both
-// hostings to that same set, so what comes back is the by-distance plan and
-// nothing else about the site has moved: a reserved tile never reaches the food
-// knapsack, so its food rating was already worth nothing to the plan.
-function byDistancePlan(neighbours, settings) {
-  const quota = (settings.milsovQuota ?? []).length;
-  const hosts = new Set(
-    neighbours
-      .map((n, i) => ({ i, d: distance(n.dx, n.dy), food: n.food }))
-      .sort((a, b) => a.d - b.d || a.food - b.food)
-      .slice(0, quota)
-      .map((t) => t.i),
-  );
-  return scoreSite({
-    neighbours: neighbours.map((n, i) => (hosts.has(i) ? { ...n, food: 0 } : n)),
-    settings,
-  });
-}
-
-test('the trade takes a further, poorer host when that buys more tax', () => {
-  // Eight inner tiles at food 7, sixteen outer at food 5. Hosting Sov V on an
-  // outer tile costs 50 more RP and hands the knapsack back a 7-food tile it can
-  // claim for the 50 RP the 5-food tile it loses would have cost 100.
-  const ring = [];
-  for (let dx = -2; dx <= 2; dx++) {
-    for (let dy = -2; dy <= 2; dy++) {
-      if (dx === 0 && dy === 0) continue;
-      ring.push({ dx, dy, food: Math.abs(dx) <= 1 && Math.abs(dy) <= 1 ? 7 : 5 });
-    }
-  }
-  const settings = { ...worked, tMin: 0, milsovQuota: sov(5) };
-  const plan = scoreSite({ neighbours: ring, settings });
-
-  assert.equal(plan.milsovTraded, true, 'the trade should win here');
-  assert.equal(plan.milsov[0].food, 5, 'the host is an outer tile');
-  close(plan.milsov[0].d, 2);
-  assert.ok(plan.tMax > byDistancePlan(ring, settings).tMax, 'the trade must buy tax, not just move a tile');
-});
-
-test('the same site trades or declines depending on the research budget', () => {
-  // Eight 9-food tiles around the city and one worthless corner tile. The corner
-  // costs the knapsack nothing to give away, so on the tile alone it is the
-  // obvious host — but reaching it costs 141 RP against the 50 of a tile in the
-  // ring, and when research is tight those 91 RP are worth more claims than the
-  // 9-food tile they free. Which way it goes is the knapsack's answer, not the
-  // tile's, which is why both are scored rather than one being reasoned about.
-  const neighbours = [
-    ...[[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]].map(([dx, dy]) => ({ dx, dy, food: 9 })),
-    { dx: 2, dy: 2, food: 0 },
-  ];
-  const at = (observedRpPerHour) => scoreSite({
-    neighbours,
-    settings: {
-      ...worked, tMin: 0,
-      rpCalibration: { observedRpPerHour, atTax: 25 },
-      milsovQuota: sov(5),
-    },
-  });
-
-  const tight = at(400);
-  assert.equal(tight.milsovTraded, false, 'at R_ref 400 the corner is not affordable');
-  close(tight.milsov[0].d, 1);
-  assert.equal(tight.milsov[0].food, 9);
-
-  const loose = at(1600);
-  assert.equal(loose.milsovTraded, true, 'at R_ref 1600 the corner is free real estate');
-  close(loose.milsov[0].d, 2.828);
-  assert.equal(loose.milsov[0].food, 0);
-  assert.ok(loose.tiles.length === 8, 'the whole ring stays claimable');
-});
-
-test('the trade never returns a worse plan than reserving by distance alone', () => {
-  // Both hostings are scored in full and the by-distance one wins every tie, so
-  // this holds by construction — which is the whole reason the trade is safe to
-  // make unconditional. Swept over random sites because the interaction it turns
-  // on is the knapsack's, not the tile's.
-  let seed = 20260802;
+test('asking for military sovereignty never costs the site a point of tax', () => {
+  // The rule the whole ordering exists to enforce, swept over random sites
+  // because the interaction it turns on is the knapsack's, not the tile's.
+  let seed = 20260805;
   const rnd = (n) => {
     seed = (seed * 1103515245 + 12345) & 0x7fffffff;
     return seed % n;
   };
-  const quotas = [
-    sov(5),
-    sov(3, 2),
-    [...sov(5), ...sov(2, 3)],
-    sov(1, 6),
-  ];
-  let traded = 0;
-  for (let trial = 0; trial < 60; trial++) {
-    const neighbours = [];
-    for (let dx = -2; dx <= 2; dx++) {
-      for (let dy = -2; dy <= 2; dy++) {
-        if (dx === 0 && dy === 0) continue;
-        if (rnd(10) < 2) continue;              // some tiles are not claimable
-        neighbours.push({ dx, dy, food: rnd(17) });   // 0 (unusable) to 16 (water)
-      }
-    }
-    const settings = { ...worked, tMin: 0, milsovQuota: quotas[trial % quotas.length] };
-    const plan = scoreSite({ neighbours, settings });
-    const pinned = byDistancePlan(neighbours, settings);
-    if (!plan || !pinned) continue;
+  let placed = 0;
+  for (let trial = 0; trial < 80; trial++) {
+    const neighbours = ring(() => rnd(17)).filter(() => rnd(10) >= 2);
+    const settings = {
+      ...worked, tMin: -1000,
+      rpCalibration: { observedRpPerHour: 200 + rnd(6000), atTax: 25 },
+    };
+    const food = scoreSite({ neighbours, settings });
+    const mil = scoreSite({ neighbours, settings: { ...settings, milsovStructure: 'trainingGround' } });
+    if (!food || !mil) continue;
+    const why = `trial ${trial}: ${food.tMax} -> ${mil.tMax}`;
 
-    const why = `trial ${trial}: ${plan.tMax} vs ${pinned.tMax} by distance`;
-    assert.ok(plan.tMax >= pinned.tMax - 1e-9, why);
-    if (Math.abs(plan.tMax - pinned.tMax) <= 1e-9) {
-      assert.ok(plan.uRp <= pinned.uRp + 1e-9, `${why}: same tax, more research`);
-    }
-    if (plan.milsovTraded) {
-      traded++;
-      // A traded plan must be strictly better on the plan tie-break,
-      // never merely different.
-      assert.ok(
-        plan.tMax > pinned.tMax + 1e-9 || plan.uRp < pinned.uRp - 1e-9
-          || plan.goldNet > pinned.goldNet,
-        `${why}: traded without winning`,
-      );
-    }
-    // Whatever the hosting, a tile is never both a milsov host and a food claim.
-    const hosts = new Set(plan.milsov.map((m) => `${m.dx},${m.dy}`));
-    for (const t of plan.tiles) assert.ok(!hosts.has(`${t.dx},${t.dy}`), `${why}: tile claimed twice`);
+    close(mil.tMax, food.tMax, 1e-9);
+    // Not merely the same tax — the same food plan, untouched.
+    close(mil.sFood, food.sFood, 1e-9);
+    assert.equal(mil.tiles.length, food.tiles.length, why);
+
+    // A tile is never both a food claim and a military host.
+    const hosts = new Set(mil.milsov.map((m) => `${m.dx},${m.dy}`));
+    for (const t of mil.tiles) assert.ok(!hosts.has(`${t.dx},${t.dy}`), `${why}: tile claimed twice`);
+    assert.equal(hosts.size, mil.milsov.length, `${why}: a tile hosted twice`);
+    if (mil.milsov.length) placed++;
   }
-  assert.ok(traded > 0, 'the sweep never exercised the trade');
+  assert.ok(placed > 0, 'the sweep never actually placed a building');
 });
 
-test('no milsov quota means no trade and no second knapsack', () => {
-  const plan = scoreSite({ neighbours: advisorySite, settings: { ...worked, tMin: 0 } });
-  assert.equal(plan.milsovTraded, false);
+test('the buildings land on the tiles the food plan did not want', () => {
+  // Eight 9-food tiles the food plan takes, and two worthless outer ones it
+  // will not. Military sovereignty gets the leftovers, nearest of them first.
+  const neighbours = [...ring8.map((t) => ({ ...t, food: 9 })),
+    { dx: 2, dy: 0, food: 0 }, { dx: 2, dy: 2, food: 0 }];
+  const plan = scoreSite({ neighbours, settings: withMil({ tMin: -1000 }) });
+
+  assert.ok(plan.milsov.length > 0, 'something should fit');
+  for (const m of plan.milsov) assert.equal(m.food, 0, 'a food tile was burned');
+  // Nearest free tile first: d = 2 before d = 2.83.
+  close(plan.milsov[0].d, 2, 1e-9);
+});
+
+test('the building always matches its claim, and levels fall with distance', () => {
+  // A claim above its building buys nothing — bonus and hourly upkeep both
+  // follow the building — so the engine never plans one. And research is level
+  // times distance, so the highest levels belong nearest.
+  const plan = scoreSite({
+    neighbours: ring(() => 0),          // no food at all: every tile is free
+    settings: withMil({ tMin: -1000 }),
+  });
+  assert.ok(plan.milsov.length > 1);
+  let previous = Infinity;
+  for (const m of plan.milsov) {
+    assert.equal(m.buildingLevel, m.sovLevel, 'a claim above its building is dominated');
+    assert.ok(m.buildingLevel <= previous, 'levels must not rise with distance');
+    previous = m.buildingLevel;
+  }
+  for (let i = 1; i < plan.milsov.length; i++) {
+    assert.ok(plan.milsov[i].d >= plan.milsov[i - 1].d - 1e-9, 'hosts must be nearest-first');
+  }
+});
+
+test('several low-level buildings beat one high one when upkeep is what binds', () => {
+  // Three tiles at the same distance, so research cannot tell the splits apart:
+  // 3x Sov I and 1x Sov III both cost 30 RP and both give +15%. The hourly bill
+  // does tell them apart — 450 against 600 — so the spread plan is the answer.
+  const tiles = [{ d: 1 }, { d: 1 }, { d: 1 }];
+  const spread = planMilsov({ tiles, headroom: { rp: 1000, upkeep: 450, slots: 3 }, chancery: false });
+  assert.equal(spread.bonus, 15);
+  assert.deepEqual(spread.levels, [1, 1, 1]);
+  assert.equal(spread.upkeep, 450);
+
+  // Take the tiles away and the same bonus has to be concentrated, at the
+  // higher bill — which is why this is a property of the site, not a rule.
+  const squeezed = planMilsov({ tiles, headroom: { rp: 1000, upkeep: 600, slots: 1 }, chancery: false });
+  assert.equal(squeezed.bonus, 15);
+  assert.deepEqual(squeezed.levels, [3]);
+  assert.equal(squeezed.upkeep, 600);
+});
+
+test('research pulls the other way: a nearer tile is worth more than a spread', () => {
+  // One tile at d = 1 and one at d = 10. Spreading costs 110 RP for +10%;
+  // stacking the near tile costs 20 for the same, and research is what is short.
+  const tiles = [{ d: 1 }, { d: 10 }];
+  const plan = planMilsov({ tiles, headroom: { rp: 100, upkeep: 1e9, slots: 2 }, chancery: false });
+  assert.deepEqual(plan.levels, [5], 'the far tile is not worth reaching');
+  assert.equal(plan.bonus, 25);
+});
+
+test('the plan never outspends any of its three budgets', () => {
+  let seed = 777;
+  const rnd = (n) => {
+    seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+    return seed % n;
+  };
+  for (let trial = 0; trial < 500; trial++) {
+    const n = 1 + rnd(8);
+    const tiles = Array.from({ length: n }, () => ({ d: 1 + rnd(2000) / 1000 }))
+      .sort((a, b) => a.d - b.d);
+    const headroom = { rp: rnd(500), upkeep: rnd(6000), slots: rnd(n + 2) };
+    const chancery = trial % 3 === 0;
+    const plan = planMilsov({ tiles, headroom, chancery });
+
+    assert.ok(plan.rp <= headroom.rp + 1e-9, `trial ${trial}: overspent research`);
+    assert.ok(plan.upkeep <= headroom.upkeep + 1e-9, `trial ${trial}: overspent upkeep`);
+    assert.ok(plan.buildings <= headroom.slots, `trial ${trial}: broke the building cap`);
+    assert.ok(plan.buildings <= n, `trial ${trial}: placed more buildings than tiles`);
+    // The three figures are consistent with the levels they came back with.
+    const f = chancery ? CHANCERY_FACTOR : 1;
+    close(plan.bonus, MILSOV_BONUS_PER_LEVEL * plan.levels.reduce((a, b) => a + b, 0), 1e-9);
+    close(plan.upkeep, plan.levels.reduce((a, l) => a + MILSOV_UPKEEP_BY_LEVEL[l], 0), 1e-9);
+    close(plan.rp, plan.levels.reduce((a, l, i) => a + 10 * l * tiles[i].d * f, 0), 1e-6);
+  }
+});
+
+test('the plan is the best one those budgets can buy, not merely a good one', () => {
+  // Brute force over every level assignment, which is only tractable for a
+  // handful of tiles — but it is the definition the layer decomposition claims
+  // to compute exactly, so it is worth checking against directly.
+  const brute = (tiles, headroom, chancery) => {
+    const f = chancery ? CHANCERY_FACTOR : 1;
+    const n = Math.min(tiles.length, Math.floor(headroom.slots));
+    let best = 0;
+    const rec = (i, rp, up, bonus) => {
+      if (rp > headroom.rp + 1e-9 || up > headroom.upkeep + 1e-9) return;
+      if (i === n) {
+        if (bonus > best) best = bonus;
+        return;
+      }
+      for (let level = 0; level <= 5; level++) {
+        rec(i + 1, rp + 10 * level * tiles[i].d * f,
+          up + (level ? MILSOV_UPKEEP_BY_LEVEL[level] : 0),
+          bonus + MILSOV_BONUS_PER_LEVEL * level);
+      }
+    };
+    rec(0, 0, 0, 0);
+    return best;
+  };
+
+  let seed = 4242;
+  const rnd = (n) => {
+    seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+    return seed % n;
+  };
+  let nonTrivial = 0;
+  for (let trial = 0; trial < 600; trial++) {
+    const n = 1 + rnd(7);
+    const tiles = Array.from({ length: n }, () => ({ d: 1 + rnd(2000) / 1000 }))
+      .sort((a, b) => a.d - b.d);
+    const headroom = { rp: rnd(400), upkeep: rnd(6000), slots: rnd(n + 2) };
+    const chancery = trial % 3 === 0;
+    const want = brute(tiles, headroom, chancery);
+    close(planMilsov({ tiles, headroom, chancery }).bonus, want, 1e-9);
+    if (want > 0) nonTrivial++;
+  }
+  assert.ok(nonTrivial > 100, 'the sweep never exercised a real plan');
+});
+
+test('no structure asked for means no buildings and no bill', () => {
+  const plan = scoreSite({ neighbours: ring8, settings: { ...worked, tMin: 0 } });
   assert.deepEqual(plan.milsov, []);
+  assert.equal(plan.milsovBonus, 0);
+  assert.equal(plan.milsovUpkeep, 0);
+  assert.equal(plan.milsovBlocked, null, 'nothing was asked for, so nothing is blocked');
+  assert.equal(plan.milsovPrice, 0);
+  assert.equal(plan.resCeiling, Infinity, 'nothing is charged hourly');
 });
 
-test('an unmeetable milsov quota is reported, not silently dropped', () => {
+test('a minimum bonus flags the sites that fit less, and changes no plan', () => {
+  const plan = scoreSite({ neighbours: spare, settings: withMil({ tMin: -1000 }) });
+  assert.ok(plan.milsovBonus > 0, 'precondition: this site fits something');
+  assert.equal(plan.milsovShortfall, false, 'no minimum, nothing to fall short of');
+
+  // Under the floor: flagged, and otherwise identical. The flag is for the
+  // caller to drop the site by — the plan is still the best the site can do.
+  const under = scoreSite({
+    neighbours: spare,
+    settings: withMil({ tMin: -1000, milsovMinBonus: plan.milsovBonus + 5 }),
+  });
+  assert.equal(under.milsovShortfall, true);
+  close(under.tMax, plan.tMax, 1e-9);
+  assert.equal(under.milsovBonus, plan.milsovBonus);
+  assert.equal(under.milsov.length, plan.milsov.length);
+  assert.equal(under.tiles.length, plan.tiles.length);
+
+  // Exactly at the floor is met, not missed.
+  const at = scoreSite({
+    neighbours: spare,
+    settings: withMil({ tMin: -1000, milsovMinBonus: plan.milsovBonus }),
+  });
+  assert.equal(at.milsovShortfall, false);
+});
+
+test('a minimum with no structure asked for falls short rather than passing', () => {
+  // Wanting military and not naming one is a contradiction; the honest reading
+  // is that no site meets it, not that every site does.
+  const plan = scoreSite({
+    neighbours: spare,
+    settings: { ...worked, tMin: -1000, milsovMinBonus: 50 },
+  });
+  assert.equal(plan.milsovBonus, 0);
+  assert.equal(plan.milsovShortfall, true);
+});
+
+// --- The headroom, and why a site sometimes has none ------------------------
+
+test('a research-bound site has no free research, and says so', () => {
+  // Sixteen-food water everywhere: the food plan can raise T_food further than
+  // the library can pay for, so T_rp is what sets the tax and there is nothing
+  // left over by construction.
+  const settings = withMil({ tMin: -1000 });
+  const plan = scoreSite({ neighbours: ring(() => 16), settings });
+  assert.equal(plan.binding, 'rp');
+  assert.equal(plan.milsov.length, 0);
+  assert.equal(plan.milsovBlocked, 'rp');
+  close(milsovHeadroom({
+    tax: plan.tMax, settings, uRp: plan.spend, buildingsUsed: plan.tiles.length,
+  }).rp, 0, 1e-6);
+});
+
+test('a city with no plots of a resource cannot run a structure at all', () => {
+  // 0/0/0/0/25 is a legitimate allocation and scores well with no military. One
+  // Training Ground on it would cost 150/hr of four resources the city does not
+  // produce at any tax, so the answer is none — attributably, not silently.
+  const plots = { wood: 0, clay: 0, iron: 0, stone: 0, food: 25 };
+  const plan = scoreSite({ neighbours: ring8, settings: withMil({ tMin: 0, plots }) });
+
+  assert.equal(plan.milsov.length, 0);
+  assert.equal(plan.milsovBlocked, 'upkeep');
+  assert.ok(Number.isFinite(plan.tMax), 'the site itself is still perfectly good');
+  assert.equal(plan.resImpossible, false, 'nothing was placed, so nothing is impossible');
+
+  // The same site without the structure asked for is identical — which is what
+  // makes the absence attributable to the city, not to the site.
+  const none = scoreSite({ neighbours: ring8, settings: { ...worked, tMin: 0, plots } });
+  close(plan.tMax, none.tMax, 1e-9);
+});
+
+test('a scarce resource buys fewer buildings, not a lower tax', () => {
+  // Same food plots, so the same tax; only the split of the other twenty moves.
+  // One stone plot against four of everything else is what the hourly bill is
+  // paid from, so it is what limits the plan — and the tax is untouched by it.
+  const at = (plots) => scoreSite({
+    neighbours: spare,
+    settings: withMil({
+      tMin: -1000, plots, rpCalibration: { observedRpPerHour: 8000, atTax: 25 },
+    }),
+  });
+  const lean = at({ wood: 5, clay: 5, iron: 5, stone: 1, food: 9 });
+  const rich = at({ wood: 4, clay: 4, iron: 4, stone: 4, food: 9 });
+
+  close(lean.tMax, rich.tMax, 1e-9);
+  assert.ok(lean.milsovUpkeep < rich.milsovUpkeep, 'one stone plot must buy less');
+  assert.ok(lean.tMax <= lean.resCeiling + 1e-9, 'the tax never exceeds the resource ceiling');
+  assert.ok(rich.tMax <= rich.resCeiling + 1e-9);
+});
+
+test('the building cap is spent on food first, and blocks military when full', () => {
+  const settings = withMil({ tMin: -1000, maxBuildings: 8 });
+  const plan = scoreSite({ neighbours: ring(() => 9), settings });
+  assert.equal(plan.tiles.length, 8, 'food takes the whole cap');
+  assert.equal(plan.milsov.length, 0);
+  assert.equal(plan.milsovBlocked, 'slots');
+});
+
+test('a site with no spare tile says so rather than blaming a budget', () => {
   const plan = scoreSite({
     neighbours: [{ dx: 1, dy: 0, food: 7 }],
-    settings: { ...worked, tMin: 0, milsovQuota: sov(3, 4) },
+    settings: withMil({ tMin: -1000 }),
   });
-  assert.equal(plan.quotaMet, false);
-  assert.equal(plan.milsovNote, null, 'a "maybe" site gets the quota flag, not a level tweak');
+  assert.equal(plan.tiles.length, 1);
+  assert.equal(plan.milsov.length, 0);
+  assert.equal(plan.milsovBlocked, 'tiles');
 });
 
-// --- The indicative resource ceiling ---------------------------------------
+test('milsovHeadroom prices the scarcest resource, not the average', () => {
+  const settings = { ...worked, plots: { wood: 5, clay: 5, iron: 5, stone: 1, food: 9 } };
+  const { yield: y } = computeBasicYield(settings);
+  const h = milsovHeadroom({ tax: 50, settings, uRp: 0, buildingsUsed: 0 });
+  close(h.upkeep, (1 * y * (125 - 50)) / 100, 1e-6);
+  close(h.rp, (computeRRef(settings) * (125 - 50)) / 100, 1e-6);
+  assert.equal(h.slots, settings.maxBuildings);
 
-// A ring of eight 7-food tiles: comfortably scoreable, so anything that removes
-// it from the results came from the resource ceiling and nothing else.
-const ring8 = [[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]]
-  .map(([dx, dy]) => ({ dx, dy, food: 7 }));
+  // A booster is worth its face value here exactly as it is against T_res.
+  const boosted = milsovHeadroom({
+    tax: 50,
+    settings: { ...settings, resourceBoosters: { wood: false, clay: false, iron: false, stone: true } },
+    uRp: 0,
+    buildingsUsed: 0,
+  });
+  assert.ok(boosted.upkeep > h.upkeep, 'a Stonemason must buy more military');
+});
+
+test('a site with no finite tax has no budget to spend', () => {
+  // 0 food plots divides by a K of zero. -Infinity must not read as unlimited.
+  const h = milsovHeadroom({
+    tax: -Infinity,
+    settings: { ...worked, plots: { wood: 5, clay: 5, iron: 5, stone: 5, food: 5 } },
+    uRp: 0,
+    buildingsUsed: 0,
+  });
+  assert.equal(h.rp, 0);
+  assert.equal(h.upkeep, 0);
+});
+
+// --- The price of going further --------------------------------------------
+
+test('the quoted price is what a point of tax actually buys', () => {
+  // Priced by re-solving one point down, so it accounts for tiles and slots
+  // running out — not by a formula that assumes they never do.
+  const neighbours = ring((dx, dy) => (Math.abs(dx) <= 1 && Math.abs(dy) <= 1 ? 9 : 0));
+  const settings = withMil({ tMin: -1000 });
+  const plan = scoreSite({ neighbours, settings });
+
+  const cheaper = planMilsov({
+    tiles: neighbours
+      .map((n) => ({ ...n, d: distance(n.dx, n.dy) }))
+      .filter((t) => !plan.tiles.some((c) => c.dx === t.dx && c.dy === t.dy))
+      .sort((a, b) => a.d - b.d || a.food - b.food),
+    headroom: milsovHeadroom({
+      tax: plan.tMax - 1, settings, uRp: plan.spend, buildingsUsed: plan.tiles.length,
+    }),
+    chancery: false,
+  });
+  assert.equal(plan.milsovPrice, cheaper.bonus - plan.milsovBonus);
+  assert.ok(plan.milsovPrice >= 0, 'a lower tax can never buy less');
+});
+
+test('a site with nothing left to claim prices at nothing', () => {
+  // Every tile already spoken for, so no tax rate buys another building.
+  const plan = scoreSite({
+    neighbours: [{ dx: 1, dy: 0, food: 7 }],
+    settings: withMil({ tMin: -1000 }),
+  });
+  assert.equal(plan.milsovPrice, 0);
+});
+
+// --- The resource ceiling ---------------------------------------------------
 
 test('a resource with no plots is flagged impossible, not returned as a number', () => {
   const milsovAssignments = [{ sovLevel: 5, buildingLevel: 5 }];
@@ -416,206 +571,44 @@ test('a resource with no plots is flagged impossible, not returned as a number',
   assert.equal(r.ceiling, -Infinity, 'no production pays no upkeep at any tax');
 });
 
-test('one requested building is one structure, at one structure of upkeep', () => {
-  // 5x Sov V on 3 stone plots is 12,000/hr and a ceiling of -32.6%. ONE Sov V is
-  // 2,400/hr and +93.5%, which never binds. The quota is a list of buildings, so
-  // one entry can only ever mean one.
-  const settings = { ...worked, tMin: -1000, milsovQuota: sov(5) };
-  const plan = scoreSite({ neighbours: ring8, settings });
-  assert.equal(plan.milsov.length, 1, 'one entry, one building');
-  close(plan.resCeiling, 93.48, 0.01);
-  assert.equal(plan.resIndicative, false);
-
-  // And the value that made this visible: five buildings really is five.
-  const five = scoreSite({ neighbours: ring8, settings: { ...settings, milsovQuota: sov(5, 5) } });
-  assert.equal(five.milsov.length, 5);
-  close(five.resCeiling, -32.60, 0.01);
-  assert.equal(five.binding, 'res', 'a negative measured ceiling is what binds here');
-});
-
-test('the claim is charged on its sovereignty level, the structure on its own', () => {
-  // A Sov V claim carrying a level 1 building: 50 RP at d = 1 for the claim,
-  // but only 150/hr of each basic resource for the structure. Reading either
-  // level for both costs is the error the schema exists to prevent.
-  const plan = scoreSite({
-    neighbours: ring8,
-    settings: { ...worked, tMin: 0, milsovQuota: [{ sovLevel: 5, buildingLevel: 1 }] },
-  });
-  assert.equal(plan.milsov.length, 1);
-  assert.equal(plan.milsov[0].sovLevel, 5);
-  assert.equal(plan.milsov[0].buildingLevel, 1);
-  close(plan.milsov[0].rp, 50, 1e-9);          // 10 x 5 x d, d = 1
-  close(plan.milsov[0].gold, 500, 1e-9);
-  // 150/hr against 3 stone plots, not the 2,400 the claim's level would imply.
-  close(plan.resCeiling, 125 - (100 * 150) / (3 * BASIC_YIELD_L20), 0.01);
-});
-
-test('with no milsov quota the ceiling is absent rather than indicative', () => {
+test('with nothing placed the ceiling is absent rather than indicative', () => {
   const r = tRes({ milsovAssignments: [], plots: { wood: 0, clay: 0, iron: 0, stone: 0, food: 25 } });
   assert.deepEqual(r, { ceiling: Infinity, indicative: false, binding: null, impossible: false });
 });
 
-test('a zero-plot allocation cannot pay milsov upkeep, and now says so in T_max', () => {
-  // 0/0/0/0/25 is a legitimate allocation and scores 100% with no milsov. One
-  // Sov V on it is 2,400/hr of four resources the city does not produce at all,
-  // so no tax rate pays for it: -Infinity is the true answer, and now that the
-  // yield behind it is measured the ceiling is allowed to say so.
-  //
-  // What this must NOT do is disappear without a reason. The plan still carries
-  // the impossible flag and names the resource, so the caller can explain the
-  // exclusion rather than dropping the site blindly — which is what made the
-  // same behaviour unacceptable while the yield was borrowed.
-  const plots = { wood: 0, clay: 0, iron: 0, stone: 0, food: 25 };
-  const settings = { ...worked, tMin: 0, plots, milsovQuota: sov(5) };
-  const plan = scoreSite({ neighbours: ring8, settings });
-
-  assert.equal(plan.tMax, -Infinity);
-  assert.equal(plan.binding, 'res', 'a measured ceiling binds like any other');
-  assert.equal(plan.resImpossible, true);
-  assert.equal(plan.resCeiling, -Infinity);
-  assert.equal(plan.resIndicative, false);
-  assert.ok(plan.quotaMet, 'the quota fits the tiles — it is the upkeep that cannot be paid');
-  assert.ok(plan.resBinding, 'the row can still name which resource killed it');
-
-  // Drop the quota and the same site is perfectly good, which is what makes the
-  // exclusion attributable to the quota rather than to the site.
-  const noQuota = scoreSite({ neighbours: ring8, settings: { ...settings, milsovQuota: [] } });
-  assert.ok(noQuota.tMax >= 50, `the site itself is fine: ${noQuota.tMax}`);
+test('the claim is charged on its sovereignty level, the structure on its own', () => {
+  // A Sov V claim carrying a level 1 building: 50 RP at d = 1 for the claim, but
+  // only 150/hr of each basic resource for the structure. The engine no longer
+  // plans that split, but tRes must still read the levels apart — that is the
+  // schema the whole cost model rests on.
+  close(tRes({
+    milsovAssignments: [{ sovLevel: 5, buildingLevel: 1 }],
+    plots: worked.plots,
+  }).ceiling, 125 - (100 * 150) / (3 * BASIC_YIELD_L20), 0.01);
 });
 
-test('a low measured ceiling ranks the site rather than annotating it', () => {
-  // 5/5/5/1/9: one stone plot against 2,400/hr caps the site at 30.4% however
-  // much food it has. While the yield was borrowed this was reported and
-  // ignored; measured, it is the answer.
-  const settings = {
-    ...worked, tMin: 0,
-    plots: { wood: 5, clay: 5, iron: 5, stone: 1, food: 9 },
-    milsovQuota: sov(5),
-  };
-  const plan = scoreSite({ neighbours: ring8, settings });
-  close(plan.resCeiling, 30.44, 0.01);
-  assert.equal(plan.resBinding, 'stone');
-  assert.equal(plan.binding, 'res');
-  close(plan.tMax, plan.resCeiling, 1e-9);
-  // A second stone plot doubles what the city can pay and lifts the ceiling.
-  const twoStone = scoreSite({
-    neighbours: ring8,
-    settings: { ...settings, plots: { wood: 5, clay: 5, iron: 4, stone: 2, food: 9 } },
-  });
-  assert.ok(twoStone.tMax > plan.tMax, 'more stone must buy more tax');
-});
-
-// --- Resource Structures pay only their claim -------------------------------
-
-/** `count` Resource Structure buildings at Sov `level`, e.g. a Mineshaft claim. */
-const res = (level, count = 1) =>
-  Array.from({ length: count }, () => ({
-    structure: 'mineshaft', sovLevel: level, buildingLevel: level,
-  }));
-
-test('a Resource Structure claim costs RP and gold but nothing per hour', () => {
-  // Same tile, same claim, same reservation as the military case — only the
-  // hourly wood/clay/iron/stone bill goes away.
-  const settings = { ...worked, tMin: 0, milsovQuota: res(5) };
-  const plan = scoreSite({ neighbours: ring8, settings });
-
-  assert.equal(plan.milsov.length, 1, 'the claim still occupies a tile');
-  assert.ok(plan.quotaMet);
-  close(plan.milsov[0].rp, 50, 1e-9);    // 10 x 5 x d, d = 1 — the claim is charged
-  close(plan.milsov[0].gold, 500, 1e-9);
-  close(plan.milsovGold, 500, 1e-9);
-
-  // Nothing is charged per hour, so there is no ceiling at all — not merely a
-  // high one, which is what tells a reader the claim is free rather than cheap.
-  assert.equal(plan.resCeiling, Infinity);
-  assert.equal(plan.resImpossible, false);
-  assert.notEqual(plan.binding, 'res');
-
-  // The military quota on the identical site is what it costs.
-  const military = scoreSite({ neighbours: ring8, settings: { ...settings, milsovQuota: sov(5) } });
-  close(military.resCeiling, 93.48, 0.01);
-  // Both plans pay the same research, so they differ only in the hourly bill.
-  close(plan.uRp, military.uRp, 1e-9);
-});
-
-test('a zero-plot site survives a Resource Structure quota outright', () => {
-  // The impossible-ceiling path is about upkeep that cannot be paid. With
-  // nothing charged there is no ceiling to be impossible about, at any
-  // allocation — the site scores exactly as it would with no quota's structures.
-  const plots = { wood: 0, clay: 0, iron: 0, stone: 0, food: 25 };
-  const plan = scoreSite({
-    neighbours: ring8,
-    settings: { ...worked, tMin: 0, plots, milsovQuota: res(5) },
-  });
-  assert.equal(plan.resImpossible, false);
-  assert.equal(plan.resBinding, null);
-  assert.ok(Number.isFinite(plan.tMax));
-});
-
-test('a mixed quota is charged for its Production Structures alone', () => {
-  const mixed = [...sov(5), ...res(5, 3)];
-  const plan = scoreSite({ neighbours: ring8, settings: { ...worked, tMin: 0, milsovQuota: mixed } });
-  assert.equal(plan.milsov.length, 4, 'all four claims are reserved');
-
-  // One Sov V military structure — 2,400/hr, not the 9,600 four would cost.
-  close(plan.resCeiling, 125 - (100 * 2400) / (3 * BASIC_YIELD_L20), 0.01);
-  close(plan.resCeiling, scoreSite({
-    neighbours: ring8, settings: { ...worked, tMin: 0, milsovQuota: sov(5) },
-  }).resCeiling, 1e-9);
-
-  // Each structure is charged on its own kind: tRes reads the assignment.
-  assert.equal(tRes({ milsovAssignments: mixed, plots: worked.plots }).ceiling, plan.resCeiling);
-  assert.deepEqual(
-    tRes({ milsovAssignments: res(5, 6), plots: worked.plots }),
-    { ceiling: Infinity, indicative: false, binding: null, impossible: false },
-  );
-});
-
-test('the food structures cost what every other Resource Structure costs', () => {
-  // The picker does not offer Farmstead or Fishery — the food plan places those
-  // — but the engine knows them, and knowing them must not mean a special case:
-  // a resource structure is a resource structure whatever it raises.
+test('a Resource Structure is costed for free wherever one appears', () => {
+  // The picker does not offer them any more — nothing would stop the search
+  // claiming every spare tile with one — but the engine still knows them, and
+  // knowing them must not mean a special case.
   const none = { ceiling: Infinity, indicative: false, binding: null, impossible: false };
-  for (const structure of ['farmstead', 'fishery', 'loggingCamp']) {
+  for (const structure of ['farmstead', 'fishery', 'loggingCamp', 'mineshaft']) {
     const milsovAssignments = [{ structure, sovLevel: 5, buildingLevel: 5 }];
     assert.deepEqual(tRes({ milsovAssignments, plots: worked.plots }), none, structure);
   }
 });
 
-test('the advisory never claims upkeep a Resource Structure does not pay', () => {
-  // The same 3x Sov II -> 2x Sov III win as above. On military structures the
-  // note warns that concentrating doubles the hourly bill; on Resource
-  // Structures there is no bill, so there is nothing to warn about.
-  const plan = scoreSite({
-    neighbours: advisorySite,
-    settings: { ...worked, tMin: 0, milsovQuota: res(2, 3) },
-  });
-  assert.ok(plan.milsovNote, 'the research saving is the same either way');
-  assert.deepEqual(plan.milsovAdvice.levels, [3, 3]);
-  assert.equal(plan.milsovAdvice.upkeep, 0);
-  assert.equal(plan.milsovAdvice.requestedUpkeep, 0);
-  assert.ok(!/structure upkeep/.test(plan.milsovNote), plan.milsovNote);
-  assert.match(plan.milsovNote, /3x Sov II \(Resource Structure\)/);
+test('a mixed set is charged for its Production Structures alone', () => {
+  const mixed = [
+    { structure: 'trainingGround', sovLevel: 5, buildingLevel: 5 },
+    ...Array.from({ length: 3 }, () => ({ structure: 'mineshaft', sovLevel: 5, buildingLevel: 5 })),
+  ];
+  // One Sov V military structure — 2,400/hr, not the 9,600 four would cost.
+  close(tRes({ milsovAssignments: mixed, plots: worked.plots }).ceiling,
+    125 - (100 * 2400) / (3 * BASIC_YIELD_L20), 0.01);
 });
 
-test('a mixed advisory prices only the structures that are charged', () => {
-  // 2x military + 1x resource requested at Sov II: 2 x 300 = 600/hr. The 2x Sov
-  // III alternative can carry at most those same two charged structures, so its
-  // worst case is 2 x 600 = 1,200 — dearer, and said so. Pricing all three
-  // tiles as charged, or none, would misreport it in one direction or the other.
-  const plan = scoreSite({
-    neighbours: advisorySite,
-    settings: { ...worked, tMin: 0, milsovQuota: [...sov(2, 2), ...res(2)] },
-  });
-  assert.ok(plan.milsovNote, 'the note should still fire');
-  assert.equal(plan.milsovAdvice.requestedUpkeep, 600);
-  assert.equal(plan.milsovAdvice.upkeep, 1200);
-  assert.match(plan.milsovNote, /higher structure upkeep/);
-});
-
-test('the ceiling binds T_max again once it stops being indicative', () => {
-  // The engine still applies a measured ceiling — only the placeholder is held
-  // back. tMax is where that decision lands, so it is tested directly.
+test('the ceiling binds T_max like any other', () => {
   const t = tMax({ food: 60, rp: 70, res: 20 });
   close(t.value, 20);
   assert.equal(t.binding, 'res');
@@ -624,103 +617,76 @@ test('the ceiling binds T_max again once it stops being indicative', () => {
 // --- Boosters, calibrated yields and the surplus read-out -------------------
 
 test('a booster is worth exactly its face value in tax headroom', () => {
-  // The bonus is points on the production percentage, like the Flour Mill, so a
-  // Stonemason moves a stone-bound ceiling up by 40 and nothing else changes.
-  const settings = { ...worked, tMin: 0, milsovQuota: sov(5) };
-  const bare = scoreSite({ neighbours: ring8, settings });
-  const boosted = scoreSite({
-    neighbours: ring8,
-    settings: { ...settings, resourceBoosters: { wood: false, clay: false, iron: false, stone: true } },
+  // The bonus is points on the production percentage, like the Flour Mill, so it
+  // is worth a straight 40 points against that resource's ceiling.
+  const milsovAssignments = [{ sovLevel: 5, buildingLevel: 5 }];
+  const bare = tRes({ milsovAssignments, plots: worked.plots, settings: worked });
+  assert.equal(bare.binding, 'stone', '3 stone plots against 5 of everything else');
+
+  const all = tRes({
+    milsovAssignments,
+    plots: worked.plots,
+    settings: { ...worked, resourceBoosters: { wood: true, clay: true, iron: true, stone: true } },
   });
-  assert.equal(bare.resBinding, 'stone', '3 stone plots against 5 of everything else');
+  close(all.ceiling, bare.ceiling + 40, 1e-9);
+  assert.equal(all.binding, 'stone');
 
   // Boosting only the binding resource lifts it past the other three, so the
   // ceiling stops being stone's and becomes theirs — it does not rise by 40.
-  assert.notEqual(boosted.resBinding, 'stone');
-  close(boosted.resCeiling, 125 - (100 * 2400) / (5 * BASIC_YIELD_L20), 0.01);
-
-  // With every booster on, all four move together and stone binds again.
-  const all = scoreSite({
-    neighbours: ring8,
-    settings: { ...settings, resourceBoosters: { wood: true, clay: true, iron: true, stone: true } },
+  const stoneOnly = tRes({
+    milsovAssignments,
+    plots: worked.plots,
+    settings: { ...worked, resourceBoosters: { wood: false, clay: false, iron: false, stone: true } },
   });
-  close(all.resCeiling, bare.resCeiling + 40, 1e-9);
-  assert.equal(all.resBinding, 'stone');
+  assert.notEqual(stoneOnly.binding, 'stone');
+  close(stoneOnly.ceiling, 125 - (100 * 2400) / (5 * BASIC_YIELD_L20), 0.01);
 });
 
 test('a calibration reading overrides the default yield for that city', () => {
-  // A site rich enough in food and research that the resource ceiling is the
-  // lowest of the three — otherwise "it binds" would prove nothing.
-  const rich = ring8.map((t) => ({ ...t, food: 16 }));
   const settings = {
-    ...worked, tMin: -1000, milsovQuota: sov(5, 4),
-    rpCalibration: { observedRpPerHour: 8000, atTax: 25 },
+    ...worked,
     resourceCalibration: { observedPerHour: 15000, atTax: 25, plots: 5, booster: false },
   };
-  const plan = scoreSite({ neighbours: rich, settings });
-  // 4x Sov V is 9,600/hr against 3 stone plots at the reading's 3,000 a plot.
-  close(plan.resCeiling, 125 - (100 * 9600) / (3 * 3000), 0.01);
-  assert.equal(plan.binding, 'res', 'a measured ceiling binds T_max');
-  close(plan.tMax, plan.resCeiling, 1e-9);
-
-  // Without the reading the same site uses the default yield, which is lower,
-  // so the ceiling is lower — and both are applied, neither is annotation.
-  const dflt = scoreSite({ neighbours: rich, settings: { ...settings, resourceCalibration: null } });
-  close(dflt.resCeiling, 125 - (100 * 9600) / (3 * BASIC_YIELD_L20), 0.01);
-  assert.equal(dflt.binding, 'res');
-  assert.ok(dflt.tMax < plan.tMax, 'the lower yield must give the lower ceiling');
+  const { yield: y } = computeBasicYield(settings);
+  close(y, 3000, 1e-9);
+  // A richer yield pays a bigger bill, so it buys more military at the same tax.
+  const lean = milsovHeadroom({ tax: 50, settings: worked, uRp: 0, buildingsUsed: 0 });
+  const rich = milsovHeadroom({ tax: 50, settings, uRp: 0, buildingsUsed: 0 });
+  assert.ok(rich.upkeep > lean.upkeep);
 });
 
 test('the binding ceiling has exactly zero left over at T_max', () => {
   // The surplus figures are the ceiling equations read as a balance, so this is
   // the two derivations checking each other.
-  for (const quota of [[], sov(3, 2), [...sov(5), ...res(5, 2)]]) {
-    const plan = scoreSite({ neighbours: ring8, settings: { ...worked, tMin: 0, milsovQuota: quota } });
-    const s = plan.surplus;
-    close(s.tax, plan.tMax, 1e-9);
-    if (plan.binding === 'food') close(s.food, 0, 1e-6);
-    if (plan.binding === 'rp') close(s.rp, 0, 1e-6);
-    assert.ok(s.food >= -1e-6, `food deficit at T_max: ${s.food}`);
-    assert.ok(s.rp >= -1e-6, `research deficit at T_max: ${s.rp}`);
+  for (const structure of [null, 'trainingGround']) {
+    for (const neighbours of [ring8, ring(() => 9), ring(() => 16)]) {
+      const plan = scoreSite({
+        neighbours, settings: { ...worked, tMin: -1000, milsovStructure: structure },
+      });
+      const s = plan.surplus;
+      close(s.tax, plan.tMax, 1e-9);
+      if (plan.binding === 'food') close(s.food, 0, 1e-6);
+      if (plan.binding === 'rp') close(s.rp, 0, 1e-6);
+      assert.ok(s.food >= -1e-6, `food deficit at T_max: ${s.food}`);
+      assert.ok(s.rp >= -1e-6, `research deficit at T_max: ${s.rp}`);
+      for (const r of BASIC_RESOURCES) {
+        assert.ok(s[r] >= -1e-6, `${r} deficit at T_max: ${s[r]}`);
+      }
+    }
   }
 });
 
-test('the surplus states the milsov bill against every basic resource', () => {
-  // 4x Sov V is 9,600/hr of EACH of the four, so each is its own production
-  // less the same figure — and on 3 stone plots that is a deficit, which is the
-  // whole point of showing it.
-  const settings = { ...worked, tMin: -1000, milsovQuota: sov(5, 4) };
-  const plan = scoreSite({ neighbours: ring8, settings });
+test('the surplus states the military bill against every basic resource', () => {
+  const settings = withMil({ tMin: -1000 });
+  const plan = scoreSite({ neighbours: spare, settings });
   const { yield: y } = computeBasicYield(settings);
-  assert.equal(plan.surplus.upkeep, 9600);
-  for (const r of ['wood', 'clay', 'iron', 'stone']) {
-    const expected = (worked.plots[r] * y * (125 - plan.tMax)) / 100 - 9600;
+  assert.ok(plan.milsov.length > 0, 'precondition: something was placed');
+  assert.equal(plan.surplus.upkeep, plan.milsovUpkeep);
+  for (const r of BASIC_RESOURCES) {
+    const expected = (worked.plots[r] * y * (125 - plan.tMax)) / 100 - plan.milsovUpkeep;
     close(plan.surplus[r], expected, 1e-6);
   }
   assert.equal(plan.surplus.indicative, false, 'the yield behind them is measured');
-
-  // Stone is the tightest of the four, on three plots against five — which is
-  // what makes it the resource T_res names. It is still positive here because
-  // food binds at a lower tax than the stone ceiling, and a lower tax produces
-  // more of everything: no basic resource can run a deficit once the ceiling
-  // that binds is a measured one.
-  assert.equal(plan.resBinding, 'stone');
-  for (const r of BASIC_RESOURCES) {
-    assert.ok(plan.surplus[r] >= -1e-6, `${r} must not be in deficit: ${plan.surplus[r]}`);
-    if (r !== 'stone') assert.ok(plan.surplus[r] > plan.surplus.stone, `${r} beats stone`);
-  }
-  assert.ok(plan.tMax <= plan.resCeiling + 1e-9, 'the tax never exceeds the resource ceiling');
-});
-
-test('a Resource Structure quota leaves the basic resources untouched', () => {
-  // Nothing is charged per hour, so the surplus is pure production — the same
-  // figure a site with no quota at all would report at the same tax.
-  const settings = { ...worked, tMin: 0, milsovQuota: res(5, 3) };
-  const plan = scoreSite({ neighbours: ring8, settings });
-  assert.equal(plan.surplus.upkeep, 0);
-  const { yield: y } = computeBasicYield(settings);
-  close(plan.surplus.stone, (worked.plots.stone * y * (125 - plan.tMax)) / 100, 1e-6);
-  assert.ok(plan.surplus.stone > 0);
 });
 
 test('surplusAt is callable on its own, at any tax the user asks about', () => {
@@ -733,105 +699,9 @@ test('surplusAt is callable on its own, at any tax the user asks about', () => {
   close(at(25).food, computeK(7) * 160 - 32200, 1e-6);
 });
 
-// --- Milsov level advisory (PRD §3.6) --------------------------------------
-
-// Two orthogonal neighbours at d = 1 and a diagonal at d = 1.414. Requesting
-// 3x Sov II reaches the diagonal; 2x Sov III does not, and buys the same +30%.
-//   requested 3x Sov II : 10 * 2 * (1 + 1 + 1.4142) = 68.28 RP, bonus 30
-//   alternative 2x Sov III : 10 * 3 * (1 + 1)       = 60.00 RP, bonus 30
-const advisorySite = [
-  { dx: 1, dy: 0, food: 3 },
-  { dx: 0, dy: 1, food: 3 },
-  { dx: 1, dy: 1, food: 3 },
-  { dx: 2, dy: 0, food: 7 },
-  { dx: 2, dy: 2, food: 9 },
-];
-
-test('the advisory fires when a concentrated split genuinely wins', () => {
-  const plan = scoreSite({
-    neighbours: advisorySite,
-    settings: { ...worked, tMin: 0, milsovQuota: sov(2, 3) },
-  });
-  assert.ok(plan.milsovNote, 'the note should fire');
-  assert.deepEqual(plan.milsovAdvice.levels, [3, 3]);
-  close(plan.milsovAdvice.rp, 60);
-  close(plan.milsovAdvice.requestedRp, 68.284);
-  assert.equal(plan.milsovAdvice.bonus, 30);
-  assert.equal(plan.milsovAdvice.requestedBonus, 30);
-  assert.match(plan.milsovNote, /^2x Sov III would cost less research than your 3x Sov II/);
-  // Upkeep doubles per level, so concentrating costs more W/C/I/S. Say so.
-  assert.match(plan.milsovNote, /higher structure upkeep/);
-});
-
-test('the plan still uses the requested levels unchanged when the note fires', () => {
-  const plan = scoreSite({
-    neighbours: advisorySite,
-    settings: { ...worked, tMin: 0, milsovQuota: sov(2, 3) },
-  });
-  assert.ok(plan.milsovNote, 'precondition: the note fires');
-  assert.equal(plan.milsov.length, 3, 'three tiles, exactly as requested');
-  for (const m of plan.milsov) assert.equal(m.sovLevel, 2, 'Sov II, exactly as requested');
-  close(plan.milsov.reduce((n, m) => n + m.rp, 0), 68.284);
-});
-
-test('the advisory stays silent when the distance multiplier kills the saving', () => {
-  // The PRD's own illustration, at real distances: only one tile sits at d = 1,
-  // so spreading 1x Sov V over more squares reaches d = 1.414 and beyond and
-  // costs more research for the same or less bonus.
-  const neighbours = [
-    { dx: 1, dy: 0, food: 3 },
-    { dx: 1, dy: 1, food: 3 },
-    { dx: 2, dy: 0, food: 7 },
-    { dx: 2, dy: 2, food: 9 },
-  ];
-  const plan = scoreSite({
-    neighbours,
-    settings: { ...worked, tMin: 0, milsovQuota: sov(5) },
-  });
-  assert.equal(plan.milsovNote, null, '3x Sov II does not actually beat 1x Sov V here');
-});
-
-test('the advisory never suggests spending more research or taking more tiles', () => {
-  // Bonus per RP collapses to 1/(2 * mean distance), so a plan on more of the
-  // cheapest-first prefix can never win. That is what makes it safe to compare
-  // milsov in isolation: a win returns tiles to the food knapsack.
-  const ds = [1, 1, 1.4142135, 2, 2.2360679, 2.8284271];
-  const tiles = ds.map((d) => ({ d }));
-  for (let level = 1; level <= 5; level++) {
-    for (let count = 1; count <= ds.length; count++) {
-      const requested = tiles.slice(0, count).map((t) => ({
-        ...t, sovLevel: level, buildingLevel: level, rp: claimUpkeep(t.d, level, false).rp,
-      }));
-      const advice = milsovAdvice({ requested, tiles, chancery: false });
-      if (!advice) continue;
-      assert.ok(advice.rp <= advice.requestedRp + 1e-9, `${count}x L${level}: spends more RP`);
-      assert.ok(advice.bonus >= advice.requestedBonus - 1e-9, `${count}x L${level}: weaker`);
-      assert.ok(advice.tileCount <= count, `${count}x L${level}: took more tiles`);
-    }
-  }
-});
-
-test('the advisory costs nothing and says nothing without a milsov quota', () => {
-  const plan = scoreSite({ neighbours: advisorySite, settings: { ...worked, tMin: 0 } });
-  assert.equal(plan.milsovNote, null);
-  assert.equal(plan.milsovAdvice, null);
-  assert.equal(milsovAdvice({ requested: [], tiles: [], chancery: false }), null);
-});
-
-test('the advisory toggle switches it off (PRD §4)', () => {
-  const plan = scoreSite({
-    neighbours: advisorySite,
-    settings: { ...worked, tMin: 0, milsovAdvisory: false, milsovQuota: sov(2, 3) },
-  });
-  assert.equal(plan.milsovNote, null);
-});
-
-test('a mixed quota puts the highest level on the nearest tile', () => {
-  const plan = scoreSite({
-    neighbours: advisorySite,
-    settings: { ...worked, tMin: 0, milsovQuota: [...sov(1), ...sov(5)] },
-  });
-  const byD = [...plan.milsov].sort((a, b) => a.d - b.d);
-  assert.equal(byD[0].sovLevel, 5, 'Sov V belongs on the d=1 tile, not the Sov I');
-  assert.equal(byD[1].sovLevel, 1);
+test('gold upkeep still tracks research at exactly 10:1 with military in the plan', () => {
+  const plan = scoreSite({ neighbours: ring(() => 9), settings: withMil({ tMin: -1000 }) });
+  close(plan.uGold, plan.uRp * 10, 1e-6);
+  close(plan.uRp, plan.spend + plan.milsovRp, 1e-9);
+  close(plan.milsovGold, plan.milsovRp * 10, 1e-6);
 });

@@ -2,7 +2,8 @@ node_modules/
 dist/
 *.log
 
-# Markdown is maintained outside this repo, README excepted. The code cites the
-# spec docs by section number (mechanics §4.1, PRD §3.5, ...) — keep them to hand.
+# Markdown is maintained outside this repo, README excepted. The spec docs are
+# worth keeping to hand, but the code does not cite them — a comment has to
+# explain the code on its own, since the section it would point at is not here.
 *.md
 !README.md

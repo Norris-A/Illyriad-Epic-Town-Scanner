@@ -27,6 +27,8 @@ import {
   computeBasicYield,
   sovStructure,
   structureUpkeep,
+  prepareSite,
+  planSiteAt,
 } from './scoring.js';
 
 const CSS = `
@@ -74,6 +76,10 @@ const CSS = `
 .sov-derived .sov-off{color:#888}
 .sov-derived .sov-on{color:#6c6}
 .sov-hint{color:#a9a9a9;font-size:11px;margin:2px 0}
+.sov-build{color:#888;font-size:10px;font-weight:normal}
+.sov-tax{margin:6px 0;padding-top:4px;border-top:1px solid #333}
+.sov-tax input[type=range]{width:190px}
+.sov-tax output{color:#6bf;font-variant-numeric:tabular-nums}
 .sov-balance{margin:4px 0}
 .sov-balance td:nth-child(2){font-variant-numeric:tabular-nums}
 `;
@@ -200,10 +206,11 @@ export function surplusRows(surplus, binding) {
  * one for silence: a site whose military sovereignty is unaffordable would
  * otherwise sit in the table looking clean. So the row says so, and says that it
  * did not affect the ranking. An applied ceiling needs none of this — it is in
- * T_max, and the binding column already names it.
+ * the tax the row shows, and the Limiter column already names it.
  *
- * Returns null when there is nothing to report — an applied ceiling, no milsov
- * quota, or one above the tax the site reaches, where the upkeep is covered.
+ * Returns null when there is nothing to report — an applied ceiling, no
+ * structure asked for, or one above the tax the site reaches, where the upkeep
+ * is covered.
  *
  * @returns {{text: string, title: string} | null}
  */
@@ -532,7 +539,7 @@ export function createPanel({ onScan, onExport }) {
   const root = document.createElement('div');
   root.className = 'sov-panel';
   root.innerHTML = `
-    <h2>Sovereignty Scanner</h2>
+    <h2>Sovereignty Scanner <span class="sov-build"></span></h2>
     <div class="sov-body">
       <p><button class="sov-scan">Scan</button>
          <button class="sov-settings sec">Settings</button>
@@ -542,6 +549,12 @@ export function createPanel({ onScan, onExport }) {
       <div class="sov-results"></div>
       <div class="sov-incomplete"></div>
     </div>`;
+  // Which build is actually running. Tampermonkey keeps its own copy of an
+  // installed script, so a rebuilt file is not a reinstalled one — without this
+  // there is no way to tell from inside the game which code is live, and an old
+  // build looks exactly like a change that did not work.
+  root.querySelector('.sov-build').textContent =
+    typeof __BUILD_VERSION__ === 'undefined' ? 'dev' : __BUILD_VERSION__;
   document.body.appendChild(root);
 
   const $ = (sel) => root.querySelector(sel);
@@ -788,7 +801,9 @@ export function createPanel({ onScan, onExport }) {
       el.innerHTML = `
         <p>${summary}</p>
         <table>
-          <thead><tr><th>Site</th><th>T_max</th><th>Binds</th><th>Food</th>
+          <thead><tr><th>Site</th>
+            <th title="The highest tax this site can hold on food alone">Tax Max</th>
+            <th title="Which ceiling stops the tax going higher">Limiter</th><th>Food</th>
             <th>RP</th><th>Net gold</th><th title="Free military production bonus — costs this site no tax">Mil</th><th></th></tr></thead>
           <tbody>${rows}</tbody>
         </table>`;
@@ -798,7 +813,7 @@ export function createPanel({ onScan, onExport }) {
           // Selecting and expanding are one gesture; Prefill needs a selection
           // the user can see they made.
           select(Number(row.dataset.n));
-          toggleDetail(row, results[Number(row.dataset.n)]);
+          toggleDetail(row, results[Number(row.dataset.n)], readSettings().settings);
         });
       });
     },
@@ -824,12 +839,24 @@ function flagsHtml(r) {
         MILSOV_BLOCKED_TEXT[r.milsovBlocked] ?? 'nothing was left over'}.`,
     });
   }
+  // The minimum is not met for free, but is met somewhere the user said they
+  // would accept. Saying where is the whole point — dropping the site was what
+  // made this invisible.
+  if (r.milsovMinTax != null) {
+    flags.push({
+      cls: 'sov-advice',
+      text: `min @ ${r.milsovMinTax.toFixed(0)}%`,
+      title: `This site reaches your minimum military bonus (+${r.milsovMinBonusAt}%) `
+        + `at ${r.milsovMinTax.toFixed(1)}% tax, against the ${r.tMax.toFixed(1)}% it holds `
+        + `on food alone. Open the row and drag the tax slider to see the trade.`,
+    });
+  }
   return flags
     .map((f) => `<span class="${f.cls}" title="${escapeHtml(f.title)}">${escapeHtml(f.text)}</span>`)
     .join(' ');
 }
 
-function toggleDetail(row, result) {
+function toggleDetail(row, result, settings) {
   const next = row.nextElementSibling;
   if (next && next.classList.contains('sov-detail')) {
     next.remove();
@@ -837,64 +864,104 @@ function toggleDetail(row, result) {
   }
   const tr = document.createElement('tr');
   tr.className = 'sov-detail';
-  const tiles = result.tiles.map((t) => {
-    const dxy = `${t.dx >= 0 ? '+' : ''}${t.dx},${t.dy >= 0 ? '+' : ''}${t.dy}`;
-    return `<li>${dxy} — food ${t.food}, d ${t.d.toFixed(2)}, ${t.rp.toFixed(0)} RP, Sov ${t.level}</li>`;
-  }).join('');
+
+  // The food knapsack is built ONCE here and reused for every tax the slider
+  // visits. Rebuilding it per drag event is what made this crawl: at a real
+  // R_ref the DP is some 3,000 spend levels against 24 tiles, and the building
+  // cap puts it on the count-limited path, which is another factor of twenty.
+  const ctx = result.neighbours ? prepareSite({ neighbours: result.neighbours, settings }) : null;
+  const floor = Math.min(settings.tMin ?? 0, result.tMax);
+  const slider = ctx && Number.isFinite(result.tMax) && result.tMax - floor > 0.5
+    ? `<div class="sov-tax">
+        <div class="sov-f"><span>Tax <output class="sov-tax-at">${result.tMax.toFixed(1)}%</output>
+          <span class="sov-hint">— drag to trade tax for sovereignty</span></span>
+          <input type="range" class="sov-tax-range" min="${floor}" max="${result.tMax}"
+            step="0.5" value="${result.tMax}"></div>
+      </div>`
+    : '';
+
+  tr.innerHTML = `<td colspan="8">${slider}<div class="sov-body-at">${
+    detailBodyHtml(result, result)}</div></td>`;
+  row.after(tr);
+
+  const range = tr.querySelector('.sov-tax-range');
+  if (!range) return;
+  const at = tr.querySelector('.sov-tax-at');
+  const body = tr.querySelector('.sov-body-at');
+  range.addEventListener('input', () => {
+    const tax = Number(range.value);
+    at.textContent = `${tax.toFixed(1)}%`;
+    const plan = planSiteAt(ctx, tax);
+    body.innerHTML = plan
+      ? detailBodyHtml(plan, result)
+      : '<p class="sov-flag">This site cannot hold that tax.</p>';
+  });
+}
+
+/**
+ * Everything about one plan, at the tax it is run at. Rendered from the plan
+ * alone so the slider can replace it wholesale — the tile list, the buildings
+ * and the balance all move together, which is the point of dragging it.
+ *
+ * `base` is the plan at the site's own maximum, so a lower tax can say what it
+ * bought and what it cost rather than leaving two screens of numbers to diff.
+ */
+function detailBodyHtml(plan, base) {
+  const dxy = (t) => `${t.dx >= 0 ? '+' : ''}${t.dx},${t.dy >= 0 ? '+' : ''}${t.dy}`;
+  const tiles = plan.tiles.map((t) =>
+    `<li>${dxy(t)} — food ${t.food}, d ${t.d.toFixed(2)}, ${t.rp.toFixed(0)} RP, Sov ${t.level}</li>`).join('');
   // One line per building the engine placed, on the square it chose.
-  const mil = result.milsov.map((m) => {
-    const dxy = `${m.dx >= 0 ? '+' : ''}${m.dx},${m.dy >= 0 ? '+' : ''}${m.dy}`;
-    return `<li>${dxy} — Sov ${m.sovLevel} claim carrying a level ${m.buildingLevel} ${
+  const mil = plan.milsov.map((m) =>
+    `<li class="sov-advice">${dxy(m)} — Sov ${m.sovLevel} claim carrying a level ${m.buildingLevel} ${
       escapeHtml(sovStructure(m).name)}, d ${m.d.toFixed(2)}, ${m.rp.toFixed(0)} RP, ${
-      structureUpkeep(m).toLocaleString('en-GB')}/hr each W/C/I/S</li>`;
-  }).join('');
-  // The balance sheet: what running this plan leaves per hour, at its own tax.
-  const rows = surplusRows(result.surplus, result.binding);
+      structureUpkeep(m).toLocaleString('en-GB')}/hr each W/C/I/S</li>`).join('');
+
+  // A ceiling only BINDS at the tax it was solved for. Below that everything has
+  // slack, so marking a row "binds" there would be a lie.
+  const atCeiling = Math.abs(plan.tax - plan.tMax) < 0.05;
+  const rows = surplusRows(plan.surplus, atCeiling ? plan.binding : null);
   const balance = rows.length
     ? `<table class="sov-balance"><thead><tr><th>Per hour at ${
-      result.tMax.toFixed(1)}% tax</th><th>Left over</th><th></th></tr></thead><tbody>${
+      plan.tax.toFixed(1)}% tax</th><th>Left over</th><th></th></tr></thead><tbody>${
       rows.map((r) => `<tr><td>${r.label}</td><td class="${
         r.value < 0 ? 'sov-bad' : 'sov-ok'}">${
         Math.round(r.value).toLocaleString('en-GB')}</td><td class="sov-hint">${r.note}</td></tr>`).join('')
-    }</tbody></table>${result.surplus.upkeep
-      ? `<p class="sov-hint">Each of wood, clay, iron and stone is already net of the ${
-        result.surplus.upkeep.toLocaleString('en-GB')}/hr of milsov structure upkeep.</p>`
+    }</tbody></table>${plan.surplus.upkeep
+      ? `<p class="sov-hint">Wood, clay, iron and stone are already net of the ${
+        plan.surplus.upkeep.toLocaleString('en-GB')}/hr these buildings cost.</p>`
       : ''}`
     : '';
-  // What the military plan is, and what going further would cost. The price is
-  // the whole reason to state it: a site where the next point of tax buys +8%
-  // is a different proposition from one where it buys +1%, and the free figure
-  // alone does not tell them apart.
-  const price = result.milsovPrice > 0
-    ? ` Each further point of tax would buy +${result.milsovPrice}%.`
+
+  // What this tax bought, against the plan at the top of the slider. The food
+  // claim count is in there because dropping one is usually where the research
+  // for the buildings came from.
+  const claimDelta = plan.tiles.length - base.tiles.length;
+  const trade = plan.tax < base.tMax - 0.05
+    ? `<p class="sov-hint">At ${plan.tax.toFixed(1)}% rather than ${base.tMax.toFixed(1)}%: ${
+      plan.milsovBonus > base.milsovBonus
+        ? `<strong>+${plan.milsovBonus - base.milsovBonus}% more production</strong>`
+        : 'no more production'}, ${plan.tiles.length} food claims (${
+      claimDelta >= 0 ? '+' : ''}${claimDelta}), ${
+      Math.round(plan.goldNet - base.goldNet).toLocaleString('en-GB')} gold.</p>`
     : '';
-  const milPlan = result.milsov.length
-    ? `<p class="sov-hint">Military sovereignty: ${escapeHtml(milsovPlanText(result))}
-        Free at this site's tax — the food plan is untouched.${escapeHtml(price)}</p>`
-    : result.milsovBlocked
-      ? `<p class="sov-flag">No military sovereignty fits here for free — ${
-        escapeHtml(MILSOV_BLOCKED_TEXT[result.milsovBlocked] ?? 'nothing was left over')}.${
-        escapeHtml(price)}</p>`
+
+  const milPlan = plan.milsov.length
+    ? `<p class="sov-hint">Military sovereignty: ${escapeHtml(milsovPlanText(plan))}</p>`
+    : plan.milsovBlocked
+      ? `<p class="sov-flag">No military sovereignty fits at this tax — ${
+        escapeHtml(MILSOV_BLOCKED_TEXT[plan.milsovBlocked] ?? 'nothing was left over')}.</p>`
       : '';
-  // The resource ceiling is stated here whether or not it bites, since the
-  // figure itself is the thing the user has to judge. The row flag above only
-  // appears when it would have cost them tax.
-  const ceiling = result.resImpossible
-    ? `is impossible — the settle allocation has no ${result.resBinding} plots`
-    : `is ${result.resCeiling?.toFixed(1)}% on ${result.resBinding}`;
-  // Stated whenever there is one to state. An indicative ceiling has to explain
-  // why it did not rank the site; a measured one did rank it, and the figure is
-  // still what the user judges the quota by.
-  const res = !Number.isFinite(result.resCeiling) && !result.resImpossible
+
+  // The resource ceiling is stated whether or not it bites, since the figure
+  // itself is what the user judges the plan by.
+  const ceiling = plan.resImpossible
+    ? `is impossible — the settle allocation has no ${plan.resBinding} plots`
+    : `is ${plan.resCeiling?.toFixed(1)}% on ${plan.resBinding}`;
+  const res = !Number.isFinite(plan.resCeiling) && !plan.resImpossible
     ? ''
-    : result.resIndicative
-      ? `<p class="sov-flag">Resource ceiling ${ceiling}. Indicative only — the per-plot`
-        + ' yield behind it is not measured, so it is reported here and left out of'
-        + ' T_max and the ranking.</p>'
-      : `<p class="sov-hint">Resource ceiling ${ceiling}, from a measured per-plot yield —`
-        + ' applied to T_max like the food and research ceilings.</p>';
-  tr.innerHTML = `<td colspan="8"><ul>${tiles}${mil}</ul>${balance}${milPlan}${res}</td>`;
-  row.after(tr);
+    : `<p class="sov-hint">Resource ceiling ${ceiling}.</p>`;
+
+  return `<ul>${tiles}${mil}</ul>${balance}${trade}${milPlan}${res}`;
 }
 
 function escapeHtml(s) {

@@ -391,29 +391,58 @@ test('no structure asked for means no buildings and no bill', () => {
   assert.equal(plan.resCeiling, Infinity, 'nothing is charged hourly');
 });
 
-test('a minimum bonus flags the sites that fit less, and changes no plan', () => {
+test('a minimum bonus is judged over the whole acceptable tax range', () => {
+  // The site's own answer: the tax it reaches, and the military that is free
+  // there. Everything below is about a minimum ABOVE that free figure.
   const plan = scoreSite({ neighbours: spare, settings: withMil({ tMin: -1000 }) });
-  assert.ok(plan.milsovBonus > 0, 'precondition: this site fits something');
+  assert.ok(plan.milsovBonus > 0, 'precondition: this site fits something for free');
   assert.equal(plan.milsovShortfall, false, 'no minimum, nothing to fall short of');
+  assert.equal(plan.milsovMinTax, null, 'nothing to report when none was asked for');
 
-  // Under the floor: flagged, and otherwise identical. The flag is for the
-  // caller to drop the site by — the plan is still the best the site can do.
-  const under = scoreSite({
-    neighbours: spare,
-    settings: withMil({ tMin: -1000, milsovMinBonus: plan.milsovBonus + 5 }),
-  });
-  assert.equal(under.milsovShortfall, true);
-  close(under.tMax, plan.tMax, 1e-9);
-  assert.equal(under.milsovBonus, plan.milsovBonus);
-  assert.equal(under.milsov.length, plan.milsov.length);
-  assert.equal(under.tiles.length, plan.tiles.length);
+  const more = plan.milsovBonus + 5;
 
-  // Exactly at the floor is met, not missed.
-  const at = scoreSite({
+  // With tax to spare, wanting more than is free is not a shortfall — it is a
+  // price. The site survives, and says what tax still delivers it.
+  const roomy = scoreSite({
     neighbours: spare,
-    settings: withMil({ tMin: -1000, milsovMinBonus: plan.milsovBonus }),
+    settings: withMil({ tMin: plan.tMax - 30, milsovMinBonus: more }),
   });
-  assert.equal(at.milsovShortfall, false);
+  assert.equal(roomy.milsovShortfall, false, 'thirty points of tax were never considered');
+  assert.ok(roomy.milsovMinTax < plan.tMax, 'meeting it must cost some tax');
+  assert.ok(roomy.milsovMinTax >= plan.tMax - 30 - 1e-6, 'but never more than was offered');
+  assert.ok(roomy.milsovMinBonusAt >= more);
+
+  // The plan itself is untouched: still the site's own ceiling and the military
+  // that is free there. The minimum reports, it does not re-plan.
+  close(roomy.tMax, plan.tMax, 1e-9);
+  assert.equal(roomy.milsovBonus, plan.milsovBonus);
+  assert.equal(roomy.tiles.length, plan.tiles.length);
+
+  // With no tax to spare, the same request really is a shortfall.
+  const tight = scoreSite({
+    neighbours: spare,
+    settings: withMil({ tMin: plan.tMax, milsovMinBonus: more }),
+  });
+  assert.equal(tight.milsovShortfall, true);
+  assert.equal(tight.milsovMinTax, null);
+
+  // And a figure no tax reaches is a shortfall however much tax is offered.
+  const absurd = scoreSite({
+    neighbours: spare,
+    settings: withMil({ tMin: -1000, milsovMinBonus: 100000 }),
+  });
+  assert.equal(absurd.milsovShortfall, true);
+});
+
+test('a site that reaches the minimum for free is never charged tax for it', () => {
+  const plan = scoreSite({ neighbours: spare, settings: withMil({ tMin: -1000 }) });
+  const met = scoreSite({
+    neighbours: spare,
+    settings: withMil({ tMin: 0, milsovMinBonus: plan.milsovBonus }),
+  });
+  assert.equal(met.milsovShortfall, false);
+  assert.equal(met.milsovMinTax, null, 'already met at the ceiling — no tax to report');
+  close(met.tMax, plan.tMax, 1e-9);
 });
 
 test('a minimum with no structure asked for falls short rather than passing', () => {
@@ -587,7 +616,7 @@ test('the claim is charged on its sovereignty level, the structure on its own', 
   }).ceiling, 125 - (100 * 150) / (3 * BASIC_YIELD_L20), 0.01);
 });
 
-test('a Resource Structure is costed for free wherever one appears', () => {
+test('a Resource Structure pays its claim but no hourly bill', () => {
   // The picker does not offer them any more — nothing would stop the search
   // claiming every spare tile with one — but the engine still knows them, and
   // knowing them must not mean a special case.

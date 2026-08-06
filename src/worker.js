@@ -40,8 +40,10 @@ self.onmessage = (e) => {
           excluded['below-milsov'] = (excluded['below-milsov'] ?? 0) + 1;
         } else if (plan && plan.tMax >= settings.tMin) {
           // `rs` travels with the result so the panel's Prefill button can load
-          // the site's actual allocation into the settle-plot fields.
-          results.push({ key, ...parseKey(key), rs: parseRs(tile), ...plan });
+          // the site's actual allocation into the settle-plot fields, and
+          // `neighbours` so the panel can re-plan the site at any tax the user
+          // drags to without asking the worker to run again.
+          results.push({ key, ...parseKey(key), rs: parseRs(tile), neighbours, ...plan });
         } else if (plan) {
           excluded['below-tmin'] = (excluded['below-tmin'] ?? 0) + 1;
         }

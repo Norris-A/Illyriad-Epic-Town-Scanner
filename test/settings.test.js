@@ -241,7 +241,7 @@ test('every structure in the table is one kind or the other, and named', () => {
   );
 });
 
-test('a Resource Structure is still costed for free wherever one appears', () => {
+test('a Resource Structure still pays its claim but no hourly bill', () => {
   // Out of the picker, not out of the engine: the table is what the cost model
   // reads, and it must not grow a special case just because nothing selects it.
   for (const key of ['gravelPit', 'loggingCamp', 'mineshaft', 'earthworks', 'farmstead', 'fishery']) {
@@ -261,7 +261,7 @@ test('the picker offers the military structures and a way to ask for none', () =
   assert.ok(!/<option value="(farmstead|fishery|mineshaft|loggingCamp|earthworks|gravelPit)"/i.test(html),
     'a Resource Structure must not be pickable');
   // Nothing in the form asks for a count or a level any more.
-  assert.ok(!/data-milsov=/.test(html), 'the quota rows should be gone');
+  assert.ok(!/data-milsov=/.test(html), 'no control should ask for a count or a level');
 
   const blank = settingsFormHtml(DEFAULT_SETTINGS);
   assert.ok(/<option value="" selected>None/.test(blank), 'the default should select None');

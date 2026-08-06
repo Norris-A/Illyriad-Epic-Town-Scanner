@@ -30,6 +30,14 @@ import {
   BASIC_YIELD_L20,
 } from './constants.js';
 
+// Float slack for comparisons on costs and ceilings, which are exact arithmetic
+// on measured constants — anything this close together is equal.
+const EPS = 1e-9;
+
+// How far the minimum-bonus search refines the tax it reports. 26 halvings take
+// the bracket below a thousandth of a point, finer than any tax the game sets.
+const FLOOR_SEARCH_STEPS = 26;
+
 // --- Derived city figures ---------------------------------------------------
 
 /** K = F_city * Y_farm / 100 — food per percentage point. 7 food -> 140.98. */
@@ -134,7 +142,7 @@ export function claimUpkeep(d, level, chancery) {
 // --- Structure upkeep ------------------------------------------------------
 
 /**
- * The structure record a quota entry names. An entry naming none, or naming one
+ * The structure record a placed building names. One naming none, or naming one
  * the table does not know, resolves to the default — which is a Production
  * Structure, so a blank or a typo errs toward billing rather than toward a free
  * claim. Every reader goes through here, so that fallback is decided once.
@@ -143,22 +151,23 @@ export function sovStructure(entry) {
   return SOV_STRUCTURE_BY_KEY[entry?.structure] ?? SOV_STRUCTURE_BY_KEY[DEFAULT_SOV_STRUCTURE];
 }
 
-/** Whether a quota entry's structure is charged hourly upkeep at all. */
+/** Whether a building's structure is charged hourly upkeep at all. */
 export function isProductionStructure(entry) {
   return sovStructure(entry).type === 'production';
 }
 
 /**
- * Hourly cost of one entry's structure, of EACH of wood, clay, iron and stone.
+ * Hourly cost of one building, of EACH of wood, clay, iron and stone.
  * It keys off the BUILDING level; the claim's sovereignty level is paid in RP
- * and gold instead. A Resource Structure costs nothing here at any level — its
- * claim is the whole bill.
+ * and gold instead. A Resource Structure is charged nothing HERE at any level —
+ * it still pays its claim's RP and gold, which is simply not this function's
+ * half of the bill.
  */
 export function structureUpkeep(entry) {
   return isProductionStructure(entry) ? (MILSOV_UPKEEP_BY_LEVEL[entry?.buildingLevel] ?? 0) : 0;
 }
 
-/** The same, summed over a whole quota or reservation. */
+/** The same, summed over a whole plan. */
 export function milsovUpkeep(entries) {
   return (entries ?? []).reduce((sum, e) => sum + structureUpkeep(e), 0);
 }
@@ -178,9 +187,9 @@ export function tRp({ uRp, rRef }) {
 /**
  * T_res — per-resource ceiling from military sovereignty structure upkeep.
  *
- * Returns Infinity (non-binding, unflagged) whenever nothing in the quota is
- * charged hourly upkeep: no milsov at all, or a quota of Resource Structures,
- * which pay only their claims.
+ * Returns Infinity (non-binding, unflagged) whenever nothing placed is charged
+ * hourly upkeep: no military sovereignty at all, or Resource Structures, which
+ * pay only their claims.
  *
  * `indicative` says the ceiling rests on a yield the engine cannot stand behind,
  * in which case scoreSite reports it without letting it into T_max. A measured
@@ -198,9 +207,9 @@ export function tRes({ milsovAssignments, plots, settings = {} }) {
   const none = { ceiling: Infinity, indicative: false, binding: null, impossible: false };
   if (!milsovAssignments || milsovAssignments.length === 0) return none;
   const upkeep = milsovUpkeep(milsovAssignments);
-  // Structures that cost nothing per hour impose no ceiling — a quota of
-  // nothing but Resource Structures, or the degenerate case of a level with no
-  // entry in the upkeep table.
+  // Structures that cost nothing per hour impose no ceiling — nothing but
+  // Resource Structures, or the degenerate case of a level with no entry in the
+  // upkeep table.
   if (upkeep <= 0) return none;
   const { yield: y, measured } = computeBasicYield(settings);
   let worst = Infinity;
@@ -584,12 +593,20 @@ function milsovBlockedBy({ free, headroom, chancery }) {
  * an error. Ranking and the tMin filter are the caller's job.
  * Returns null only when there is nothing to evaluate at all.
  */
-export function scoreSite({ neighbours, settings }) {
+/**
+ * Everything about a site that does not depend on the tax: the tiles in cost
+ * order, the food candidates, and the knapsack over them.
+ *
+ * Split out from planning because the knapsack is by far the most expensive
+ * thing here — some thousands of spend levels against two dozen tiles, and the
+ * building cap puts it on the count-limited path — while a plan at one tax is a
+ * bisection and a small search. Anything asking the same site about many taxes,
+ * which is what the panel's tax slider does on every drag, prepares once and
+ * plans per tax. Preparing per tax instead is a fifty-fold difference and was
+ * enough to make the slider feel broken.
+ */
+export function prepareSite({ neighbours, settings }) {
   const s = settings;
-  const k = computeK(s.plots.food);
-  const bOther = computeBOther(s);
-  const consumption = computeConsumption(s);
-  const rRef = computeRRef(s);
   const chancery = !!s.chancery;
   const maxBuildings = s.maxBuildings ?? 20;
 
@@ -601,113 +618,247 @@ export function scoreSite({ neighbours, settings }) {
     .map((n, idx) => ({ ...n, idx, d: distance(n.dx, n.dy) }))
     .sort((a, b) => a.d - b.d || a.food - b.food);
 
-  // Steps 1 and 3: the food candidates and the knapsack over them.
   const foodCandidates = byDistance
     .filter((t) => t.food > 0)
     .map((t) => {
       const up = claimUpkeep(t.d, FOOD_CLAIM_LEVEL, chancery);
       return { ...t, level: FOOD_CLAIM_LEVEL, ...up, weight: Math.round(up.rp) };
     });
-  const budget = Math.max(0, Math.round(rRef * 1.25));
-  const dp = knapsack(foodCandidates, budget, maxBuildings);
+  const budget = Math.max(0, Math.round(computeRRef(s) * 1.25));
+  return {
+    settings: s,
+    chancery,
+    structure: s.milsovStructure || null,
+    k: computeK(s.plots.food),
+    bOther: computeBOther(s),
+    consumption: computeConsumption(s),
+    rRef: computeRRef(s),
+    byDistance,
+    foodCandidates,
+    budget,
+    dp: knapsack(foodCandidates, budget, maxBuildings),
+  };
+}
 
-  // Step 4: walk the DP frontier. T_res cannot bind here — nothing is charged
-  // hourly until a military building is placed, which happens below.
+
+/**
+ * The cheapest food spend that still holds `tax`, or null where no food plan
+ * does. dp.best is non-decreasing in spend, so this is a bisection.
+ *
+ * Below the site's own maximum a CHEAPER food plan will do — food only has to
+ * be good enough to hold the tax, not to maximise it — and the research it no
+ * longer spends is most of what pays for military sovereignty.
+ */
+function foodSpendFor(ctx, tax) {
+  const needed = tax - PRODUCTION_BASE - ctx.bOther + ctx.consumption / ctx.k;
+  if (!(ctx.dp.best[ctx.budget] >= needed - EPS)) return null;
+  let lo = 0;
+  let hi = ctx.budget;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (ctx.dp.best[mid] >= needed - EPS) hi = mid;
+    else lo = mid + 1;
+  }
+  // The food claims alone must not outspend the research produced at this tax.
+  return (ctx.rRef * (PRODUCTION_BASE - tax)) / 100 - lo < -EPS ? null : lo;
+}
+
+/**
+ * The whole plan at one tax: the cheapest food that holds it, then the most
+ * military sovereignty the leftovers buy.
+ *
+ * This is what makes the tax an input rather than only an output. At the site's
+ * own maximum it returns the free plan; run it lower and the food claims get
+ * cheaper, which is where the extra military comes from. Returns null for a tax
+ * the site cannot hold at all.
+ */
+export function planSiteAt(ctx, tax) {
+  const s = ctx.settings;
+  const spend = Number.isFinite(tax) ? foodSpendFor(ctx, tax) : null;
+  if (spend === null) return null;
+
+  const tiles = recoverSet(ctx.foodCandidates, ctx.dp, spend).map((i) => ctx.foodCandidates[i]);
+  const claimed = new Set(tiles.map((t) => t.idx));
+  const free = ctx.byDistance.filter((t) => !claimed.has(t.idx));
+  const headroom = milsovHeadroom({
+    tax, settings: s, uRp: spend, buildingsUsed: tiles.length,
+  });
+  const military = planMilsov({
+    tiles: ctx.structure ? free : [], headroom, chancery: ctx.chancery,
+  });
+  const milsov = milsovClaims({
+    tiles: free, levels: military.levels, structure: ctx.structure, chancery: ctx.chancery,
+  });
+
+  const sFood = ctx.dp.best[spend];
+  const milsovRp = milsov.reduce((sum, a) => sum + a.rp, 0);
+  const uRp = spend + milsovRp;
+  const uGold = uRp * 10;      // gold tracks RP exactly 10:1
+  const resCeiling = tRes({ milsovAssignments: milsov, plots: s.plots, settings: s });
+  // An indicative ceiling annotates the plan; it does not constrain it. Nothing
+  // marks one today — the yields are measured — but the path stays wired for a
+  // figure that is ever computed before it is trusted.
+  const ceiling = tMax({
+    food: tFood({ bOther: ctx.bOther, sFood, consumption: ctx.consumption, k: ctx.k }),
+    rp: tRp({ uRp, rRef: ctx.rRef }),
+    res: resCeiling.indicative ? Infinity : resCeiling.ceiling,
+  });
+
+  return {
+    tax,
+    tMax: ceiling.value,
+    binding: ceiling.binding,
+    sFood,
+    spend,
+    uRp,
+    uGold,
+    goldNet: goldNet({ tax, consumption: ctx.consumption, uGold }),
+    // What running this plan leaves per hour, at the tax it is run at, so the
+    // ceiling that binds reads 0 and the rest read as headroom.
+    surplus: Number.isFinite(tax)
+      ? surplusAt({ tax, settings: s, sFood, uRp, milsovAssignments: milsov })
+      : null,
+    tiles,
+    free,
+    headroom,
+    milsov,
+    milsovBonus: military.bonus,
+    milsovUpkeep: military.upkeep,
+    milsovRp,
+    milsovGold: milsov.reduce((sum, a) => sum + a.gold, 0),
+    milsovBlocked: ctx.structure && milsov.length === 0
+      ? milsovBlockedBy({ free, headroom, chancery: ctx.chancery })
+      : null,
+    resCeiling: resCeiling.ceiling,
+    resIndicative: resCeiling.indicative,
+    resBinding: resCeiling.binding,
+    resImpossible: resCeiling.impossible,
+  };
+}
+
+/**
+ * The most military sovereignty reachable at or above `floor`, and the highest
+ * tax that still delivers `required`.
+ *
+ * Achievable bonus only rises as the tax falls — more research produced, less of
+ * it needed for food, more spare tiles and slots, more resources to run the
+ * upkeep, all pulling the same way — so the answer is a bisection, and the most
+ * that will ever fit above the floor is whatever fits AT the floor.
+ *
+ * Returns `{ bonus, tax }` for the best tax meeting the requirement, or null
+ * when even the floor cannot.
+ */
+export function milsovAtFloor(ctx, { required, floor, ceiling }) {
+  const at = (tax) => {
+    const p = planSiteAt(ctx, tax);
+    return p && p.milsovBonus >= required ? p : null;
+  };
+  let best = at(floor);
+  if (!best) return null;
+  let lo = floor;
+  let hi = ceiling;                      // known not to meet it
+  for (let i = 0; i < FLOOR_SEARCH_STEPS; i++) {
+    const mid = (lo + hi) / 2;
+    const p = at(mid);
+    if (p) {
+      best = p;
+      lo = mid;
+    } else {
+      hi = mid;
+    }
+  }
+  return { bonus: best.milsovBonus, tax: best.tax };
+}
+
+export function scoreSite({ neighbours, settings }) {
+  const s = settings;
+  const ctx = prepareSite({ neighbours, settings });
+
+  // Walk the DP frontier for the site's own ceiling. T_res cannot bind here —
+  // nothing is charged hourly until a military building is placed.
   let winner = null;
-  for (let spend = 0; spend <= budget; spend++) {
-    const sFood = dp.best[spend];
+  for (let spend = 0; spend <= ctx.budget; spend++) {
+    const sFood = ctx.dp.best[spend];
     const t = tMax({
-      food: tFood({ bOther, sFood, consumption, k }),
-      rp: tRp({ uRp: spend, rRef }),
+      food: tFood({ bOther: ctx.bOther, sFood, consumption: ctx.consumption, k: ctx.k }),
+      rp: tRp({ uRp: spend, rRef: ctx.rRef }),
       res: Infinity,
     });
     // A negative T_max is a real answer — the site cannot feed a city at any
     // tax. Report it and let the caller filter on tMin.
-    const net = goldNet({ tax: t.value, consumption, uGold: spend * 10 });
+    const net = goldNet({ tax: t.value, consumption: ctx.consumption, uGold: spend * 10 });
     if (!winner || betterPlan({ tMax: t.value, uRp: spend, goldNet: net }, winner)) {
       winner = { tMax: t.value, sFood, spend };
     }
   }
   if (!winner) return null;
 
-  const tiles = recoverSet(foodCandidates, dp, winner.spend).map((i) => foodCandidates[i]);
+  // The plan at that ceiling: the military it fits there costs no tax at all.
+  const plan = planSiteAt(ctx, winner.tMax) ?? fallbackPlan(ctx, winner);
+  const cheaper = ctx.structure ? planSiteAt(ctx, plan.tax - 1) : null;
 
-  // The frontier's tie-break is lower U_RP, so this is the CHEAPEST food plan
-  // reaching that tax — which is also the one leaving the most research, the
-  // most tiles and the most building slots behind. Nothing further to search.
-  const structure = s.milsovStructure || null;
-  const claimed = new Set(tiles.map((t) => t.idx));
-  const free = byDistance.filter((t) => !claimed.has(t.idx));
-  const headroomAt = (tax) => milsovHeadroom({
-    tax, settings: s, uRp: winner.spend, buildingsUsed: tiles.length,
-  });
-  const headroom = headroomAt(winner.tMax);
-
-  const chosen = structure
-    ? planMilsov({ tiles: free, headroom, chancery })
-    : planMilsov({ tiles: [], headroom, chancery });
-  const milsov = milsovClaims({ tiles: free, levels: chosen.levels, structure, chancery });
-
-  // What one more point of tax would buy, priced by re-solving at that tax
-  // rather than from a formula — so tiles, slots and the resource ceiling all
-  // count, and a site with nothing left to claim honestly prices at nothing.
-  const price = structure && Number.isFinite(winner.tMax)
-    ? planMilsov({ tiles: free, headroom: headroomAt(winner.tMax - 1), chancery }).bonus - chosen.bonus
-    : 0;
-
-  // Restate every figure with the military plan in it. T_max must come back
-  // unchanged — that is what the headroom was computed to guarantee — so this is
-  // the two derivations checking each other rather than a second optimisation.
-  const milsovRp = milsov.reduce((sum, a) => sum + a.rp, 0);
-  const milsovGold = milsov.reduce((sum, a) => sum + a.gold, 0);
-  const uRp = winner.spend + milsovRp;
-  const uGold = uRp * 10;      // gold tracks RP exactly 10:1
-  const resCeiling = tRes({ milsovAssignments: milsov, plots: s.plots, settings: s });
-  // An indicative ceiling annotates the plan; it does not constrain it. Nothing
-  // marks one today — the yields are measured — but the path stays wired for a
-  // figure that is ever computed before it is trusted.
-  const t = tMax({
-    food: tFood({ bOther, sFood: winner.sFood, consumption, k }),
-    rp: tRp({ uRp, rRef }),
-    res: resCeiling.indicative ? Infinity : resCeiling.ceiling,
-  });
+  // Whether a minimum bonus is met is a question about the whole tax RANGE the
+  // user will accept, not about the ceiling alone. A site reaching +10% for free
+  // at 80% tax, whose owner would settle for 50%, has forty points of tax to
+  // spend before the answer is no — and asking only at the ceiling threw those
+  // sites away with nothing on the row to say why.
+  const required = ctx.structure ? Math.max(0, s.milsovMinBonus ?? 0) : (s.milsovMinBonus ?? 0);
+  const floor = Math.min(s.tMin ?? 0, plan.tax);
+  const reach = required > 0 && plan.milsovBonus < required && Number.isFinite(plan.tax)
+    ? milsovAtFloor(ctx, { required, floor, ceiling: plan.tax })
+    : null;
 
   return {
-    tMax: t.value,
-    binding: t.binding,
+    ...plan,
+    // The site's own ceiling, and the military that is free there.
+    tMax: plan.tMax,
+    milsovPrice: cheaper ? cheaper.milsovBonus - plan.milsovBonus : 0,
+    // Where the minimum is met, if it is not met for free: the highest tax that
+    // still delivers it. Null means the free plan already covers it, or nothing
+    // in the acceptable range does.
+    milsovMinTax: reach ? reach.tax : null,
+    milsovMinBonusAt: reach ? reach.bonus : null,
+    // Only a genuine shortfall now: not reachable anywhere the user would accept.
+    milsovShortfall: required > 0 && plan.milsovBonus < required && !reach,
+  };
+}
+
+/**
+ * A site with no food plots reaches no finite tax, so there is no spend to solve
+ * for. The frontier already settled on the cheapest of the equally hopeless
+ * plans; describe that one rather than returning nothing.
+ */
+function fallbackPlan(ctx, winner) {
+  const tiles = recoverSet(ctx.foodCandidates, ctx.dp, winner.spend)
+    .map((i) => ctx.foodCandidates[i]);
+  const claimed = new Set(tiles.map((t) => t.idx));
+  const free = ctx.byDistance.filter((t) => !claimed.has(t.idx));
+  const headroom = milsovHeadroom({
+    tax: winner.tMax, settings: ctx.settings, uRp: winner.spend, buildingsUsed: tiles.length,
+  });
+  return {
+    tax: winner.tMax,
+    tMax: winner.tMax,
+    binding: 'food',
     sFood: winner.sFood,
     spend: winner.spend,
-    uRp,
-    uGold,
-    goldNet: goldNet({ tax: t.value, consumption, uGold }),
-    // What running this plan actually leaves per hour, at its own tax, so the
-    // binding ceiling reads 0 and the rest read as headroom. An infinite T_max
-    // has no balance to state.
-    surplus: Number.isFinite(t.value)
-      ? surplusAt({
-          tax: t.value, settings: s, sFood: winner.sFood, uRp, milsovAssignments: milsov,
-        })
-      : null,
+    uRp: winner.spend,
+    uGold: winner.spend * 10,
+    goldNet: goldNet({ tax: winner.tMax, consumption: ctx.consumption, uGold: winner.spend * 10 }),
+    surplus: null,
     tiles,
-    milsov,
-    milsovBonus: chosen.bonus,
-    milsovUpkeep: chosen.upkeep,
-    milsovRp,
-    milsovGold,
-    // The price of going further, in bonus points per point of tax given up.
-    // Zero means the site has nothing left to sell, whatever the tax.
-    milsovPrice: price,
-    milsovBlocked: structure && milsov.length === 0
-      ? milsovBlockedBy({ free, headroom, chancery })
-      : null,
-    // This site does not fit enough military to be worth listing. Reported
-    // rather than acted on: the plan above is unchanged and still the best the
-    // site can do, and it is the caller that drops it.
-    milsovShortfall: chosen.bonus < (s.milsovMinBonus ?? 0),
-    resCeiling: resCeiling.ceiling,
-    resIndicative: resCeiling.indicative,
-    resBinding: resCeiling.binding,
-    resImpossible: resCeiling.impossible,
+    free,
+    headroom,
+    milsov: [],
+    milsovBonus: 0,
+    milsovUpkeep: 0,
+    milsovRp: 0,
+    milsovGold: 0,
+    milsovBlocked: ctx.structure ? milsovBlockedBy({ free, headroom, chancery: ctx.chancery }) : null,
+    resCeiling: Infinity,
+    resIndicative: false,
+    resBinding: null,
+    resImpossible: false,
   };
 }
 

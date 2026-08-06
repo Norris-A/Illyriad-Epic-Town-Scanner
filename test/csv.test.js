@@ -8,7 +8,7 @@ import { toCsv, csvField, resFlag, milsovPlanText } from '../src/panel.js';
 
 const COLUMNS = 17;
 
-// The no-milsov shape: T_res is Infinity and carries no flag, which is what
+// The no-military shape: T_res is Infinity and carries no flag, which is what
 // scoreSite returns for the common case.
 const row = (over = {}) => ({
   x: 360, y: -3178, tMax: 56.6, binding: 'food', sFood: 100,
@@ -116,7 +116,7 @@ test('no military sovereignty exports three blanks, not a ceiling of Infinity', 
 // --- the row flag -----------------------------------------------------------
 
 test('a ceiling above the tax the site reaches says nothing', () => {
-  assert.equal(resFlag(row()), null, 'no quota, no flag');
+  assert.equal(resFlag(row()), null, 'no structure asked for, no flag');
   assert.equal(
     resFlag(row({ resCeiling: 90, resIndicative: true, resBinding: 'stone' })),
     null,

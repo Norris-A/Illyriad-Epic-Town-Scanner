@@ -72,12 +72,15 @@ export const SOV_STRUCTURE_BY_KEY = Object.fromEntries(SOV_STRUCTURES.map((s) =>
 // What the form offers for military sovereignty. Production Structures only.
 //
 // The engine chooses how many buildings to place and at what levels, by
-// maximising production bonus against the hourly upkeep they cost. A Resource
-// Structure has no hourly upkeep, so nothing would stop that search claiming
-// every spare tile at level 5 — while the thing that would justify doing so, the
-// host tile's resource rating, is not scored at all. So resource sovereignty is
-// costed correctly wherever it appears and never placed automatically. The
-// Farmstead and Fishery are out for a second reason: the food plan places those.
+// maximising production bonus against the hourly upkeep they cost.
+//
+// A Resource Structure pays its claim's RP and gold like every other claim — it
+// is not a free tile — but it pays no hourly wood/clay/iron/stone bill. With no
+// hourly bill, the search has nothing to stop it claiming every spare tile at
+// level 5, while the thing that would justify doing so, the host tile's resource
+// rating, is not scored at all. So resource sovereignty is costed correctly
+// wherever it appears and never placed automatically. The Farmstead and Fishery
+// are out for a second reason: the food plan is what places those.
 export const MILSOV_STRUCTURES = SOV_STRUCTURES.filter((s) => s.type === 'production');
 
 // A plan that names no structure, or names one this table does not know, is

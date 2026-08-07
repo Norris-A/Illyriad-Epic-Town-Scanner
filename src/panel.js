@@ -179,7 +179,8 @@ export const MILSOV_BLOCKED_TEXT = {
 };
 
 /**
- * The per-hour balance of a plan, as rows of `{label, value, note}`.
+ * The per-hour balance of a plan, as rows of `{label, base, value, note}`.
+ * `base` is the row's production before the plan spends it.
  *
  * Everything is stated at the plan's own tax, so the ceiling that binds reads 0
  * — that is the arithmetic checking itself in front of the user, not a rounding
@@ -201,6 +202,7 @@ export function surplusRows(surplus, binding) {
   ];
   return rows.map((r) => {
     const value = surplus[r.key] ?? 0;
+    const base = surplus.base?.[r.key];
     const notes = [];
     // The ceiling that set the tax is at 0 by construction; say which it was so
     // a row of zero does not read as a failure to compute.
@@ -209,7 +211,7 @@ export function surplusRows(surplus, binding) {
     }
     if (value < 0) notes.push('deficit');
     if (r.basic && surplus.indicative) notes.push('indicative');
-    return { ...r, value, note: notes.join(', ') };
+    return { ...r, value, base, note: notes.join(', ') };
   });
 }
 
@@ -1125,8 +1127,9 @@ function detailBodyHtml(plan, base) {
   const rows = surplusRows(plan.surplus, atCeiling ? plan.binding : null);
   const balance = rows.length
     ? `<table class="sov-balance"><thead><tr><th>Per hour at ${
-      plan.tax.toFixed(1)}% tax</th><th>Left over</th><th></th></tr></thead><tbody>${
-      rows.map((r) => `<tr><td>${r.label}</td><td class="${
+      plan.tax.toFixed(1)}% tax</th><th>Produced</th><th>Left over</th><th></th></tr></thead><tbody>${
+      rows.map((r) => `<tr><td>${r.label}</td><td class="sov-hint">${
+        Number.isFinite(r.base) ? Math.round(r.base).toLocaleString('en-GB') : ''}</td><td class="${
         r.value < 0 ? 'sov-bad' : 'sov-ok'}">${
         Math.round(r.value).toLocaleString('en-GB')}</td><td class="sov-hint">${r.note}</td></tr>`).join('')
     }</tbody></table>${plan.surplus.upkeep

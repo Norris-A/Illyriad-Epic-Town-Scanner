@@ -240,6 +240,9 @@ export function tRes({ milsovAssignments, plots, settings = {} }) {
  *
  * `indicative` is copied from the yield and covers the four basic figures only;
  * food and research do not depend on it.
+ *
+ * `base` holds the same six quantities before the plan is paid for, so each
+ * figure can be shown as base minus what the plan takes.
  */
 export function surplusAt({ tax, settings, sFood, uRp, milsovAssignments }) {
   const s = settings;
@@ -247,18 +250,24 @@ export function surplusAt({ tax, settings, sFood, uRp, milsovAssignments }) {
   const upkeep = milsovUpkeep(milsovAssignments ?? []);
   const { yield: y, measured } = computeBasicYield(s);
 
+  const base = {
+    food: k * (PRODUCTION_BASE - tax + computeBOther(s) + (sFood ?? 0)),
+    rp: (computeRRef(s) * (PRODUCTION_BASE - tax)) / 100,
+  };
   const out = {
     tax,
-    food: k * (PRODUCTION_BASE - tax + computeBOther(s) + (sFood ?? 0)) - computeConsumption(s),
-    rp: (computeRRef(s) * (PRODUCTION_BASE - tax)) / 100 - (uRp ?? 0),
+    food: base.food - computeConsumption(s),
+    rp: base.rp - (uRp ?? 0),
     upkeep,
     indicative: !measured,
   };
   for (const res of BASIC_RESOURCES) {
-    out[res] = basicProduction({
+    base[res] = basicProduction({
       plots: s.plots[res], yield: y, bonus: boosterBonus(s, res), tax,
-    }) - upkeep;
+    });
+    out[res] = base[res] - upkeep;
   }
+  out.base = base;
   return out;
 }
 

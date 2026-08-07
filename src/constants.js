@@ -131,6 +131,12 @@ export const OVERFLOWING_INSIGHT_FACTOR = 1.5;   // [?] unconfirmed
 // replaced, not a fact.
 export const LIBRARY_BASE_RP_L20 = 1500;
 
+/** Plot order matches the payload's `rs` string: "wood|clay|iron|stone|food". */
+export const PLOT_KEYS = ['wood', 'clay', 'iron', 'stone', 'food'];
+
+/** Every land tile has 25 plots, so an allocation has to spend exactly 25. */
+export const PLOT_TOTAL = 25;
+
 export const DEFAULT_SETTINGS = {
   tMin: 50,
   plots: { wood: 5, clay: 5, iron: 5, stone: 3, food: 7 }, // must sum to 25

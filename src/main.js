@@ -39,6 +39,9 @@ const panel = createPanel({
   initialSettings: restored.settings ?? DEFAULT_SETTINGS,
   onSettingsChange: saveSoon,
   onScan: runScan,
+  // Read on each Optimise press. Deliberately not paired with clearPayload the
+  // way runScan is — the pane is pressed repeatedly against one payload.
+  getPayload: getLatestPayload,
   onExport: () => {
     if (!lastResults.length) return;
     const blob = new Blob([toCsv(lastResults)], { type: 'text/csv' });

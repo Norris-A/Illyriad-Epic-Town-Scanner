@@ -770,12 +770,18 @@ export function milsovAtFloor(ctx, { required, floor, ceiling }) {
   return { bonus: best.milsovBonus, tax: best.tax };
 }
 
-export function scoreSite({ neighbours, settings }) {
-  const s = settings;
-  const ctx = prepareSite({ neighbours, settings });
-
-  // Walk the DP frontier for the site's own ceiling. T_res cannot bind here —
-  // nothing is charged hourly until a military building is placed.
+/**
+ * Walk the DP frontier for the site's own ceiling — the best tax any food plan
+ * reaches, and the cheapest plan reaching it. T_res cannot bind here: nothing is
+ * charged hourly until a military building is placed.
+ *
+ * Split out for callers that already hold a context, since rebuilding one is the
+ * whole cost of preparing a site.
+ *
+ * @returns {{tMax: number, sFood: number, spend: number}|null} null only when
+ *   there is no spend level to evaluate at all.
+ */
+export function siteCeiling(ctx) {
   let winner = null;
   for (let spend = 0; spend <= ctx.budget; spend++) {
     const sFood = ctx.dp.best[spend];
@@ -791,6 +797,17 @@ export function scoreSite({ neighbours, settings }) {
       winner = { tMax: t.value, sFood, spend };
     }
   }
+  return winner;
+}
+
+export function scoreSite({ neighbours, settings }) {
+  return scoreSiteFrom(prepareSite({ neighbours, settings }));
+}
+
+/** scoreSite for a caller that prepared the context and wants to keep it. */
+export function scoreSiteFrom(ctx) {
+  const s = ctx.settings;
+  const winner = siteCeiling(ctx);
   if (!winner) return null;
 
   // The plan at that ceiling: the military it fits there costs no tax at all.

@@ -20,6 +20,8 @@ import {
   BASIC_RESOURCES,
   RESOURCE_BOOSTERS,
   RESOURCE_BOOSTER_BONUS,
+  PLOT_KEYS,
+  PLOT_TOTAL,
 } from './constants.js';
 import {
   computeBOther,
@@ -30,6 +32,13 @@ import {
   prepareSite,
   planSiteAt,
 } from './scoring.js';
+import {
+  DEFAULT_FOCUS,
+  FOCUS_DEFAULT_TAX,
+  FOCUS_TAX_FLOOR,
+  parseFocus,
+  focusSite,
+} from './focus.js';
 
 const CSS = `
 /* The panel is injected into the host page, so its elements are also matched by
@@ -82,15 +91,21 @@ const CSS = `
 .sov-tax output{color:#6bf;font-variant-numeric:tabular-nums}
 .sov-balance{margin:4px 0}
 .sov-balance td:nth-child(2){font-variant-numeric:tabular-nums}
+.sov-tabs{display:flex;gap:2px;margin:0 0 8px;border-bottom:1px solid #444}
+.sov-tabs button{background:#2a2a2a;color:#b5b5b5;padding:5px 9px;border-bottom:2px solid transparent}
+.sov-tabs button.on{background:#333;color:#fff;border-bottom-color:#3a5}
+.sov-xy{display:flex;gap:4px}
+.sov-xy input{width:60px;text-align:right}
+.sov-focus-out h3{margin:8px 0 2px;font-size:12px;font-weight:600;color:#fff}
+.sov-note{color:#a9a9a9;font-size:11px;margin:2px 0}
 `;
 
 // --- Settings model ---------------------------------------------------------
 
-/** Plot order matches the payload's `rs` string: "wood|clay|iron|stone|food". */
-export const PLOT_KEYS = ['wood', 'clay', 'iron', 'stone', 'food'];
-
-/** Every land tile has 25 plots, so an allocation has to spend exactly 25. */
-export const PLOT_TOTAL = 25;
+// Both live in constants.js so focus.js can read an allocation without importing
+// the UI module; re-exported here because this is where the form and its tests
+// have always reached for them.
+export { PLOT_KEYS, PLOT_TOTAL };
 
 /**
  * Read one number out of a form field. Blank (or unparseable) falls back rather
@@ -511,10 +526,52 @@ export function settingsFormHtml(settings) {
       ${body}
       <p class="sov-hint sov-derived-food"></p>
       <p><button type="button" class="sov-reset sec">Reset to defaults</button></p>
-      <p class="sov-hint">Settings are saved in this browser as you edit them and
-        restored next time; they are applied to the map on the next Scan.</p>
+      <p class="sov-hint">This configuration is saved in this browser as you edit it and
+        restored next time. It is applied to the map on the next Scan, and to a single
+        tile on the next Optimise.</p>
       <p class="sov-hint sov-store-note"></p>
     </form>`;
+}
+
+/**
+ * The optimiser's own form — the four values focusSite takes beyond the saved
+ * configuration. Anything added here has to be added to readFocus and parseFocus
+ * too; there is no field spec driving this one.
+ */
+export function focusFormHtml(focus, settings) {
+  const f = { ...DEFAULT_FOCUS, ...focus };
+  const rClaim = Math.round(settings?.rClaim ?? 2);
+  return `<form class="sov-focus-form">
+      <fieldset><legend>Tile</legend>
+        <label class="sov-f"><span>Coordinates — x | y</span>
+          <span class="sov-xy">
+            <input type="number" data-focus="x" step="1" placeholder="x"${attr('value', f.x)}>
+            <input type="number" data-focus="y" step="1" placeholder="y"${attr('value', f.y)}>
+          </span></label>
+        <label class="sov-f"><span>Sovereignty radius</span>
+          <input type="number" data-focus="radius" min="1" max="6" step="1"
+            placeholder="${rClaim}"${attr('value', f.radius)}></label>
+        <p class="sov-hint">How far out sovereignty may be placed. Blank follows the claim
+          radius in City Configuration, currently ${rClaim}.</p>
+      </fieldset>
+      <fieldset><legend>Plan</legend>
+        <label class="sov-f"><span>Starting tax (%)</span>
+          <input type="number" data-focus="tax" min="${FOCUS_TAX_FLOOR}" max="100" step="0.5"
+            value="${f.tax ?? FOCUS_DEFAULT_TAX}"></label>
+        <label class="sov-f"><span>Use City Configuration plots</span>
+          <input type="checkbox" data-focus="useConfiguredPlots"${f.useConfiguredPlots ? ' checked' : ''}></label>
+        <p class="sov-hint">Off plans on the centre tile's own resource ratings, as the map
+          reports them. On plans on the ${PLOT_TOTAL}-plot allocation in City Configuration —
+          the tile as you intend to terraform it.</p>
+      </fieldset>
+      <p><button type="button" class="sov-focus-run">Optimise</button>
+         <button type="button" class="sov-focus-use sec">Use selected result</button></p>
+      <p class="sov-hint">Everything else — research, city food, chancery, the building cap
+        and which military structure to place — comes from City Configuration. Any tile can
+        be examined here, including one already settled, claimed, or too near a town.</p>
+    </form>
+    <div class="sov-focus-status"></div>
+    <div class="sov-focus-out"></div>`;
 }
 
 /** The two capital bonuses are derived, not stored — show why each is off. */
@@ -540,24 +597,35 @@ function capitalDerivedHtml(s) {
  *   edit with the settings as read back out of the form, including edits that
  *   fail validation — a half-finished allocation should come back as the user
  *   left it rather than be discarded.
+ * @param {() => object|null} [o.getPayload] the last observed map payload, read
+ *   on each Optimise press. The optimiser plans on the main thread: it is one
+ *   site, and the tax slider already runs the same planner there.
  */
-export function createPanel({ onScan, onExport, initialSettings, onSettingsChange }) {
+export function createPanel({ onScan, onExport, initialSettings, onSettingsChange, getPayload }) {
   const style = document.createElement('style');
   style.textContent = CSS;
   document.head.appendChild(style);
 
   const root = document.createElement('div');
   root.className = 'sov-panel';
+  const opening = initialSettings ?? DEFAULT_SETTINGS;
   root.innerHTML = `
     <h2>Sovereignty Scanner <span class="sov-build"></span></h2>
     <div class="sov-body">
-      <p><button class="sov-scan">Scan</button>
-         <button class="sov-settings sec">Settings</button>
-         <button class="sov-export sec">Export CSV</button></p>
-      <div class="sov-settings-form" hidden>${settingsFormHtml(initialSettings ?? DEFAULT_SETTINGS)}</div>
-      <div class="sov-status"></div>
-      <div class="sov-results"></div>
-      <div class="sov-incomplete"></div>
+      <nav class="sov-tabs">
+        <button type="button" data-tab="scan" class="on">Scan</button>
+        <button type="button" data-tab="focus">Optimal Sovereignty</button>
+        <button type="button" data-tab="config">City Configuration</button>
+      </nav>
+      <section data-pane="scan">
+        <p><button class="sov-scan">Scan</button>
+           <button class="sov-export sec">Export CSV</button></p>
+        <div class="sov-status"></div>
+        <div class="sov-results"></div>
+        <div class="sov-incomplete"></div>
+      </section>
+      <section data-pane="focus" hidden>${focusFormHtml(DEFAULT_FOCUS, opening)}</section>
+      <section data-pane="config" hidden>${settingsFormHtml(opening)}</section>
     </div>`;
   // Which build is actually running. Tampermonkey keeps its own copy of an
   // installed script, so a rebuilt file is not a reinstalled one — without this
@@ -576,9 +644,16 @@ export function createPanel({ onScan, onExport, initialSettings, onSettingsChang
   root.querySelector('h2').addEventListener('click', () => root.classList.toggle('sov-collapsed'));
   scanBtn.addEventListener('click', onScan);
   $('.sov-export').addEventListener('click', onExport);
-  $('.sov-settings').addEventListener('click', () => {
-    const f = $('.sov-settings-form');
-    f.hidden = !f.hidden;
+
+  // One pane at a time. The radius placeholder was baked in at build time from
+  // the settings as they were then, so entering the optimiser re-reads them.
+  root.querySelectorAll('.sov-tabs button').forEach((tab) => {
+    tab.addEventListener('click', () => {
+      const name = tab.dataset.tab;
+      root.querySelectorAll('.sov-tabs button').forEach((t) => t.classList.toggle('on', t === tab));
+      root.querySelectorAll('[data-pane]').forEach((p) => { p.hidden = p.dataset.pane !== name; });
+      if (name === 'focus') syncFocusRadiusHint();
+    });
   });
 
   // --- reading the form ---
@@ -781,7 +856,73 @@ export function createPanel({ onScan, onExport, initialSettings, onSettingsChang
     }
   }
 
+  // --- Optimal Sovereignty ---
+
+  const focusForm = $('.sov-focus-form');
+
+  function syncFocusRadiusHint() {
+    const { settings: s } = readSettings();
+    focusForm.querySelector('[data-focus="radius"]').placeholder = String(Math.round(s.rClaim ?? 2));
+  }
+
+  function readFocus() {
+    const raw = {};
+    for (const key of ['x', 'y', 'radius', 'tax']) {
+      raw[key] = focusForm.querySelector(`[data-focus="${key}"]`).value;
+    }
+    raw.useConfiguredPlots = focusForm.querySelector('[data-focus="useConfiguredPlots"]').checked;
+    return raw;
+  }
+
+  function runFocus() {
+    const status = $('.sov-focus-status');
+    const out = $('.sov-focus-out');
+    // Read at the moment of the press, as runScan does, so an edit left in the
+    // config pane reaches this plan without needing to be committed first.
+    const read = readSettings();
+    if (read.errors.length) {
+      status.textContent = read.errors.join(' ');
+      out.innerHTML = '';
+      return;
+    }
+    const { focus, errors } = parseFocus(readFocus());
+    if (errors.length) {
+      status.textContent = errors.join(' ');
+      out.innerHTML = '';
+      return;
+    }
+
+    const result = focusSite({ payload: getPayload?.(), focus, settings: read.settings });
+    if (!result.ok) {
+      status.textContent = result.message;
+      out.innerHTML = '';
+      return;
+    }
+    status.textContent = '';
+    out.innerHTML = focusResultHtml(result);
+    bindPlanBlock(out, result.ctx, result.base);
+  }
+
+  focusForm.addEventListener('submit', (e) => e.preventDefault());
+  focusForm.addEventListener('click', (e) => {
+    if (e.target.closest('.sov-focus-run')) {
+      runFocus();
+    } else if (e.target.closest('.sov-focus-use')) {
+      // `selected` is the row Prefill copies rs from, set by select().
+      const status = $('.sov-focus-status');
+      if (!selected) {
+        status.textContent = 'Select a result row on the Scan tab first.';
+        return;
+      }
+      focusForm.querySelector('[data-focus="x"]').value = selected.x;
+      focusForm.querySelector('[data-focus="y"]').value = selected.y;
+      status.textContent = '';
+      runFocus();
+    }
+  });
+
   refresh({ save: false });
+  syncFocusRadiusHint();
 
   return {
     root,
@@ -873,6 +1014,42 @@ function flagsHtml(r) {
     .join(' ');
 }
 
+/**
+ * The tax control and the plan under it, shared by the results detail row and
+ * the optimiser.
+ *
+ * `plan` is what to show now; `base` is the plan at the site's own ceiling, which
+ * detailBodyHtml diffs against. The detail row opens with the two the same; the
+ * optimiser opens at whatever tax was asked for, so they differ from the start.
+ */
+function planBlockHtml({ ctx, base, plan, floor }) {
+  const slider = ctx && Number.isFinite(base.tMax) && base.tMax - floor > 0.5
+    ? `<div class="sov-tax">
+        <div class="sov-f"><span>Tax <output class="sov-tax-at">${plan.tax.toFixed(1)}%</output>
+          <span class="sov-hint">— drag to trade tax for sovereignty</span></span>
+          <input type="range" class="sov-tax-range" min="${floor}" max="${base.tMax}"
+            step="0.5" value="${plan.tax}"></div>
+      </div>`
+    : '';
+  return `${slider}<div class="sov-body-at">${detailBodyHtml(plan, base)}</div>`;
+}
+
+/** Make a rendered plan block live. Does nothing when there is no slider. */
+function bindPlanBlock(scope, ctx, base) {
+  const range = scope.querySelector('.sov-tax-range');
+  if (!range) return;
+  const at = scope.querySelector('.sov-tax-at');
+  const body = scope.querySelector('.sov-body-at');
+  range.addEventListener('input', () => {
+    const tax = Number(range.value);
+    at.textContent = `${tax.toFixed(1)}%`;
+    const plan = planSiteAt(ctx, tax);
+    body.innerHTML = plan
+      ? detailBodyHtml(plan, base)
+      : '<p class="sov-flag">This site cannot hold that tax.</p>';
+  });
+}
+
 function toggleDetail(row, result, settings) {
   const next = row.nextElementSibling;
   if (next && next.classList.contains('sov-detail')) {
@@ -888,31 +1065,40 @@ function toggleDetail(row, result, settings) {
   // cap puts it on the count-limited path, which is another factor of twenty.
   const ctx = result.neighbours ? prepareSite({ neighbours: result.neighbours, settings }) : null;
   const floor = Math.min(settings.tMin ?? 0, result.tMax);
-  const slider = ctx && Number.isFinite(result.tMax) && result.tMax - floor > 0.5
-    ? `<div class="sov-tax">
-        <div class="sov-f"><span>Tax <output class="sov-tax-at">${result.tMax.toFixed(1)}%</output>
-          <span class="sov-hint">— drag to trade tax for sovereignty</span></span>
-          <input type="range" class="sov-tax-range" min="${floor}" max="${result.tMax}"
-            step="0.5" value="${result.tMax}"></div>
-      </div>`
+
+  tr.innerHTML = `<td colspan="8">${
+    planBlockHtml({ ctx, base: result, plan: result, floor })}</td>`;
+  row.after(tr);
+  bindPlanBlock(tr, ctx, result);
+}
+
+/**
+ * One focusSite result. The notes come first because the allocation and the
+ * radius are inputs a reader would otherwise assume, and both move every figure
+ * below them.
+ */
+function focusResultHtml(r) {
+  const notes = [
+    r.plotNote,
+    `Radius ${r.radius}${r.radiusFromConfig ? ', from City Configuration' : ''}. `
+      + `${r.claimable} of the ${r.ring} surrounding tiles are claimable.`,
+  ];
+  // centreFacts is reported, never enforced — these are notes, not exclusions.
+  if (!r.centre.settleable) notes.push('This tile is not settleable — shown for analysis only.');
+  if (r.centre.isTown) notes.push('This tile already carries a town.');
+  if (r.centre.claimedBy) notes.push(`This tile is already claimed (${r.centre.claimedBy}).`);
+
+  const ceiling = `<p class="sov-note">Highest tax this tile holds on food alone: <strong>${
+    r.base.tMax.toFixed(1)}%</strong>, limited by ${escapeHtml(r.base.binding)}.</p>`;
+  const asked = r.aboveCeiling
+    ? `<p class="sov-flag">This tile cannot hold ${r.requestedTax.toFixed(1)}% — the plan below `
+      + `is at its ceiling of ${r.ceiling.toFixed(1)}%.</p>`
     : '';
 
-  tr.innerHTML = `<td colspan="8">${slider}<div class="sov-body-at">${
-    detailBodyHtml(result, result)}</div></td>`;
-  row.after(tr);
-
-  const range = tr.querySelector('.sov-tax-range');
-  if (!range) return;
-  const at = tr.querySelector('.sov-tax-at');
-  const body = tr.querySelector('.sov-body-at');
-  range.addEventListener('input', () => {
-    const tax = Number(range.value);
-    at.textContent = `${tax.toFixed(1)}%`;
-    const plan = planSiteAt(ctx, tax);
-    body.innerHTML = plan
-      ? detailBodyHtml(plan, result)
-      : '<p class="sov-flag">This site cannot hold that tax.</p>';
-  });
+  return `<h3>${r.x}|${r.y}</h3>
+    ${notes.map((n) => `<p class="sov-note">${escapeHtml(n)}</p>`).join('')}
+    ${ceiling}${asked}
+    ${planBlockHtml({ ctx: r.ctx, base: r.base, plan: r.plan, floor: r.floor })}`;
 }
 
 /**

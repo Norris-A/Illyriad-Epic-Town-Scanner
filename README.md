@@ -1,7 +1,13 @@
 # Illyriad Sovereignty Site Scanner
 
-A Tampermonkey userscript that ranks visible world-map tiles by the maximum
-sustainable tax rate. Product spec: [illyriad-sov-scanner-PRD.md](illyriad-sov-scanner-PRD.md).
+A Tampermonkey userscript for planning sovereignty. It has two modes over one
+engine and one shared configuration:
+
+- **Scan** ranks every visible world-map tile by the maximum sustainable tax rate.
+- **Optimal Sovereignty** points the same engine at a single tile you name, so you
+  can plan one site or examine one you are interested in closely.
+
+Product spec: [illyriad-sov-scanner-PRD.md](illyriad-sov-scanner-PRD.md).
 Game formulas and payload structure: [illyriad-game-mechanics.md](illyriad-game-mechanics.md).
 
 **The script makes zero network requests.** It observes map payloads the game has
@@ -42,16 +48,45 @@ and the settings-form validators.
 | `src/payload.js` | Payload reading and the §3.2/§3.3 filters |
 | `src/capture.js` | Passive payload observation. Reader only — no requests |
 | `src/worker.js` | Web Worker entry; bundled to a string and inlined |
-| `src/panel.js` | Side panel UI (§5), the §4 settings form, and the CSV writer |
-| `src/settings-store.js` | Saving and restoring the settings form; sanitizes anything it loads |
+| `src/focus.js` | The Optimal Sovereignty calculator — one named tile, planned on the shared engine. No DOM |
+| `src/panel.js` | Side panel UI (§5), the §4 City Configuration form, the optimiser form, and the CSV writer |
+| `src/settings-store.js` | Saving and restoring the City Configuration; sanitizes anything it loads |
 | `src/main.js` | Userscript entry; wires the three together |
 | `build.mjs` | Two-pass esbuild: worker → string → main bundle |
 
-## Settings persistence
+## Optimal Sovereignty
 
-The settings form saves itself to the browser's `localStorage` as you edit it,
-under the game's own origin, and restores on the next visit. Nothing else is
-stored and nothing leaves the machine. "Reset to defaults" clears it back.
+The Scan tab answers "which of these tiles is best". The Optimal Sovereignty tab
+answers "what would I actually build on *this* one" — the same engine, pointed at
+a tile you name. It takes four inputs and nothing else:
+
+| Input | Default |
+|---|---|
+| Coordinates, `x` and `y` | — |
+| Sovereignty radius | blank, which follows `R_claim` from City Configuration |
+| Starting tax | 60%, then dragged on the same slider the results rows carry |
+| Use City Configuration plots | off — the centre tile is planned on its **own** resource ratings |
+
+Everything else comes from City Configuration, so there is never a second place
+to set one thing.
+
+Two behaviours are deliberate. The **candidacy filters do not apply**: a tile that
+is already settled, already claimed, or too close to a town can still be
+examined, and the result says which of those it is. And a **radius reaching past
+the last observed payload refuses to plan** rather than planning around tiles that
+merely have not arrived — the same rule the scan applies, except it tells you how
+many tiles are missing so you know how far to pan.
+
+The optimiser runs on the main thread rather than in the worker. It is one site,
+and the tax slider already runs the same planner there.
+
+## City Configuration
+
+The configuration form saves itself to the browser's `localStorage` as you edit
+it, under the game's own origin, and restores on the next visit. Nothing else is
+stored and nothing leaves the machine. "Reset to defaults" clears it back. The
+storage key is unchanged from when this was called Settings, so renaming it cost
+nobody their saved values.
 
 A stored blob is never trusted on the way back in. `sanitizeSettings` rebuilds
 the object from `SETTINGS_FIELDS`, running every value through the validator the
@@ -94,10 +129,14 @@ Known gaps, all deliberate:
   wood/clay/iron/stone bill a military structure carries. With no hourly bill to
   limit it, nothing would stop the planner claiming every spare tile with one,
   and the host tile's resource rating that would justify doing so is not scored.
-- **The settings form has no automated test of its DOM.** `createPanel` cannot
-  run under Node, so the field spec, the validators and the markup contract are
-  tested but the event wiring, gating and Prefill are not. Adding jsdom would
+- **The panel has no automated test of its DOM.** `createPanel` cannot run under
+  Node, so the field specs, the validators and both markup contracts are tested
+  but the event wiring, the tabs, gating and Prefill are not. Adding jsdom would
   close it.
+
+- **The optimiser's own four inputs are not persisted.** City Configuration is;
+  the tile, radius, tax and plot override reset to their defaults each visit,
+  since they describe one question rather than a standing setup.
 
 ## First task
 

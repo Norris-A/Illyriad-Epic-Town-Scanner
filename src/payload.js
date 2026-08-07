@@ -99,22 +99,39 @@ export function extractTowns(payload) {
 }
 
 /**
- * Collect the R_claim neighbourhood of a site.
- * Returns null if ANY tile in the ring is missing — never score on
- * partial data; such sites are reported separately as Incomplete.
+ * The R_claim neighbourhood, separating tiles the payload did not carry from
+ * tiles it carried and that are not claimable. Both are dropped from
+ * `neighbours`; only the first is a reason not to score.
+ *
+ * @returns {{neighbours: object[], missing: string[]}} missing holds the keys
+ *   the payload had no tile for, in scan order.
  */
-export function neighbourhood(payload, key, rClaim, idx, settings) {
+export function collectNeighbourhood(payload, key, rClaim, idx, settings) {
   const { x, y } = parseKey(key);
-  const out = [];
+  const neighbours = [];
+  const missing = [];
   for (let dy = -rClaim; dy <= rClaim; dy++) {
     for (let dx = -rClaim; dx <= rClaim; dx++) {
       if (dx === 0 && dy === 0) continue;
       const nKey = tileKey(y + dy, x + dx);
       const tile = payload.data[nKey];
-      if (!tile) return null; // incomplete neighbourhood
+      if (!tile) {
+        missing.push(nKey);
+        continue;
+      }
       if (!isClaimable(tile, nKey, idx, settings)) continue;
-      out.push({ dx, dy, food: foodOf(tile), key: nKey, i: tile.i });
+      neighbours.push({ dx, dy, food: foodOf(tile), key: nKey, i: tile.i });
     }
   }
-  return out;
+  return { neighbours, missing };
+}
+
+/**
+ * Collect the R_claim neighbourhood of a site.
+ * Returns null if ANY tile in the ring is missing — never score on
+ * partial data; such sites are reported separately as Incomplete.
+ */
+export function neighbourhood(payload, key, rClaim, idx, settings) {
+  const { neighbours, missing } = collectNeighbourhood(payload, key, rClaim, idx, settings);
+  return missing.length ? null : neighbours;
 }

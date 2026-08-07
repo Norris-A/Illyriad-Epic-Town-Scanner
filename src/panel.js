@@ -98,6 +98,7 @@ const CSS = `
 .sov-xy input{width:60px;text-align:right}
 .sov-focus-out h3{margin:8px 0 2px;font-size:12px;font-weight:600;color:#fff}
 .sov-note{color:#a9a9a9;font-size:11px;margin:2px 0}
+.sov-warn{color:#e66;font-weight:bold;font-size:11px;margin:2px 0}
 `;
 
 // --- Settings model ---------------------------------------------------------
@@ -1085,10 +1086,14 @@ function focusResultHtml(r) {
     `Radius ${r.radius}${r.radiusFromConfig ? ', from City Configuration' : ''}. `
       + `${r.claimable} of the ${r.ring} surrounding tiles are claimable.`,
   ];
-  // centreFacts is reported, never enforced — these are notes, not exclusions.
-  if (!r.centre.settleable) notes.push('This tile is not settleable — shown for analysis only.');
-  if (r.centre.isTown) notes.push('This tile already carries a town.');
-  if (r.centre.claimedBy) notes.push(`This tile is already claimed (${r.centre.claimedBy}).`);
+  // Loud, but still not enforced — the plan below is rendered either way.
+  const warnings = [];
+  if (!r.centre.settleable) {
+    warnings.push('This tile cannot be settled and its claims cannot be placed — '
+      + 'the plan below is for analysis only.');
+  }
+  if (r.centre.isTown) warnings.push('This tile already carries a town.');
+  if (r.centre.claimedBy) warnings.push(`This tile is already claimed (${r.centre.claimedBy}).`);
 
   const ceiling = `<p class="sov-note">Highest tax this tile holds on food alone: <strong>${
     r.base.tMax.toFixed(1)}%</strong>, limited by ${escapeHtml(r.base.binding)}.</p>`;
@@ -1098,6 +1103,7 @@ function focusResultHtml(r) {
     : '';
 
   return `<h3>${r.x}|${r.y}</h3>
+    ${warnings.map((w) => `<p class="sov-warn">${escapeHtml(w)}</p>`).join('')}
     ${notes.map((n) => `<p class="sov-note">${escapeHtml(n)}</p>`).join('')}
     ${ceiling}${asked}
     ${planBlockHtml({ ctx: r.ctx, base: r.base, plan: r.plan, floor: r.floor })}`;

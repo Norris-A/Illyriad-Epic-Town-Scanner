@@ -43,8 +43,21 @@ and the settings-form validators.
 | `src/capture.js` | Passive payload observation. Reader only — no requests |
 | `src/worker.js` | Web Worker entry; bundled to a string and inlined |
 | `src/panel.js` | Side panel UI (§5), the §4 settings form, and the CSV writer |
+| `src/settings-store.js` | Saving and restoring the settings form; sanitizes anything it loads |
 | `src/main.js` | Userscript entry; wires the three together |
 | `build.mjs` | Two-pass esbuild: worker → string → main bundle |
+
+## Settings persistence
+
+The settings form saves itself to the browser's `localStorage` as you edit it,
+under the game's own origin, and restores on the next visit. Nothing else is
+stored and nothing leaves the machine. "Reset to defaults" clears it back.
+
+A stored blob is never trusted on the way back in. `sanitizeSettings` rebuilds
+the object from `SETTINGS_FIELDS`, running every value through the validator the
+form uses: unknown keys are dropped, settings added since take their defaults,
+and anything unusable falls back. So a blob from an older build always loads —
+the panel says when something drifted — and a corrupt one cannot brick the tool.
 
 ## How a site is scored
 

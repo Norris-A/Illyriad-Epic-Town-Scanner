@@ -4,6 +4,7 @@
 
 import { probeInPageData, installInterceptor, getLatestPayload, clearPayload } from './capture.js';
 import { createPanel, toCsv } from './panel.js';
+import { createSettingsStore } from './settings-store.js';
 import { DEFAULT_SETTINGS } from './constants.js';
 
 /* global __WORKER_SOURCE__ */
@@ -12,9 +13,13 @@ const workerUrl = URL.createObjectURL(
 );
 
 // The settings form owns the live values; this is only what the last scan ran
-// with. In memory for the session, never written to disk.
+// with.
 let settings = { ...DEFAULT_SETTINGS };
 let lastResults = [];
+
+// Settings persist in this browser's local storage. Nothing else is stored.
+const store = createSettingsStore();
+const restored = store.load();
 
 const hits = probeInPageData();
 if (hits.length) {
@@ -23,7 +28,16 @@ if (hits.length) {
   installInterceptor();
 }
 
+// Every keystroke fires a change; one write per burst of typing is enough.
+let saveTimer = null;
+function saveSoon(s) {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => panel.setStoreNote(store.save(s)), 250);
+}
+
 const panel = createPanel({
+  initialSettings: restored.settings ?? DEFAULT_SETTINGS,
+  onSettingsChange: saveSoon,
   onScan: runScan,
   onExport: () => {
     if (!lastResults.length) return;
@@ -35,6 +49,9 @@ const panel = createPanel({
     URL.revokeObjectURL(a.href);
   },
 });
+
+// A clean restore, and a first run, say nothing.
+if (restored.note) panel.setStoreNote(restored.note);
 
 function runScan() {
   // Read the form at the moment of the press, so the last edit always reaches

@@ -66,7 +66,7 @@ test('the markup carries every hook createPanel reads back out of it', () => {
   const hooks = [
     'class="sov-form"',
     'class="sov-plot-total"', 'sov-prefill sec', 'sov-prefill-src',
-    'class="sov-reset sec"', 'class="sov-derived"', 'sov-derived-food',
+    'class="sov-reset sec"', 'class="sov-derived"', 'sov-derived-food', 'sov-store-note',
     'data-cal="observedRpPerHour"', 'data-cal="atTax"',
     'data-res-cal="observed"', 'data-res-cal="atTax"', 'data-res-cal="plots"',
     'data-res-cal="booster"', 'sov-yield-read',

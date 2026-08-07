@@ -511,8 +511,9 @@ export function settingsFormHtml(settings) {
       ${body}
       <p class="sov-hint sov-derived-food"></p>
       <p><button type="button" class="sov-reset sec">Reset to defaults</button></p>
-      <p class="sov-hint">Settings live in memory for this session only,
-        and are applied on the next Scan.</p>
+      <p class="sov-hint">Settings are saved in this browser as you edit them and
+        restored next time; they are applied to the map on the next Scan.</p>
+      <p class="sov-hint sov-store-note"></p>
     </form>`;
 }
 
@@ -531,7 +532,16 @@ function capitalDerivedHtml(s) {
 
 // --- Panel ------------------------------------------------------------------
 
-export function createPanel({ onScan, onExport }) {
+/**
+ * @param {object} o
+ * @param {object} [o.initialSettings] what to open the form with, already
+ *   sanitized by the caller. Defaults on first run.
+ * @param {(s: object) => void} [o.onSettingsChange] fired on every committed
+ *   edit with the settings as read back out of the form, including edits that
+ *   fail validation — a half-finished allocation should come back as the user
+ *   left it rather than be discarded.
+ */
+export function createPanel({ onScan, onExport, initialSettings, onSettingsChange }) {
   const style = document.createElement('style');
   style.textContent = CSS;
   document.head.appendChild(style);
@@ -544,7 +554,7 @@ export function createPanel({ onScan, onExport }) {
       <p><button class="sov-scan">Scan</button>
          <button class="sov-settings sec">Settings</button>
          <button class="sov-export sec">Export CSV</button></p>
-      <div class="sov-settings-form" hidden>${settingsFormHtml(DEFAULT_SETTINGS)}</div>
+      <div class="sov-settings-form" hidden>${settingsFormHtml(initialSettings ?? DEFAULT_SETTINGS)}</div>
       <div class="sov-status"></div>
       <div class="sov-results"></div>
       <div class="sov-incomplete"></div>
@@ -681,8 +691,11 @@ export function createPanel({ onScan, onExport }) {
 
   // --- live dependencies, running total, derived read-outs ---
 
-  function refresh() {
+  // `save` is off for the refresh that lays the form out at startup — nothing
+  // has been edited yet.
+  function refresh({ save = true } = {}) {
     const { settings: s } = readSettings();
+    if (save) onSettingsChange?.(s);
 
     for (const f of SETTINGS_FIELDS) {
       if (!f.enabledWhen) continue;
@@ -721,7 +734,7 @@ export function createPanel({ onScan, onExport }) {
   // Everything is bound here rather than with inline handlers, which the host
   // page's CSP may block. Nothing submits — the form has nowhere to submit to.
   form.addEventListener('submit', (e) => e.preventDefault());
-  form.addEventListener('input', refresh);
+  form.addEventListener('input', () => refresh());
   form.addEventListener('change', (e) => {
     // Clamp on blur/commit rather than on every keystroke — clamping mid-typing
     // turns "12" into "1" before the second digit lands.
@@ -768,10 +781,14 @@ export function createPanel({ onScan, onExport }) {
     }
   }
 
-  refresh();
+  refresh({ save: false });
 
   return {
     root,
+    /** How the last load or save went, in the user's terms; '' clears it. */
+    setStoreNote(text) {
+      $('.sov-store-note').textContent = text ?? '';
+    },
     /** Returns `{ settings, errors }`; a scan is refused while errors is non-empty. */
     getSettings: readSettings,
     setSettings: writeSettings,

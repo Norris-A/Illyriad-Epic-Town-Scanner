@@ -18,10 +18,14 @@ import {
 const close = (a, b, eps = 0.05) =>
   assert.ok(Math.abs(a - b) < eps, `expected ${a} ≈ ${b}`);
 
-// The worked example's settings: 7-food site, standard city, Flour Mill on,
-// Nature's Bounty at 2 retreats, no other bonus, Library 20 with Allembine, no
-// Insight, no Chancery, no military sovereignty.
-const worked = { ...DEFAULT_SETTINGS };
+// The worked example's settings: 7-food site, a city eating 32,200/hr, Flour
+// Mill on, Nature's Bounty at 2 retreats, no other bonus, Library 20 with
+// Allembine, no Insight, no Chancery, no military sovereignty.
+//
+// The consumption is stated here rather than taken from DEFAULT_SETTINGS: it is
+// part of the oracle, so changing the default must not move every expectation
+// below with it.
+const worked = { ...DEFAULT_SETTINGS, cityConsumption: 32200 };
 
 /** The same settings with a military structure asked for. */
 const withMil = (extra = {}) => ({ ...worked, milsovStructure: 'trainingGround', ...extra });
@@ -726,6 +730,12 @@ test('surplusAt is callable on its own, at any tax the user asks about', () => {
   close(at(0).rp - at(100).rp, 1600, 1e-6);  // 100 points of production
   // Food at 25% tax: K x (100 + 60) - 32,200.
   close(at(25).food, computeK(7) * 160 - 32200, 1e-6);
+});
+
+test('gold is on the balance, and agrees with the goldNet the row shows', () => {
+  const plan = scoreSite({ neighbours: ring(() => 9), settings: withMil({ tMin: -1000 }) });
+  close(plan.surplus.gold, plan.goldNet, 1e-6);
+  close(plan.surplus.base.gold - plan.surplus.gold, plan.uGold, 1e-6);
 });
 
 test('gold upkeep still tracks research at exactly 10:1 with military in the plan', () => {

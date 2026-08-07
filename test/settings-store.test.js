@@ -15,6 +15,7 @@ import {
   memoryStorage,
 } from '../src/settings-store.js';
 import { SETTINGS_FIELDS } from '../src/panel.js';
+import { computeConsumption } from '../src/scoring.js';
 import { DEFAULT_SETTINGS } from '../src/constants.js';
 
 test('a round trip returns exactly what went in', () => {
@@ -22,7 +23,7 @@ test('a round trip returns exactly what went in', () => {
     ...DEFAULT_SETTINGS,
     tMin: 62,
     plots: { wood: 3, clay: 3, iron: 3, stone: 3, food: 13 },
-    cityProfile: 'beer',
+    cityConsumption: 27500,
     milsovStructure: 'joustingYard',
     milsovMinBonus: 40,
     resourceBoosters: { wood: true, clay: false, iron: true, stone: false },
@@ -71,11 +72,11 @@ test('a bare settings object loads, envelope or not', () => {
 
 test('settings added since the blob was written take their defaults', () => {
   // The build that wrote this had two of today's settings and one since dropped.
-  const old = JSON.stringify({ tMin: 55, cityProfile: 'beer', legacyKnob: 9 });
+  const old = JSON.stringify({ tMin: 55, cityConsumption: 27500, legacyKnob: 9 });
   const { settings, note } = decodeSettings(old);
 
   assert.equal(settings.tMin, 55, 'what was stored is kept');
-  assert.equal(settings.cityProfile, 'beer');
+  assert.equal(settings.cityConsumption, 27500);
   assert.equal(settings.libraryLevel, DEFAULT_SETTINGS.libraryLevel, 'the rest defaults');
   assert.deepEqual(settings.plots, DEFAULT_SETTINGS.plots);
   assert.deepEqual(Object.keys(settings).sort(), Object.keys(DEFAULT_SETTINGS).sort(),
@@ -96,7 +97,7 @@ test('a value that would be refused when typed is refused when restored', () => 
     libraryLevel: 'twenty',                            // not a number
     cityCount: 2.6,                                    // not an integer
     flourMill: 'no',                                   // a truthy string
-    cityProfile: 'porridge',                           // not an option
+    cityConsumption: 'lots',                           // not a number
     geomancerRetreats: '3',                            // a numeric select
     plots: { wood: 9, clay: 9, iron: 9, stone: 9, food: 9 },   // sums to 45
     milsovStructure: 'farmstead',                      // not offered
@@ -109,7 +110,7 @@ test('a value that would be refused when typed is refused when restored', () => 
   assert.equal(s.libraryLevel, 20, 'unparseable falls back');
   assert.equal(s.cityCount, 3);
   assert.equal(s.flourMill, true);
-  assert.equal(s.cityProfile, DEFAULT_SETTINGS.cityProfile, 'an unknown option defaults');
+  assert.equal(s.cityConsumption, DEFAULT_SETTINGS.cityConsumption, 'unparseable falls back');
   assert.equal(s.geomancerRetreats, 3, 'and a numeric select stays a number');
   assert.deepEqual(s.plots, DEFAULT_SETTINGS.plots, 'a bad allocation must not block the scan');
   assert.equal(s.milsovStructure, null);
@@ -128,13 +129,12 @@ test('a select is checked against the options the build actually offers', () => 
   }
 });
 
-test('a custom consumption only survives on the custom profile', () => {
-  // computeConsumption prefers the override wherever it is set, so a stale one
-  // would outrank Standard on the next load.
-  assert.equal(sanitizeSettings({ cityProfile: 'beer', cityConsumptionOverride: 41000 })
-    .cityConsumptionOverride, null);
-  assert.equal(sanitizeSettings({ cityProfile: 'custom', cityConsumptionOverride: 41000 })
-    .cityConsumptionOverride, 41000);
+test('the consumption a user typed is what the scan runs on', () => {
+  // Nothing may sit between the field and computeConsumption: what the form
+  // shows and what the scan scores have to be the same number.
+  assert.equal(sanitizeSettings({ cityConsumption: 41000 }).cityConsumption, 41000);
+  assert.equal(computeConsumption(sanitizeSettings({ cityConsumption: 41000 })), 41000);
+  assert.equal(computeConsumption(sanitizeSettings({})), DEFAULT_SETTINGS.cityConsumption);
 });
 
 test('a hostile blob cannot inject anything into the settings', () => {

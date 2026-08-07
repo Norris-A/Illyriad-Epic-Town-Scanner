@@ -54,7 +54,7 @@ test('the defaults render into the form without throwing', () => {
   for (const key of Object.keys(DEFAULT_SETTINGS)) {
     assert.ok(html.includes(`data-key="${key}"`), `${key} has no control in the markup`);
   }
-  assert.ok(html.includes('Prefill from selected tile'), 'the prefill button is missing');
+  assert.ok(html.includes('Prefill from Selected Tile'), 'the prefill button is missing');
   assert.ok(!/undefined|\[object Object\]/.test(html), 'a field rendered a stray value');
 });
 
@@ -196,6 +196,28 @@ test('upkeep is charged on the building, never on the claim', () => {
   assert.equal(milsovUpkeep([]), 0);
 });
 
+// --- the per-hour balance ---------------------------------------------------
+
+test('the balance carries gold, and every row states what the plan spent', () => {
+  const surplus = {
+    food: 1000, rp: 200, gold: 5000, wood: 300, clay: 300, iron: 300, stone: 300,
+    upkeep: 900, indicative: false,
+    base: { food: 33200, rp: 1200, gold: 15000, wood: 1200, clay: 1200, iron: 1200, stone: 1200 },
+  };
+  const rows = surplusRows(surplus, null);
+  assert.deepEqual(rows.map((r) => r.key),
+    ['food', 'rp', 'gold', ...BASIC_RESOURCES], 'gold is a per-hour figure like the rest');
+  for (const r of rows) assert.equal(r.spent, r.base - r.value, `${r.key} does not add up`);
+  // A basic resource spends the sovereignty upkeep; gold spends the claim price.
+  assert.equal(rows.find((r) => r.key === 'stone').spent, 900);
+  assert.equal(rows.find((r) => r.key === 'gold').spent, 10000);
+});
+
+test('a row with no production figure reports no spend rather than NaN', () => {
+  const rows = surplusRows({ food: 10, rp: 0, gold: 0 }, null);
+  for (const r of rows) assert.equal(r.spent, undefined);
+});
+
 // --- the structure table ----------------------------------------------------
 
 test('the upkeep steps are the table read as increments, and are convex', () => {
@@ -274,7 +296,7 @@ test('the plan read-out describes what was placed, and blocking says why not', (
       milsovBonus: 25,
       milsovUpkeep: 750,
     }),
-    '2x Sov II + 1x Sov I — +25% production, 750/hr of each of wood, clay, iron and stone.',
+    '2x Sov II + 1x Sov I — +25% military unit production, upkeep 750/hr of wood, clay, iron and stone.',
   );
   assert.equal(milsovPlanText({ milsov: [] }), '');
   assert.equal(milsovPlanText(null), '');

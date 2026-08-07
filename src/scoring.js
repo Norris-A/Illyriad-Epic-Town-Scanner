@@ -17,7 +17,7 @@ import {
   MILSOV_BONUS_PER_LEVEL,
   SOV_STRUCTURE_BY_KEY,
   DEFAULT_SOV_STRUCTURE,
-  CITY_PROFILES,
+  DEFAULT_CITY_CONSUMPTION,
   FLOUR_MILL_L20,
   NATURES_BOUNTY_BY_RETREATS,
   FAMINE_MANAGEMENT,
@@ -62,7 +62,7 @@ export function computeBOther(s) {
 
 /** C — city population, which equals total food consumption. */
 export function computeConsumption(s) {
-  return s.cityConsumptionOverride ?? CITY_PROFILES[s.cityProfile] ?? CITY_PROFILES.standard;
+  return Number.isFinite(s.cityConsumption) ? s.cityConsumption : DEFAULT_CITY_CONSUMPTION;
 }
 
 /**
@@ -230,7 +230,10 @@ export function tRes({ milsovAssignments, plots, settings = {} }) {
 
 /**
  * What the city has left over per hour at a given tax, once the plan is paid
- * for: the two ceilings' own quantities plus the four basic resources.
+ * for: the two ceilings' own quantities, gold, and the four basic resources.
+ *
+ * Gold imposes no ceiling of its own: the claims are paid from it at a fixed
+ * 10:1 against research, so it never runs out before research does.
  *
  * These are the same equations as the ceilings, read as a balance instead of
  * solved for T — so at T_max the binding one comes out at 0, which is what
@@ -241,23 +244,26 @@ export function tRes({ milsovAssignments, plots, settings = {} }) {
  * `indicative` is copied from the yield and covers the four basic figures only;
  * food and research do not depend on it.
  *
- * `base` holds the same six quantities before the plan is paid for, so each
+ * `base` holds the same seven quantities before the plan is paid for, so each
  * figure can be shown as base minus what the plan takes.
  */
-export function surplusAt({ tax, settings, sFood, uRp, milsovAssignments }) {
+export function surplusAt({ tax, settings, sFood, uRp, uGold, milsovAssignments }) {
   const s = settings;
   const k = computeK(s.plots.food);
   const upkeep = milsovUpkeep(milsovAssignments ?? []);
   const { yield: y, measured } = computeBasicYield(s);
+  const consumption = computeConsumption(s);
 
   const base = {
     food: k * (PRODUCTION_BASE - tax + computeBOther(s) + (sFood ?? 0)),
     rp: (computeRRef(s) * (PRODUCTION_BASE - tax)) / 100,
+    gold: GOLD_PER_TAX_POP * tax * consumption,
   };
   const out = {
     tax,
-    food: base.food - computeConsumption(s),
+    food: base.food - consumption,
     rp: base.rp - (uRp ?? 0),
+    gold: base.gold - (uGold ?? 0),
     upkeep,
     indicative: !measured,
   };
@@ -725,7 +731,7 @@ export function planSiteAt(ctx, tax) {
     // What running this plan leaves per hour, at the tax it is run at, so the
     // ceiling that binds reads 0 and the rest read as headroom.
     surplus: Number.isFinite(tax)
-      ? surplusAt({ tax, settings: s, sFood, uRp, milsovAssignments: milsov })
+      ? surplusAt({ tax, settings: s, sFood, uRp, uGold, milsovAssignments: milsov })
       : null,
     tiles,
     free,

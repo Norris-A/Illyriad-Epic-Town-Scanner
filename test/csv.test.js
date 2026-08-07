@@ -77,7 +77,7 @@ test('a result from before these fields existed still exports as zero', () => {
 test('the plan text reads as a level split, not as a tile list', () => {
   assert.equal(
     milsovPlanText(withMil()),
-    '1x Sov III + 2x Sov I — +25% production, 900/hr of each of wood, clay, iron and stone.',
+    '1x Sov III + 2x Sov I — +25% military unit production, upkeep 900/hr of wood, clay, iron and stone.',
   );
   assert.equal(milsovPlanText(row()), '', 'nothing placed, nothing to say');
 });
@@ -126,7 +126,7 @@ test('a ceiling above the tax the site reaches says nothing', () => {
 
 test('a binding indicative ceiling flags the row it did not rank', () => {
   const flag = resFlag(row({ resCeiling: 5.83416, resIndicative: true, resBinding: 'stone' }));
-  assert.equal(flag.text, 'res 5.8%');
+  assert.equal(flag.text, 'stone 5.8%');
   assert.match(flag.title, /stone/);
   assert.match(flag.title, /does not affect the ranking/);
 });

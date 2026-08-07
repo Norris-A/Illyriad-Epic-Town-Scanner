@@ -9,7 +9,7 @@
 // createPanel is the only function in this file that touches `document`.
 
 import {
-  CITY_PROFILES,
+  DEFAULT_CITY_CONSUMPTION,
   DEFAULT_SETTINGS,
   FLOUR_MILL_L20,
   NATURES_BOUNTY_BY_RETREATS,
@@ -90,7 +90,8 @@ const CSS = `
 .sov-tax input[type=range]{width:190px}
 .sov-tax output{color:#6bf;font-variant-numeric:tabular-nums}
 .sov-balance{margin:4px 0}
-.sov-balance td:nth-child(2){font-variant-numeric:tabular-nums}
+.sov-balance td:nth-child(n+2){font-variant-numeric:tabular-nums}
+.sov-balance th,.sov-balance td{padding:2px 3px}
 .sov-tabs{display:flex;gap:2px;margin:0 0 8px;border-bottom:1px solid #444}
 .sov-tabs button{background:#2a2a2a;color:#b5b5b5;padding:5px 9px;border-bottom:2px solid transparent}
 .sov-tabs button.on{background:#333;color:#fff;border-bottom-color:#3a5}
@@ -167,8 +168,8 @@ export function milsovPlanText(plan) {
     .sort((a, b) => b[0] - a[0])
     .map(([level, count]) => `${count}x Sov ${SOV_LEVEL_ROMAN[level - 1]}`)
     .join(' + ');
-  return `${split} — +${plan.milsovBonus}% production, ${
-    (plan.milsovUpkeep ?? 0).toLocaleString('en-GB')}/hr of each of wood, clay, iron and stone.`;
+  return `${split} — +${plan.milsovBonus}% military unit production, upkeep ${
+    (plan.milsovUpkeep ?? 0).toLocaleString('en-GB')}/hr of wood, clay, iron and stone.`;
 }
 
 /** Why a site got no military sovereignty, in the user's terms. */
@@ -180,8 +181,9 @@ export const MILSOV_BLOCKED_TEXT = {
 };
 
 /**
- * The per-hour balance of a plan, as rows of `{label, base, value, note}`.
- * `base` is the row's production before the plan spends it.
+ * The per-hour balance of a plan, as rows of `{label, base, spent, value, note}`.
+ * `base` is the row's production before the plan spends it and `spent` what the
+ * plan takes out of it, so the three figures read across as base - spent = value.
  *
  * Everything is stated at the plan's own tax, so the ceiling that binds reads 0
  * — that is the arithmetic checking itself in front of the user, not a rounding
@@ -195,6 +197,7 @@ export function surplusRows(surplus, binding) {
   const rows = [
     { key: 'food', label: 'Food' },
     { key: 'rp', label: 'Research' },
+    { key: 'gold', label: 'Gold' },
     ...BASIC_RESOURCES.map((res) => ({
       key: res,
       label: `${res[0].toUpperCase()}${res.slice(1)}`,
@@ -212,7 +215,13 @@ export function surplusRows(surplus, binding) {
     }
     if (value < 0) notes.push('deficit');
     if (r.basic && surplus.indicative) notes.push('indicative');
-    return { ...r, value, base, note: notes.join(', ') };
+    return {
+      ...r,
+      value,
+      base,
+      spent: Number.isFinite(base) ? base - value : undefined,
+      note: notes.join(', '),
+    };
   });
 }
 
@@ -239,15 +248,15 @@ export function resFlag(r) {
   if (r.resImpossible) {
     return {
       text: `no ${r.resBinding}`,
-      title: `The settle allocation has no ${r.resBinding} plots, so the milsov `
+      title: `The settle allocation has no ${r.resBinding} plots, so the sovereignty `
         + `upkeep cannot be paid at any tax rate. ${caveat}`,
     };
   }
   if (!(r.resCeiling < r.tMax - 1e-9)) return null;
   return {
-    text: `res ${r.resCeiling.toFixed(1)}%`,
-    title: `Milsov upkeep exhausts ${r.resBinding} above ${r.resCeiling.toFixed(1)}% tax, `
-      + `below this site's ${r.tMax.toFixed(1)}%. ${caveat}`,
+    text: `${r.resBinding} ${r.resCeiling.toFixed(1)}%`,
+    title: `Sovereignty upkeep exhausts ${r.resBinding} above ${r.resCeiling.toFixed(1)}% tax, `
+      + `below this site's ceiling of ${r.tMax.toFixed(1)}%. ${caveat}`,
   };
 }
 
@@ -299,75 +308,61 @@ export function parseResourceBoosters(raw) {
  * leaving it editable but ignored.
  */
 export const SETTINGS_FIELDS = [
-  { key: 'tMin', group: 'Ranking', label: 'Minimum tax T_min (%)', type: 'number', min: -100, max: 100 },
+  { key: 'tMin', group: 'Ranking', label: 'Minimum Tax (%)', type: 'number', min: -100, max: 100 },
 
-  { key: 'plots', group: 'Settle tile', label: 'Settle plot allocation', type: 'plots' },
+  { key: 'plots', group: 'Settle Tile', label: 'Settle Plot Allocation', type: 'plots' },
 
   {
-    key: 'cityProfile',
-    group: 'City food',
-    label: 'City profile',
-    type: 'select',
-    options: [
-      ...Object.entries(CITY_PROFILES).map(([value, c]) => ({
-        value,
-        label: `${value[0].toUpperCase()}${value.slice(1)} (C = ${c.toLocaleString('en-GB')})`,
-      })),
-      { value: 'custom', label: 'Custom total' },
-    ],
-  },
-  {
-    key: 'cityConsumptionOverride',
-    group: 'City food',
-    label: 'Custom consumption C',
+    key: 'cityConsumption',
+    group: 'City Food',
+    label: 'Food Consumed per Hour',
     type: 'number',
     min: 1,
     max: 1e6,
     integer: true,
-    fallback: CITY_PROFILES.standard,
-    enabledWhen: (s) => s.cityProfile === 'custom',
+    fallback: DEFAULT_CITY_CONSUMPTION,
   },
-  { key: 'flourMill', group: 'City food', label: `Flour Mill L20 (+${FLOUR_MILL_L20})`, type: 'checkbox' },
-  { key: 'naturesBounty', group: 'City food', label: "Nature's Bounty", type: 'checkbox' },
+  { key: 'flourMill', group: 'City Food', label: `Flour Mill L20 (+${FLOUR_MILL_L20})`, type: 'checkbox' },
+  { key: 'naturesBounty', group: 'City Food', label: "Nature's Bounty", type: 'checkbox' },
   {
     key: 'geomancerRetreats',
-    group: 'City food',
-    label: 'Geomancer retreats',
+    group: 'City Food',
+    label: 'Geomancer Retreats',
     type: 'select',
     parse: 'number',
     options: NATURES_BOUNTY_BY_RETREATS.map((bonus, n) => ({ value: n, label: `${n} (+${bonus})` })),
     enabledWhen: (s) => !!s.naturesBounty,
   },
-  { key: 'cityCount', group: 'City food', label: 'City count', type: 'number', min: 1, max: 999, integer: true, fallback: 1 },
-  { key: 'isCapital', group: 'City food', label: 'This city is the capital', type: 'checkbox' },
-  { key: 'otherFoodBonus', group: 'City food', label: 'Other food bonus (+)', type: 'number', min: -500, max: 500 },
+  { key: 'cityCount', group: 'City Food', label: 'City Count', type: 'number', min: 1, max: 999, integer: true, fallback: 1 },
+  { key: 'isCapital', group: 'City Food', label: 'This city is the capital', type: 'checkbox' },
+  { key: 'otherFoodBonus', group: 'City Food', label: 'Other Food Bonus (+)', type: 'number', min: -500, max: 500 },
 
-  { key: 'libraryLevel', group: 'Research', label: 'Library level', type: 'number', min: 0, max: 20, integer: true, fallback: 20 },
+  { key: 'libraryLevel', group: 'Research', label: 'Library Level', type: 'number', min: 0, max: 20, integer: true, fallback: 20 },
   { key: 'allembine', group: 'Research', label: 'Allembine Research', type: 'checkbox' },
-  { key: 'overflowingInsight', group: 'Research', label: 'Overflowing Insight (x1.5)', type: 'checkbox' },
-  { key: 'rpCalibration', group: 'Research', label: 'RP calibration override', type: 'calibration' },
+  { key: 'overflowingInsight', group: 'Research', label: 'Overflowing Insight (×1.5)', type: 'checkbox' },
+  { key: 'rpCalibration', group: 'Research', label: 'RP Calibration', type: 'calibration' },
 
   {
     key: 'resourceBoosters',
-    group: 'Basic resources',
-    label: 'Booster buildings at L20',
+    group: 'Basic Resources',
+    label: 'Booster Buildings at L20',
     type: 'boosters',
   },
   {
     key: 'resourceCalibration',
-    group: 'Basic resources',
-    label: 'Per-plot yield calibration',
+    group: 'Basic Resources',
+    label: 'Per-Plot Yield Calibration',
     type: 'resourceCalibration',
   },
 
-  { key: 'chancery', group: 'Sovereignty', label: 'Chancery of Estates (x0.6 upkeep)', type: 'checkbox' },
-  { key: 'rClaim', group: 'Sovereignty', label: 'Claim radius R_claim', type: 'number', min: 1, max: 6, integer: true, fallback: 2 },
-  { key: 'maxBuildings', group: 'Sovereignty', label: 'Max buildings', type: 'number', min: 0, max: 200, integer: true, fallback: 20 },
-  { key: 'milsovStructure', group: 'Sovereignty', label: 'Military structure', type: 'milsov' },
+  { key: 'chancery', group: 'Sovereignty', label: 'Chancery of Estates (×0.6 upkeep)', type: 'checkbox' },
+  { key: 'rClaim', group: 'Sovereignty', label: 'Claim Radius', type: 'number', min: 1, max: 6, integer: true, fallback: 2 },
+  { key: 'maxBuildings', group: 'Sovereignty', label: 'Max Buildings', type: 'number', min: 0, max: 200, integer: true, fallback: 20 },
+  { key: 'milsovStructure', group: 'Sovereignty', label: 'Military Structure', type: 'milsov' },
   {
     key: 'milsovMinBonus',
     group: 'Sovereignty',
-    label: 'Minimum military bonus (%)',
+    label: 'Minimum Military Bonus (%)',
     type: 'number',
     min: 0,
     max: 1000,
@@ -376,8 +371,8 @@ export const SETTINGS_FIELDS = [
     enabledWhen: (s) => !!s.milsovStructure,
   },
 
-  { key: 'dOther', group: 'Neighbours', label: 'Min distance, other players', type: 'number', min: 0, max: 100 },
-  { key: 'dOwn', group: 'Neighbours', label: 'Min distance, own cities', type: 'number', min: 0, max: 100 },
+  { key: 'dOther', group: 'Neighbours', label: 'Min Distance, Other Players', type: 'number', min: 0, max: 100 },
+  { key: 'dOwn', group: 'Neighbours', label: 'Min Distance, Own Cities', type: 'number', min: 0, max: 100 },
   { key: 'ownClaimsAvailable', group: 'Neighbours', label: 'Treat own claims as available', type: 'checkbox' },
   { key: 'allianceClaimsAvailable', group: 'Neighbours', label: 'Treat alliance claims as available', type: 'checkbox' },
 ];
@@ -416,7 +411,7 @@ function plotsFieldHtml(f, plots) {
       <div class="sov-plot-fields">${fields}</div>
       <div class="sov-plot-sum">
         <span class="sov-plot-total"></span>
-        <button type="button" class="sov-prefill sec">Prefill from selected tile</button>
+        <button type="button" class="sov-prefill sec">Prefill from Selected Tile</button>
       </div>
       <p class="sov-hint sov-prefill-src"></p>
     </div>`;
@@ -528,7 +523,7 @@ export function settingsFormHtml(settings) {
   return `<form class="sov-form">
       ${body}
       <p class="sov-hint sov-derived-food"></p>
-      <p><button type="button" class="sov-reset sec">Reset to defaults</button></p>
+      <p><button type="button" class="sov-reset sec">Reset to Defaults</button></p>
       <p class="sov-hint">This configuration is saved in this browser as you edit it and
         restored next time. It is applied to the map on the next Scan, and to a single
         tile on the next Optimise.</p>
@@ -551,24 +546,24 @@ export function focusFormHtml(focus, settings) {
             <input type="number" data-focus="x" step="1" placeholder="x"${attr('value', f.x)}>
             <input type="number" data-focus="y" step="1" placeholder="y"${attr('value', f.y)}>
           </span></label>
-        <label class="sov-f"><span>Sovereignty radius</span>
+        <label class="sov-f"><span>Sovereignty Radius</span>
           <input type="number" data-focus="radius" min="1" max="6" step="1"
             placeholder="${rClaim}"${attr('value', f.radius)}></label>
         <p class="sov-hint">How far out sovereignty may be placed. Blank follows the claim
           radius in City Configuration, currently ${rClaim}.</p>
       </fieldset>
       <fieldset><legend>Plan</legend>
-        <label class="sov-f"><span>Starting tax (%)</span>
+        <label class="sov-f"><span>Starting Tax (%)</span>
           <input type="number" data-focus="tax" min="${FOCUS_TAX_FLOOR}" max="100" step="0.5"
             value="${f.tax ?? FOCUS_DEFAULT_TAX}"></label>
-        <label class="sov-f"><span>Use City Configuration plots</span>
+        <label class="sov-f"><span>Use City Configuration Plots</span>
           <input type="checkbox" data-focus="useConfiguredPlots"${f.useConfiguredPlots ? ' checked' : ''}></label>
         <p class="sov-hint">Off plans on the centre tile's own resource ratings, as the map
           reports them. On plans on the ${PLOT_TOTAL}-plot allocation in City Configuration —
           the tile as you intend to terraform it.</p>
       </fieldset>
       <p><button type="button" class="sov-focus-run">Optimise</button>
-         <button type="button" class="sov-focus-use sec">Use selected result</button></p>
+         <button type="button" class="sov-focus-use sec">Use Selected Result</button></p>
       <p class="sov-hint">Everything else — research, city food, chancery, the building cap
         and which military structure to place — comes from City Configuration. Any tile can
         be examined here, including one already settled, claimed, or too near a town.</p>
@@ -616,7 +611,7 @@ export function createPanel({ onScan, onExport, initialSettings, onSettingsChang
     <h2>Sovereignty Scanner <span class="sov-build"></span></h2>
     <div class="sov-body">
       <nav class="sov-tabs">
-        <button type="button" data-tab="scan" class="on">Scan</button>
+        <button type="button" data-tab="scan" class="on">Site Search</button>
         <button type="button" data-tab="focus">Optimal Sovereignty</button>
         <button type="button" data-tab="config">City Configuration</button>
       </nav>
@@ -717,9 +712,6 @@ export function createPanel({ onScan, onExport, initialSettings, onSettingsChang
           out[f.key] = clampNumber(form.querySelector(`input[data-key="${f.key}"]`).value, f);
       }
     }
-    // A custom total only applies on the custom profile; leaving it set would
-    // silently override Standard/Beer, since computeConsumption prefers it.
-    if (out.cityProfile !== 'custom') out.cityConsumptionOverride = null;
     return { settings: out, errors };
   }
 
@@ -789,18 +781,21 @@ export function createPanel({ onScan, onExport, initialSettings, onSettingsChang
     const total = form.querySelector('.sov-plot-total');
     total.className = `sov-plot-total ${plots.ok ? 'sov-ok' : 'sov-bad'}`;
     total.textContent = `Total ${plots.total} / ${PLOT_TOTAL}${
-      plots.ok ? '' : ` — ${plots.message}`} · K = ${computeK(plots.plots.food).toFixed(2)}`;
+      plots.ok ? '' : ` — ${plots.message}`} · ${
+      computeK(plots.plots.food).toFixed(2)} food/hr per point of production`;
 
     form.querySelector('.sov-derived').innerHTML = capitalDerivedHtml(s);
+    const bOther = computeBOther(s);
     form.querySelector('.sov-derived-food').textContent =
-      `B_other = ${computeBOther(s)} food points.`;
+      `City food bonuses total ${bOther >= 0 ? '+' : ''}${bOther} points.`;
 
     // The back-solved yield, shown as it is entered — a reading that produces an
     // implausible figure is far easier to spot here than in a results row.
     const { yield: y } = computeBasicYield(s);
+    const perPlot = Math.round(y).toLocaleString('en-GB');
     form.querySelector('.sov-yield-read').textContent = s.resourceCalibration
-      ? `Y = ${y.toFixed(0)}/hr per plot at L20, from your reading.`
-      : `Y = ${y.toFixed(0)}/hr per plot at L20, the measured default. `
+      ? `${perPlot}/hr per plot at L20, from your reading.`
+      : `${perPlot}/hr per plot at L20, the measured default. `
         + 'Fill this in only for a city that reads differently.';
 
     // An allocation that is not 25 plots is not a tile the game can produce,
@@ -838,13 +833,13 @@ export function createPanel({ onScan, onExport, initialSettings, onSettingsChang
   function prefill() {
     const src = $('.sov-prefill-src');
     if (!selected || !selected.rs) {
-      src.textContent = 'Click a result row first — Prefill copies that tile’s rs.';
+      src.textContent = 'Click a result row first — Prefill copies that tile’s resource ratings.';
       return;
     }
     writePlots(selected.rs);
     refresh();
-    src.textContent = `Prefilled from ${selected.x}|${selected.y} (rs ${
-      PLOT_KEYS.map((p) => selected.rs[p]).join('|')}).`;
+    src.textContent = `Prefilled from ${selected.x}|${selected.y} — ratings ${
+      PLOT_KEYS.map((p) => selected.rs[p]).join('|')}.`;
   }
 
   function select(n) {
@@ -854,8 +849,9 @@ export function createPanel({ onScan, onExport, initialSettings, onSettingsChang
     });
     if (selected) {
       $('.sov-prefill-src').textContent = selected.rs
-        ? `Selected ${selected.x}|${selected.y} — rs ${PLOT_KEYS.map((p) => selected.rs[p]).join('|')}.`
-        : `Selected ${selected.x}|${selected.y} — no rs in the payload for this tile.`;
+        ? `Selected ${selected.x}|${selected.y} — ratings ${
+          PLOT_KEYS.map((p) => selected.rs[p]).join('|')}.`
+        : `Selected ${selected.x}|${selected.y} — no resource ratings in the payload for this tile.`;
     }
   }
 
@@ -914,7 +910,7 @@ export function createPanel({ onScan, onExport, initialSettings, onSettingsChang
       // `selected` is the row Prefill copies rs from, set by select().
       const status = $('.sov-focus-status');
       if (!selected) {
-        status.textContent = 'Select a result row on the Scan tab first.';
+        status.textContent = 'Select a result row on the Site Search tab first.';
         return;
       }
       focusForm.querySelector('[data-focus="x"]').value = selected.x;
@@ -965,7 +961,9 @@ export function createPanel({ onScan, onExport, initialSettings, onSettingsChang
           <thead><tr><th>Site</th>
             <th title="The highest tax this site can hold on food alone">Tax Max</th>
             <th title="Which ceiling stops the tax going higher">Limiter</th><th>Food</th>
-            <th>RP</th><th>Net gold</th><th title="Free military production bonus — costs this site no tax">Mil</th><th></th></tr></thead>
+            <th>RP</th><th>Net Gold</th>
+            <th title="Free military unit production bonus — costs this site no tax">Mil</th>
+            <th></th></tr></thead>
           <tbody>${rows}</tbody>
         </table>`;
 
@@ -1111,8 +1109,8 @@ function focusResultHtml(r) {
 
 /**
  * Everything about one plan, at the tax it is run at. Rendered from the plan
- * alone so the slider can replace it wholesale — the tile list, the buildings
- * and the balance all move together, which is the point of dragging it.
+ * alone so the slider can replace it wholesale — the balance, the buildings and
+ * the tile list all move together, which is the point of dragging it.
  *
  * `base` is the plan at the site's own maximum, so a lower tax can say what it
  * bought and what it cost rather than leaving two screens of numbers to diff.
@@ -1120,41 +1118,26 @@ function focusResultHtml(r) {
 function detailBodyHtml(plan, base) {
   const dxy = (t) => `${t.dx >= 0 ? '+' : ''}${t.dx},${t.dy >= 0 ? '+' : ''}${t.dy}`;
   const tiles = plan.tiles.map((t) =>
-    `<li>${dxy(t)} — food ${t.food}, d ${t.d.toFixed(2)}, ${t.rp.toFixed(0)} RP, Sov ${t.level}</li>`).join('');
+    `<li>${dxy(t)} — food ${t.food}, distance ${t.d.toFixed(2)}, ${
+      t.rp.toFixed(0)} RP, Sov ${t.level}</li>`).join('');
   // One line per building the engine placed, on the square it chose.
   const mil = plan.milsov.map((m) =>
     `<li class="sov-advice">${dxy(m)} — Sov ${m.sovLevel} claim carrying a level ${m.buildingLevel} ${
-      escapeHtml(sovStructure(m).name)}, d ${m.d.toFixed(2)}, ${m.rp.toFixed(0)} RP, ${
-      structureUpkeep(m).toLocaleString('en-GB')}/hr each W/C/I/S</li>`).join('');
+      escapeHtml(sovStructure(m).name)}, distance ${m.d.toFixed(2)}, ${m.rp.toFixed(0)} RP, ${
+      structureUpkeep(m).toLocaleString('en-GB')}/hr upkeep</li>`).join('');
 
   // A ceiling only BINDS at the tax it was solved for. Below that everything has
   // slack, so marking a row "binds" there would be a lie.
   const atCeiling = Math.abs(plan.tax - plan.tMax) < 0.05;
   const rows = surplusRows(plan.surplus, atCeiling ? plan.binding : null);
+  const num = (v) => (Number.isFinite(v) ? Math.round(v).toLocaleString('en-GB') : '');
   const balance = rows.length
-    ? `<table class="sov-balance"><thead><tr><th>Per hour at ${
-      plan.tax.toFixed(1)}% tax</th><th>Produced</th><th>Left over</th><th></th></tr></thead><tbody>${
-      rows.map((r) => `<tr><td>${r.label}</td><td class="sov-hint">${
-        Number.isFinite(r.base) ? Math.round(r.base).toLocaleString('en-GB') : ''}</td><td class="${
-        r.value < 0 ? 'sov-bad' : 'sov-ok'}">${
-        Math.round(r.value).toLocaleString('en-GB')}</td><td class="sov-hint">${r.note}</td></tr>`).join('')
-    }</tbody></table>${plan.surplus.upkeep
-      ? `<p class="sov-hint">Wood, clay, iron and stone are already net of the ${
-        plan.surplus.upkeep.toLocaleString('en-GB')}/hr these buildings cost.</p>`
-      : ''}`
-    : '';
-
-  // What this tax bought, against the plan at the top of the slider. The food
-  // claim count is in there because dropping one is usually where the research
-  // for the buildings came from.
-  const claimDelta = plan.tiles.length - base.tiles.length;
-  const trade = plan.tax < base.tMax - 0.05
-    ? `<p class="sov-hint">At ${plan.tax.toFixed(1)}% rather than ${base.tMax.toFixed(1)}%: ${
-      plan.milsovBonus > base.milsovBonus
-        ? `<strong>+${plan.milsovBonus - base.milsovBonus}% more production</strong>`
-        : 'no more production'}, ${plan.tiles.length} food claims (${
-      claimDelta >= 0 ? '+' : ''}${claimDelta}), ${
-      Math.round(plan.goldNet - base.goldNet).toLocaleString('en-GB')} gold.</p>`
+    ? `<table class="sov-balance"><thead><tr><th>At ${plan.tax.toFixed(1)}% Tax</th>
+        <th>Produced</th><th>Spent</th><th>Net</th><th></th></tr></thead><tbody>${
+      rows.map((r) => `<tr><td>${r.label}</td><td class="sov-hint">${num(r.base)}</td>
+        <td class="sov-hint">${num(r.spent)}</td><td class="${
+        r.value < 0 ? 'sov-bad' : 'sov-ok'}">${num(r.value)}</td>
+        <td class="sov-hint">${r.note}</td></tr>`).join('')}</tbody></table>`
     : '';
 
   const milPlan = plan.milsov.length
@@ -1164,16 +1147,33 @@ function detailBodyHtml(plan, base) {
         escapeHtml(MILSOV_BLOCKED_TEXT[plan.milsovBlocked] ?? 'nothing was left over')}.</p>`
       : '';
 
-  // The resource ceiling is stated whether or not it bites, since the figure
-  // itself is what the user judges the plan by.
-  const ceiling = plan.resImpossible
-    ? `is impossible — the settle allocation has no ${plan.resBinding} plots`
-    : `is ${plan.resCeiling?.toFixed(1)}% on ${plan.resBinding}`;
-  const res = !Number.isFinite(plan.resCeiling) && !plan.resImpossible
-    ? ''
-    : `<p class="sov-hint">Resource ceiling ${ceiling}.</p>`;
+  // The tax at which the upkeep stops being affordable, stated whether or not it
+  // bites: how much headroom is left is what the user judges the plan by.
+  const res = plan.resImpossible
+    ? `<p class="sov-hint">Upkeep limit: none — the settle allocation has no ${
+      plan.resBinding} plots, so this upkeep cannot be paid at any tax.</p>`
+    : Number.isFinite(plan.resCeiling)
+      ? `<p class="sov-hint">Upkeep limit: ${plan.resCeiling.toFixed(1)}% tax — above that, ${
+        plan.resBinding} production no longer covers it.</p>`
+      : '';
 
-  return `<ul>${tiles}${mil}</ul>${balance}${trade}${milPlan}${res}`;
+  // What this tax cost, against the plan at the top of the slider. What it bought
+  // is the military line above, so only the price is stated here. The food claim
+  // count is in it because dropping one is usually where the research for the
+  // buildings came from.
+  const claimDelta = plan.tiles.length - base.tiles.length;
+  const goldDelta = Math.round(plan.goldNet - base.goldNet);
+  const signed = (v) => `${v >= 0 ? '+' : ''}${v.toLocaleString('en-GB')}`;
+  const trade = plan.tax < base.tMax - 0.05
+    ? `<p class="sov-hint">Against the ${base.tMax.toFixed(1)}% ceiling, which fits ${
+      base.milsovBonus ? `+${base.milsovBonus}%` : 'no military bonus'}: ${
+      signed(claimDelta)} food claims, ${signed(goldDelta)} gold/hr.</p>`
+    : '';
+
+  // The balance goes first, directly under the slider, so dragging moves numbers
+  // the eye is already on. The claim list is the longest block, so it goes last
+  // rather than pushing the table off the screen.
+  return `${balance}${milPlan}${res}${trade}<ul>${tiles}${mil}</ul>`;
 }
 
 function escapeHtml(s) {

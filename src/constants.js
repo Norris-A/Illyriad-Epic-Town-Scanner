@@ -110,10 +110,9 @@ export const RESOURCE_BOOSTER_BONUS = 40;
 // by the plot count and the production percentage to give hourly output.
 export const BASIC_YIELD_L20 = 2538;
 
-export const CITY_PROFILES = {
-  standard: 32200, // [V]
-  beer: 30800,     // [V]
-};
+// [V] Food consumed per hour, which the user reads off their own town. Only a
+// starting figure — every city differs, so the number itself is the input.
+export const DEFAULT_CITY_CONSUMPTION = 30800;
 
 // [F] Additive food bonuses, in points on the production percentage.
 export const FLOUR_MILL_L20 = 40;
@@ -140,8 +139,7 @@ export const PLOT_TOTAL = 25;
 export const DEFAULT_SETTINGS = {
   tMin: 50,
   plots: { wood: 5, clay: 5, iron: 5, stone: 3, food: 7 }, // must sum to 25
-  cityProfile: 'standard',
-  cityConsumptionOverride: null,
+  cityConsumption: DEFAULT_CITY_CONSUMPTION,
   flourMill: true,
   // The 22,400 baseline the model is calibrated against needs 18.89 points on
   // top of the Flour Mill, which is Nature's Bounty at two retreats to within

@@ -76,9 +76,6 @@ export function sanitizeSettings(raw) {
         out[f.key] = clampNumber(v, { ...f, fallback: f.fallback ?? fallback ?? 0 });
     }
   }
-  // The same rule readSettings applies — computeConsumption prefers the
-  // override wherever it is set.
-  if (out.cityProfile !== 'custom') out.cityConsumptionOverride = null;
   return out;
 }
 

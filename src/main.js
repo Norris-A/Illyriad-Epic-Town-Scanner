@@ -2,7 +2,7 @@
 // __WORKER_SOURCE__ is replaced at build time by build.mjs with the bundled
 // worker code as a string literal.
 
-import { probeInPageData, installInterceptor, getLatestPayload, clearPayload } from './capture.js';
+import { probeInPageData, installInterceptor, getLatestPayload } from './capture.js';
 import { createPanel, toCsv } from './panel.js';
 import { createSettingsStore } from './settings-store.js';
 import { DEFAULT_SETTINGS } from './constants.js';
@@ -39,8 +39,7 @@ const panel = createPanel({
   initialSettings: restored.settings ?? DEFAULT_SETTINGS,
   onSettingsChange: saveSoon,
   onScan: runScan,
-  // Read on each Optimise press. Deliberately not paired with clearPayload the
-  // way runScan is — the pane is pressed repeatedly against one payload.
+  // Read on each Optimise press, against the same payload the last Scan ran on.
   getPayload: getLatestPayload,
   onExport: () => {
     if (!lastResults.length) return;
@@ -93,8 +92,6 @@ function runScan() {
     panel.renderIncomplete(msg.incomplete);
     panel.setStatus('');
     worker.terminate();
-    // Nothing is retained across views.
-    clearPayload();
   };
 
   worker.postMessage({ payload, settings });

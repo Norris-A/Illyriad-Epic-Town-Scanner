@@ -6,15 +6,14 @@
 // already exposes parsed map data somewhere reachable. If it does, prefer that:
 // strictly less invasive than patching network primitives.
 
+// The last map view the game fetched, replaced whole on every new map response
+// and never persisted. It is held for as long as the tab is open because a scan,
+// a second scan and every Optimise press all read it, and none of them has any
+// other source for the tiles.
 let latestPayload = null;
 
 export function getLatestPayload() {
   return latestPayload;
-}
-
-/** Cleared on Scan, replaced on every new map response. Never persisted. */
-export function clearPayload() {
-  latestPayload = null;
 }
 
 function looksLikeMapPayload(obj) {

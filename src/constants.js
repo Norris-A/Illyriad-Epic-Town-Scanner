@@ -110,6 +110,18 @@ export const RESOURCE_BOOSTER_BONUS = 40;
 // by the plot count and the production percentage to give hourly output.
 export const BASIC_YIELD_L20 = 2538;
 
+// [V] The prestige production boost, in additive points on the production
+// percentage: the Famine Management description has prestige cumulative with
+// spells and sovereignty, which is what makes it points and not a multiplier.
+// The figure is the account owner's, correcting the +25 first assumed here.
+// Half a booster building, and worth its face value in tax headroom.
+export const PRESTIGE_PRODUCTION_BONUS = 20;
+
+// What it can be switched on for — every production the tool models. Food's
+// points are added inside computeBOther rather than here, so B_other stays the
+// one total of the city's food bonuses and nothing can count them twice.
+export const PRESTIGE_KEYS = [...BASIC_RESOURCES, 'food', 'research'];
+
 // [V] Food consumed per hour, which the user reads off their own town. Only a
 // starting figure — every city differs, so the number itself is the input.
 export const DEFAULT_CITY_CONSUMPTION = 30800;
@@ -143,29 +155,37 @@ export const DEFAULT_SETTINGS = {
   flourMill: true,
   // The 22,400 baseline the model is calibrated against needs 18.89 points on
   // top of the Flour Mill, which is Nature's Bounty at two retreats to within
-  // 0.7%. Defaulting the spell on rather than burying the same 20 points in
-  // otherFoodBonus keeps B_other at 60 while making the assumption one the user
-  // can see and untick — and stops it being counted twice.
+  // 0.7%. Defaulting the spell on rather than carrying the same 20 points as a
+  // nameless constant keeps B_other at 60 while making the assumption one the
+  // user can see and untick — and stops it being counted twice.
   naturesBounty: true,
   geomancerRetreats: 2,
   cityCount: 1,
   isCapital: false,
-  otherFoodBonus: 0,       // genuinely other: everything known has its own field
   libraryLevel: 20,
   allembine: true,
   overflowingInsight: false,
-  rpCalibration: null,     // { observedRpPerHour, atTax } back-solves R_ref
+  // { observedRpPerHour, atTax, prestige } back-solves R_ref. The prestige flag
+  // describes the reading rather than the city: what is divided out has to be the
+  // multiplier that was running when the figure was read.
+  rpCalibration: null,
   // Which of the four booster buildings the city has at level 20. Each is worth
   // RESOURCE_BOOSTER_BONUS points against that resource's ceiling.
   resourceBoosters: { wood: false, clay: false, iron: false, stone: false },
-  // { observedPerHour, atTax, plots, booster } back-solves the per-plot yield,
-  // the way rpCalibration back-solves R_ref. Null uses BASIC_YIELD_L20.
+  // { observedPerHour, atTax, plots, booster, prestige } back-solves the
+  // per-plot yield, the way rpCalibration back-solves R_ref. Null uses
+  // BASIC_YIELD_L20.
   resourceCalibration: null,
   // Surplus per hour the plan may not touch, per resource. A city sitting exactly
   // on T_res puts its whole scarcest resource into upkeep and can never build or
   // trade in it again — this is where the user says how much to hold back. Zero
   // is the ceiling as it was.
   resourceMinimums: { wood: 0, clay: 0, iron: 0, stone: 0 },
+  // Which productions the boost is running on, PRESTIGE_PRODUCTION_BONUS points
+  // each.
+  prestige: {
+    wood: false, clay: false, iron: false, stone: false, food: false, research: false,
+  },
   chancery: false,
   rClaim: 2,
   maxBuildings: 20,

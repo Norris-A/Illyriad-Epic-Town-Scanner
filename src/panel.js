@@ -20,6 +20,8 @@ import {
   BASIC_RESOURCES,
   RESOURCE_BOOSTERS,
   RESOURCE_BOOSTER_BONUS,
+  PRESTIGE_KEYS,
+  PRESTIGE_PRODUCTION_BONUS,
   PLOT_KEYS,
   PLOT_TOTAL,
 } from './constants.js';
@@ -264,11 +266,19 @@ export function resFlag(r) {
  * Read the RP calibration override. A blank or zero reading means "not
  * calibrated" and returns null, leaving computeRRef on its library estimate.
  * The tax is clamped to 0..100 because R_ref divides by (125 - atTax).
+ *
+ * `prestige` describes the READING, not the city: the back-solve divides out
+ * whatever multiplier produced the figure, so a boost that was running when it
+ * was taken has to be declared here or it is fitted into R_ref instead.
  */
-export function parseRpCalibration(observed, atTax) {
+export function parseRpCalibration(observed, atTax, prestige) {
   const rp = clampNumber(observed, { min: 0, fallback: 0 });
   if (rp <= 0) return null;
-  return { observedRpPerHour: rp, atTax: clampNumber(atTax, { min: 0, max: 100, fallback: 0 }) };
+  return {
+    observedRpPerHour: rp,
+    atTax: clampNumber(atTax, { min: 0, max: 100, fallback: 0 }),
+    prestige: !!prestige,
+  };
 }
 
 /**
@@ -280,7 +290,7 @@ export function parseRpCalibration(observed, atTax) {
  * A reading without plots cannot be divided and is treated as absent, which
  * falls back to the default yield rather than to nothing.
  */
-export function parseResourceCalibration({ observed, atTax, plots, booster }) {
+export function parseResourceCalibration({ observed, atTax, plots, booster, prestige }) {
   const perHour = clampNumber(observed, { min: 0, fallback: 0 });
   const p = clampNumber(plots, { min: 0, max: PLOT_TOTAL, integer: true, fallback: 0 });
   if (perHour <= 0 || p <= 0) return null;
@@ -289,7 +299,15 @@ export function parseResourceCalibration({ observed, atTax, plots, booster }) {
     atTax: clampNumber(atTax, { min: 0, max: 100, fallback: 0 }),
     plots: p,
     booster: !!booster,
+    prestige: !!prestige,
   };
+}
+
+/** Read the four booster tick-boxes, defaulting each to off. */
+export function parseResourceBoosters(raw) {
+  const out = {};
+  for (const res of BASIC_RESOURCES) out[res] = !!raw?.[res];
+  return out;
 }
 
 /**
@@ -304,10 +322,13 @@ export function parseResourceMinimums(raw) {
   return out;
 }
 
-/** Read the four booster tick-boxes, defaulting each to off. */
-export function parseResourceBoosters(raw) {
+/**
+ * Read the prestige tick-boxes — one per production, food included. Food is
+ * the only one no call site reads directly: computeBOther totals it.
+ */
+export function parsePrestige(raw) {
   const out = {};
-  for (const res of BASIC_RESOURCES) out[res] = !!raw?.[res];
+  for (const key of PRESTIGE_KEYS) out[key] = !!raw?.[key];
   return out;
 }
 
@@ -347,7 +368,6 @@ export const SETTINGS_FIELDS = [
   },
   { key: 'cityCount', group: 'City Food', label: 'City Count', type: 'number', min: 1, max: 999, integer: true, fallback: 1 },
   { key: 'isCapital', group: 'City Food', label: 'This city is the capital', type: 'checkbox' },
-  { key: 'otherFoodBonus', group: 'City Food', label: 'Other Food Bonus (+)', type: 'number', min: -500, max: 500 },
 
   { key: 'libraryLevel', group: 'Research', label: 'Library Level', type: 'number', min: 0, max: 20, integer: true, fallback: 20 },
   { key: 'allembine', group: 'Research', label: 'Allembine Research', type: 'checkbox' },
@@ -371,6 +391,15 @@ export const SETTINGS_FIELDS = [
     group: 'Basic Resources',
     label: 'Per-Plot Yield Calibration',
     type: 'resourceCalibration',
+  },
+
+  // Its own group because it spans everything the city produces — the four basic
+  // resources, food and research — so it belongs under none of theirs.
+  {
+    key: 'prestige',
+    group: 'Prestige',
+    label: 'Prestige Production Boost',
+    type: 'prestige',
   },
 
   { key: 'chancery', group: 'Sovereignty', label: 'Chancery of Estates (×0.6 upkeep)', type: 'checkbox' },
@@ -443,6 +472,8 @@ function calibrationFieldHtml(f, cal) {
       <div class="sov-f"><span>…at tax (%)</span>
         <input type="number" data-cal="atTax" min="0" max="100" step="any"
           value="${cal?.atTax ?? 0}"></div>
+      <div class="sov-f"><span>…with the prestige boost running</span>
+        <input type="checkbox" data-cal="prestige"${cal?.prestige ? ' checked' : ''}></div>
     </div>`;
 }
 
@@ -456,6 +487,24 @@ function boostersFieldHtml(f, boosters) {
       <p class="sov-hint">${escapeHtml(f.label)} — each adds ${RESOURCE_BOOSTER_BONUS} points to that
         resource's production, the same way the Flour Mill adds to food, and so is
         worth ${RESOURCE_BOOSTER_BONUS} points of tax headroom against its ceiling.</p>
+      ${boxes}
+    </div>`;
+}
+
+/**
+ * The prestige toggles — one per production, food and research included, since
+ * all of them are the same additive points on the same production percentage.
+ * The food box feeds B_other, so the City Food total above accounts for it.
+ */
+function prestigeFieldHtml(f, prestige) {
+  const boxes = PRESTIGE_KEYS.map((key) =>
+    `<label class="sov-f" data-prestige-row="${key}"><span>${key} (+${PRESTIGE_PRODUCTION_BONUS})</span>
+      <input type="checkbox" data-prestige="${key}"${prestige?.[key] ? ' checked' : ''}></label>`).join('');
+  return `<div class="sov-f-block" data-key="${f.key}">
+      <p class="sov-hint">${PRESTIGE_PRODUCTION_BONUS} points on the production percentage,
+        cumulative with spells and sovereignty, so each is worth
+        ${PRESTIGE_PRODUCTION_BONUS} points of tax headroom — half a booster building. Tick
+        only what the boost is actually running on: these move every ceiling they touch.</p>
       ${boxes}
     </div>`;
 }
@@ -502,6 +551,8 @@ function resourceCalibrationFieldHtml(f, cal) {
           value="${cal?.plots ?? 0}"></div>
       <div class="sov-f"><span>…with that booster at L20</span>
         <input type="checkbox" data-res-cal="booster"${cal?.booster ? ' checked' : ''}></div>
+      <div class="sov-f"><span>…with the prestige boost running</span>
+        <input type="checkbox" data-res-cal="prestige"${cal?.prestige ? ' checked' : ''}></div>
       <p class="sov-hint sov-yield-read"></p>
     </div>`;
 }
@@ -540,6 +591,7 @@ function fieldHtml(f, settings) {
     case 'plots': return plotsFieldHtml(f, v);
     case 'calibration': return calibrationFieldHtml(f, v);
     case 'boosters': return boostersFieldHtml(f, v);
+    case 'prestige': return prestigeFieldHtml(f, v);
     case 'minimums': return minimumsFieldHtml(f, v);
     case 'resourceCalibration': return resourceCalibrationFieldHtml(f, v);
     case 'milsov': return milsovFieldHtml(f, v);
@@ -729,6 +781,7 @@ export function createPanel({ onScan, onExport, initialSettings, onSettingsChang
           out.rpCalibration = parseRpCalibration(
             form.querySelector('[data-cal="observedRpPerHour"]').value,
             form.querySelector('[data-cal="atTax"]').value,
+            form.querySelector('[data-cal="prestige"]').checked,
           );
           break;
         case 'boosters': {
@@ -737,6 +790,14 @@ export function createPanel({ onScan, onExport, initialSettings, onSettingsChang
             raw[res] = form.querySelector(`[data-booster="${res}"]`).checked;
           }
           out.resourceBoosters = parseResourceBoosters(raw);
+          break;
+        }
+        case 'prestige': {
+          const raw = {};
+          for (const key of PRESTIGE_KEYS) {
+            raw[key] = form.querySelector(`[data-prestige="${key}"]`).checked;
+          }
+          out.prestige = parsePrestige(raw);
           break;
         }
         case 'minimums': {
@@ -753,6 +814,7 @@ export function createPanel({ onScan, onExport, initialSettings, onSettingsChang
             atTax: form.querySelector('[data-res-cal="atTax"]').value,
             plots: form.querySelector('[data-res-cal="plots"]').value,
             booster: form.querySelector('[data-res-cal="booster"]').checked,
+            prestige: form.querySelector('[data-res-cal="prestige"]').checked,
           });
           break;
         default:
@@ -783,10 +845,16 @@ export function createPanel({ onScan, onExport, initialSettings, onSettingsChang
         case 'calibration':
           form.querySelector('[data-cal="observedRpPerHour"]').value = v?.observedRpPerHour ?? '';
           form.querySelector('[data-cal="atTax"]').value = v?.atTax ?? 0;
+          form.querySelector('[data-cal="prestige"]').checked = !!v?.prestige;
           break;
         case 'boosters':
           for (const res of BASIC_RESOURCES) {
             form.querySelector(`[data-booster="${res}"]`).checked = !!v?.[res];
+          }
+          break;
+        case 'prestige':
+          for (const key of PRESTIGE_KEYS) {
+            form.querySelector(`[data-prestige="${key}"]`).checked = !!v?.[key];
           }
           break;
         case 'minimums':
@@ -799,6 +867,7 @@ export function createPanel({ onScan, onExport, initialSettings, onSettingsChang
           form.querySelector('[data-res-cal="atTax"]').value = v?.atTax ?? 0;
           form.querySelector('[data-res-cal="plots"]').value = v?.plots ?? 0;
           form.querySelector('[data-res-cal="booster"]').checked = !!v?.booster;
+          form.querySelector('[data-res-cal="prestige"]').checked = !!v?.prestige;
           break;
         default:
           form.querySelector(`input[data-key="${f.key}"]`).value = v ?? f.fallback ?? '';

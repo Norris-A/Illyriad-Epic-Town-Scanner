@@ -14,6 +14,7 @@ import {
 import {
   DEFAULT_SETTINGS, BASIC_YIELD_L20, BASIC_RESOURCES,
   MILSOV_UPKEEP_BY_LEVEL, MILSOV_BONUS_PER_LEVEL, CHANCERY_FACTOR,
+  PRESTIGE_PRODUCTION_BONUS, PRESTIGE_KEYS, RESOURCE_BOOSTER_BONUS,
   CLAIM_RP_PER_LEVEL_DISTANCE,
 } from '../src/constants.js';
 
@@ -42,12 +43,12 @@ test("B_other = Flour Mill 40 + Nature's Bounty 20 = 60", () => {
 });
 
 test('the 20 points the baseline needs are the spell, and are counted once', () => {
-  // They used to sit in otherFoodBonus as an unattributed residual while the
-  // spell defaulted off, so a city that actually had the spell was scored with
-  // both — 80 points where the baseline calls for 60.
-  close(computeBOther({ ...worked, otherFoodBonus: 0 }), 60, 1e-9);
+  // They used to sit in a free "other" field as an unattributed residual while
+  // the spell defaulted off, so a city that actually had the spell was scored
+  // with both — 80 points where the baseline calls for 60. Every food bonus now
+  // has a named field, and B_other is the only place any of them are totalled.
+  close(computeBOther(worked), 60, 1e-9);
   close(computeBOther({ ...worked, naturesBounty: false }), 40, 1e-9);
-  assert.equal(DEFAULT_SETTINGS.otherFoodBonus, 0, 'the residual must not be carried twice');
 
   // Each retreat count is worth its own table entry, spell on or off.
   for (const [retreats, bonus] of [[0, 8], [1, 16], [2, 20], [3, 22], [4, 23]]) {
@@ -884,6 +885,116 @@ test('a floor takes military sovereignty out of the budget, not out of the tax',
     buildingsUsed: 0,
   });
   assert.equal(starved.upkeep, 0);
+});
+
+// --- Prestige ---------------------------------------------------------------
+
+const prestigeOn = (...keys) => Object.fromEntries(
+  PRESTIGE_KEYS.map((k) => [k, keys.includes(k)]),
+);
+
+test('prestige on food joins B_other, and is totalled exactly once', () => {
+  // Food is the one production whose bonuses are summed somewhere else, so the
+  // boost goes into that sum rather than being applied at the food call sites —
+  // which is the only arrangement that cannot count it twice.
+  close(computeBOther({ ...worked, prestige: prestigeOn('food') }),
+    computeBOther(worked) + PRESTIGE_PRODUCTION_BONUS, 1e-9);
+
+  // Worth its face value in tax headroom against T_food, like every other point
+  // in B_other, and reaching food production through exactly one path.
+  const settings = { ...worked, tMin: -1000, prestige: prestigeOn('food') };
+  const bare = scoreSite({ neighbours: ring8, settings: { ...worked, tMin: -1000 } });
+  const fed = scoreSite({ neighbours: ring8, settings });
+  assert.equal(bare.binding, 'food', 'precondition: food is what binds');
+  close(fed.tMaxExact, bare.tMaxExact + PRESTIGE_PRODUCTION_BONUS, 1e-9);
+  close(surplusAt({ tax: 25, settings, sFood: 0, uRp: 0, milsovAssignments: [] }).food,
+    computeK(7) * (100 + computeBOther(settings)) - 32200, 1e-6);
+
+  // And the four resources are untouched by it — one key, one production.
+  const milsovAssignments = [{ sovLevel: 5, buildingLevel: 5 }];
+  close(tRes({ milsovAssignments, plots: worked.plots, settings }).ceiling,
+    tRes({ milsovAssignments, plots: worked.plots, settings: worked }).ceiling, 1e-9);
+});
+
+test('prestige is worth exactly its points of tax headroom on a resource', () => {
+  const milsovAssignments = [{ sovLevel: 5, buildingLevel: 5 }];
+  const bare = tRes({ milsovAssignments, plots: worked.plots, settings: worked });
+  const all = tRes({
+    milsovAssignments,
+    plots: worked.plots,
+    settings: { ...worked, prestige: prestigeOn('wood', 'clay', 'iron', 'stone') },
+  });
+  close(all.ceiling, bare.ceiling + PRESTIGE_PRODUCTION_BONUS, 1e-9);
+  assert.equal(all.binding, 'stone');
+
+  // It stacks with the booster rather than replacing it — both are points.
+  const both = tRes({
+    milsovAssignments,
+    plots: worked.plots,
+    settings: {
+      ...worked,
+      prestige: prestigeOn('wood', 'clay', 'iron', 'stone'),
+      resourceBoosters: { wood: true, clay: true, iron: true, stone: true },
+    },
+  });
+  close(both.ceiling, bare.ceiling + PRESTIGE_PRODUCTION_BONUS + RESOURCE_BOOSTER_BONUS, 1e-9);
+});
+
+test('prestige on research is points on the multiplier, not a bigger library', () => {
+  const settings = { ...worked, prestige: prestigeOn('research') };
+  // R_ref is the library's own figure and does not move; what moves is the
+  // percentage it is produced at, so the gap is a flat R_ref x 25/100.
+  close(computeRRef(settings), computeRRef(worked), 1e-9);
+  const gap = (computeRRef(worked) * PRESTIGE_PRODUCTION_BONUS) / 100;
+  for (const tax of [0, 25, 60, 100]) {
+    close(surplusAt({ tax, settings, sFood: 0, uRp: 0, milsovAssignments: [] }).rp,
+      surplusAt({ tax, settings: worked, sFood: 0, uRp: 0, milsovAssignments: [] }).rp + gap, 1e-6);
+  }
+  // Which is worth its face value in headroom against T_rp, like everything else.
+  close(tRp({ uRp: 1000, rRef: 1600, rpBonus: PRESTIGE_PRODUCTION_BONUS }),
+    tRp({ uRp: 1000, rRef: 1600 }) + PRESTIGE_PRODUCTION_BONUS, 1e-9);
+});
+
+test('prestige raises the tax a research-bound site holds', () => {
+  // Sixteen-food water against a hungry city: T_rp is what binds, so the extra
+  // research turns into tax. It buys LESS than its full points at the site
+  // level, and has to: the ceiling is where T_food and T_rp cross, so lifting
+  // one line slides the crossing point along the other. The face value is
+  // headroom against T_rp at a fixed food plan, which the test above states.
+  const neighbours = ring(() => 16);
+  const settings = { ...worked, cityConsumption: 45000, tMin: -1000 };
+  const bare = scoreSite({ neighbours, settings });
+  const boosted = scoreSite({
+    neighbours, settings: { ...settings, prestige: prestigeOn('research') },
+  });
+  assert.equal(bare.binding, 'rp');
+  assert.equal(boosted.binding, 'rp');
+  assert.ok(boosted.tMaxExact > bare.tMaxExact, 'more research must be more tax');
+  assert.ok(boosted.tMaxExact - bare.tMaxExact <= PRESTIGE_PRODUCTION_BONUS + 1e-9,
+    'and never more than the points it adds');
+});
+
+test('a reading taken with prestige running round-trips to the same yield', () => {
+  // The divisor has to carry the bonus. Left out, its points are fitted into the
+  // per-plot yield as a multiplier and every other tax comes out wrong.
+  const plots = 5;
+  const atTax = 25;
+  const observed = (plots * BASIC_YIELD_L20 * (125 - atTax + PRESTIGE_PRODUCTION_BONUS)) / 100;
+  close(computeBasicYield({
+    resourceCalibration: { observedPerHour: observed, atTax, plots, booster: false, prestige: true },
+  }).yield, BASIC_YIELD_L20, 1e-9);
+  // Declared wrongly, the same reading inflates the yield by the ratio of the
+  // two multipliers — which is the mis-extrapolation this flag exists to stop.
+  close(computeBasicYield({
+    resourceCalibration: { observedPerHour: observed, atTax, plots, booster: false, prestige: false },
+  }).yield, (BASIC_YIELD_L20 * (100 + PRESTIGE_PRODUCTION_BONUS)) / 100, 1e-9);
+
+  // Same for R_ref: what a boosted city produces at 25% tax is a smaller library
+  // than the same figure produced without it.
+  const rRef = 1280;
+  const rpObserved = (rRef * (125 - atTax + PRESTIGE_PRODUCTION_BONUS)) / 100;
+  close(computeRRef({ rpCalibration: { observedRpPerHour: rpObserved, atTax, prestige: true } }),
+    rRef, 1e-9);
 });
 
 // --- Equal bonuses are broken on research -----------------------------------

@@ -27,6 +27,7 @@ import {
   LIBRARY_BASE_RP_L20,
   BASIC_RESOURCES,
   RESOURCE_BOOSTER_BONUS,
+  PRESTIGE_PRODUCTION_BONUS,
   BASIC_YIELD_L20,
 } from './constants.js';
 
@@ -51,9 +52,15 @@ export function computeK(foodPlots) {
   return (foodPlots * FARM_YIELD_L20) / 100;
 }
 
-/** B_other — additive non-tax, non-sovereignty food bonus points. */
+/**
+ * B_other — additive non-tax, non-sovereignty food bonus points.
+ *
+ * Every food bonus the tool knows is totalled HERE, prestige included, so there
+ * is exactly one figure to check against a city's in-game food breakdown. That
+ * is also why prestigeBonus is not consulted for food anywhere else.
+ */
 export function computeBOther(s) {
-  let b = s.otherFoodBonus ?? 0;
+  let b = prestigeBonus(s, 'food');
   if (s.flourMill) b += FLOUR_MILL_L20;
   if (s.naturesBounty) {
     const retreats = Math.min(s.geomancerRetreats ?? 0, 4);
@@ -72,13 +79,18 @@ export function computeConsumption(s) {
 }
 
 /**
- * R_ref — research points per hour at 0 tax before the (125-T) multiplier.
- * Calibration beats the table: R_ref = observed * 100/(125-T).
+ * R_ref — research points per hour before the production multiplier.
+ * Calibration beats the table: R_ref = observed * 100/(125-T+prestige).
+ *
+ * The reading's own prestige state divides out with the tax, and has to: the
+ * bonus is additive points, so leaving it in the observation would fit it into
+ * R_ref as a multiplier and extrapolate wrongly at every other tax.
  */
 export function computeRRef(s) {
   const cal = s.rpCalibration;
   if (cal && cal.observedRpPerHour > 0) {
-    return (cal.observedRpPerHour * 100) / (PRODUCTION_BASE - cal.atTax);
+    const m = PRODUCTION_BASE - cal.atTax + (cal.prestige ? PRESTIGE_PRODUCTION_BONUS : 0);
+    return (cal.observedRpPerHour * 100) / m;
   }
   let base = LIBRARY_BASE_RP_L20;
   // [?] Whether Allembine scales with (125-T) is unconfirmed. Folding it into
@@ -92,9 +104,14 @@ export function computeRRef(s) {
 /**
  * Y — per-plot yield at level 20, shared by all four basic resources.
  *
- * A reading overrides the default, as it does for R_ref, dividing out both the
- * tax multiplier and the booster that was running when it was taken. It is for
- * a city the default does not describe.
+ * A reading overrides the default, as it does for R_ref, dividing out the tax
+ * multiplier and every additive bonus that was running when it was taken. It is
+ * for a city the default does not describe.
+ *
+ * The booster and prestige are in that divisor because they are points, not
+ * factors: divide by the tax alone and 40 or 20 points of bonus are fitted into
+ * the yield as a multiplier, which reproduces the reading at its own tax and is
+ * wrong at every other.
  *
  * Both paths set `measured`, which is what lets tRes bind. The flag is carried
  * so that a yield the engine cannot stand behind has somewhere to say so; the
@@ -103,7 +120,9 @@ export function computeRRef(s) {
 export function computeBasicYield(s) {
   const cal = s.resourceCalibration;
   if (cal && cal.observedPerHour > 0 && cal.plots > 0) {
-    const m = PRODUCTION_BASE - cal.atTax + (cal.booster ? RESOURCE_BOOSTER_BONUS : 0);
+    const m = PRODUCTION_BASE - cal.atTax
+      + (cal.booster ? RESOURCE_BOOSTER_BONUS : 0)
+      + (cal.prestige ? PRESTIGE_PRODUCTION_BONUS : 0);
     if (m > 0) {
       return { yield: (cal.observedPerHour * 100) / (cal.plots * m), measured: true };
     }
@@ -117,6 +136,23 @@ export function boosterBonus(s, resource) {
 }
 
 /**
+ * Points added by the prestige production boost, cumulative with spells and
+ * sovereignty rather than a multiplier over them.
+ *
+ * Food is a key here, but only computeBOther reads it: food points are totalled
+ * there with the Flour Mill and the spell, so asking for them again at a food
+ * call site would double them.
+ */
+export function prestigeBonus(s, resource) {
+  return s.prestige?.[resource] ? PRESTIGE_PRODUCTION_BONUS : 0;
+}
+
+/** Every additive point on one basic resource's production percentage. */
+export function resourceBonus(s, resource) {
+  return boosterBonus(s, resource) + prestigeBonus(s, resource);
+}
+
+/**
  * How much of one resource the plan may not spend, per hour — the surplus the
  * user has fenced off from sovereignty upkeep. A missing or negative figure is
  * no floor rather than a licence to run the resource negative.
@@ -124,6 +160,15 @@ export function boosterBonus(s, resource) {
 export function resourceMinimum(s, resource) {
   const v = s.resourceMinimums?.[resource];
   return Number.isFinite(v) && v > 0 ? v : 0;
+}
+
+/**
+ * Research produced per hour at a tax. Prestige is points on the same (125 - T)
+ * percentage as every other production, so it is worth its face value in tax
+ * headroom just as a booster is against a resource.
+ */
+export function researchAt({ rRef, rpBonus = 0, tax }) {
+  return (rRef * (PRODUCTION_BASE - tax + rpBonus)) / 100;
 }
 
 /**
@@ -195,9 +240,9 @@ export function tFood({ bOther, sFood, consumption, k }) {
   return PRODUCTION_BASE + bOther + sFood - consumption / k;
 }
 
-/** T_rp = 125 - 100 * U_RP / R_ref */
-export function tRp({ uRp, rRef }) {
-  return PRODUCTION_BASE - (100 * uRp) / rRef;
+/** T_rp = 125 + prestige - 100 * U_RP / R_ref */
+export function tRp({ uRp, rRef, rpBonus = 0 }) {
+  return PRODUCTION_BASE + rpBonus - (100 * uRp) / rRef;
 }
 
 /**
@@ -241,7 +286,7 @@ export function tRes({ milsovAssignments, plots, settings = {} }) {
     // No plots owing nothing is not a constraint; no plots owing something is
     // one no tax rate satisfies.
     const ceiling = perPoint > 0
-      ? PRODUCTION_BASE + boosterBonus(settings, res) - (100 * need) / perPoint
+      ? PRODUCTION_BASE + resourceBonus(settings, res) - (100 * need) / perPoint
       : (need > 0 ? -Infinity : Infinity);
     if (ceiling < worst) {
       worst = ceiling;
@@ -286,7 +331,7 @@ export function surplusAt({ tax, settings, sFood, uRp, uGold, milsovAssignments 
 
   const base = {
     food: k * (PRODUCTION_BASE - tax + computeBOther(s) + (sFood ?? 0)),
-    rp: (computeRRef(s) * (PRODUCTION_BASE - tax)) / 100,
+    rp: researchAt({ rRef: computeRRef(s), rpBonus: prestigeBonus(s, 'research'), tax }),
     gold: GOLD_PER_TAX_POP * tax * consumption,
   };
   const out = {
@@ -299,7 +344,7 @@ export function surplusAt({ tax, settings, sFood, uRp, uGold, milsovAssignments 
   };
   for (const res of BASIC_RESOURCES) {
     base[res] = basicProduction({
-      plots: s.plots[res], yield: y, bonus: boosterBonus(s, res), tax,
+      plots: s.plots[res], yield: y, bonus: resourceBonus(s, res), tax,
     });
     out[res] = base[res] - upkeep;
   }
@@ -472,12 +517,14 @@ export function milsovHeadroom({ tax, settings, uRp = 0, buildingsUsed = 0 }) {
   let upkeep = Infinity;
   for (const res of BASIC_RESOURCES) {
     const produced = basicProduction({
-      plots: s.plots[res], yield: y, bonus: boosterBonus(s, res), tax,
+      plots: s.plots[res], yield: y, bonus: resourceBonus(s, res), tax,
     });
     upkeep = Math.min(upkeep, produced - resourceMinimum(s, res));
   }
   return {
-    rp: Math.max(0, (computeRRef(s) * (PRODUCTION_BASE - tax)) / 100 - uRp),
+    rp: Math.max(0, researchAt({
+      rRef: computeRRef(s), rpBonus: prestigeBonus(s, 'research'), tax,
+    }) - uRp),
     // A minimum bigger than the production it protects leaves nothing to spend
     // rather than a negative budget.
     upkeep: Math.max(0, upkeep),
@@ -689,7 +736,10 @@ export function prepareSite({ neighbours, settings }) {
       const up = claimUpkeep(t.d, FOOD_CLAIM_LEVEL, chancery);
       return { ...t, level: FOOD_CLAIM_LEVEL, ...up, weight: Math.round(up.rp) };
     });
-  const budget = Math.max(0, Math.round(computeRRef(s) * 1.25));
+  // The most research the city can produce, which is at 0 tax. The budget has to
+  // cover it or the knapsack truncates the frontier silently.
+  const rpBonus = prestigeBonus(s, 'research');
+  const budget = Math.max(0, Math.round(researchAt({ rRef: computeRRef(s), rpBonus, tax: 0 })));
   return {
     settings: s,
     chancery,
@@ -698,6 +748,7 @@ export function prepareSite({ neighbours, settings }) {
     bOther: computeBOther(s),
     consumption: computeConsumption(s),
     rRef: computeRRef(s),
+    rpBonus,
     byDistance,
     foodCandidates,
     budget,
@@ -725,7 +776,8 @@ function foodSpendFor(ctx, tax) {
     else lo = mid + 1;
   }
   // The food claims alone must not outspend the research produced at this tax.
-  return (ctx.rRef * (PRODUCTION_BASE - tax)) / 100 - lo < -EPS ? null : lo;
+  const produced = researchAt({ rRef: ctx.rRef, rpBonus: ctx.rpBonus, tax });
+  return produced - lo < -EPS ? null : lo;
 }
 
 /**
@@ -765,7 +817,7 @@ export function planSiteAt(ctx, tax) {
   // figure that is ever computed before it is trusted.
   const ceiling = tMax({
     food: tFood({ bOther: ctx.bOther, sFood, consumption: ctx.consumption, k: ctx.k }),
-    rp: tRp({ uRp, rRef: ctx.rRef }),
+    rp: tRp({ uRp, rRef: ctx.rRef, rpBonus: ctx.rpBonus }),
     res: resCeiling.indicative ? Infinity : resCeiling.ceiling,
   });
 
@@ -862,7 +914,7 @@ export function siteCeiling(ctx) {
     const sFood = ctx.dp.best[spend];
     const t = tMax({
       food: tFood({ bOther: ctx.bOther, sFood, consumption: ctx.consumption, k: ctx.k }),
-      rp: tRp({ uRp: spend, rRef: ctx.rRef }),
+      rp: tRp({ uRp: spend, rRef: ctx.rRef, rpBonus: ctx.rpBonus }),
       res,
     });
     // A negative T_max is a real answer — the site cannot feed a city at any

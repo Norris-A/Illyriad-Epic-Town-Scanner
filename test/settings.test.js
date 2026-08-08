@@ -18,6 +18,7 @@ import {
   parseResourceBoosters,
   parseResourceCalibration,
   parseResourceMinimums,
+  parsePrestige,
   surplusRows,
   settingsFormHtml,
 } from '../src/panel.js';
@@ -26,6 +27,8 @@ import {
   BASIC_RESOURCES,
   BASIC_YIELD_L20,
   FARM_YIELD_L20,
+  PRESTIGE_KEYS,
+  PRESTIGE_PRODUCTION_BONUS,
   SOV_STRUCTURES,
   MILSOV_STRUCTURES,
   MILSOV_UPKEEP_BY_LEVEL,
@@ -68,11 +71,12 @@ test('the markup carries every hook createPanel reads back out of it', () => {
     'class="sov-form"',
     'class="sov-plot-total"', 'sov-prefill sec', 'sov-prefill-src',
     'class="sov-reset sec"', 'class="sov-derived"', 'sov-derived-food', 'sov-store-note',
-    'data-cal="observedRpPerHour"', 'data-cal="atTax"',
+    'data-cal="observedRpPerHour"', 'data-cal="atTax"', 'data-cal="prestige"',
     'data-res-cal="observed"', 'data-res-cal="atTax"', 'data-res-cal="plots"',
-    'data-res-cal="booster"', 'sov-yield-read',
+    'data-res-cal="booster"', 'data-res-cal="prestige"', 'sov-yield-read',
     ...BASIC_RESOURCES.map((r) => `data-booster="${r}"`),
     ...BASIC_RESOURCES.map((r) => `data-minimum="${r}"`),
+    ...PRESTIGE_KEYS.map((k) => `data-prestige="${k}"`),
     'select data-key="milsovStructure"',
     ...PLOT_KEYS.map((p) => `data-plot="${p}"`),
   ];
@@ -85,7 +89,7 @@ test('the markup carries every hook createPanel reads back out of it', () => {
       assert.ok(html.includes(`<input type="checkbox" data-key="${f.key}"`), `${f.key} is not a checkbox input`);
     } else if (f.type === 'select') {
       assert.ok(html.includes(`<select data-key="${f.key}"`), `${f.key} is not a select`);
-    } else if (!['plots', 'milsov', 'calibration', 'boosters', 'minimums',
+    } else if (!['plots', 'milsov', 'calibration', 'boosters', 'prestige', 'minimums',
       'resourceCalibration'].includes(f.type)) {
       assert.ok(html.includes(`<input type="number" data-key="${f.key}"`), `${f.key} is not a number input`);
     }
@@ -334,7 +338,8 @@ test('a reading without plots cannot be divided, so it is treated as absent', ()
 test('a reading back-solves the per-plot yield, dividing out tax and booster', () => {
   // 5 plots at 25% tax with no booster: M = 100, so 15,000/hr is 3,000 a plot.
   const plain = parseResourceCalibration({ observed: '15000', atTax: '25', plots: '5' });
-  assert.deepEqual(plain, { observedPerHour: 15000, atTax: 25, plots: 5, booster: false });
+  assert.deepEqual(plain,
+    { observedPerHour: 15000, atTax: 25, plots: 5, booster: false, prestige: false });
   const yPlain = computeBasicYield({ resourceCalibration: plain });
   close(yPlain.yield, 3000);
   assert.equal(yPlain.measured, true);
@@ -371,7 +376,7 @@ test('a blank calibration is null, so R_ref falls back to the library table', ()
 
 test('a calibration reading back-solves R_ref', () => {
   const cal = parseRpCalibration('800', '25');
-  assert.deepEqual(cal, { observedRpPerHour: 800, atTax: 25 });
+  assert.deepEqual(cal, { observedRpPerHour: 800, atTax: 25, prestige: false });
   close(computeRRef({ ...DEFAULT_SETTINGS, rpCalibration: cal }), 800);
 });
 

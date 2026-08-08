@@ -15,6 +15,7 @@ import {
   parseResourceBoosters,
   parseResourceCalibration,
   parseResourceMinimums,
+  parsePrestige,
 } from './panel.js';
 
 /** One key per origin. The suffix is the envelope's shape, not the tool's. */
@@ -60,10 +61,13 @@ export function sanitizeSettings(raw) {
         out.milsovStructure = parseMilsovStructure(v);
         break;
       case 'calibration':
-        out.rpCalibration = parseRpCalibration(v?.observedRpPerHour, v?.atTax);
+        out.rpCalibration = parseRpCalibration(v?.observedRpPerHour, v?.atTax, v?.prestige);
         break;
       case 'boosters':
         out.resourceBoosters = parseResourceBoosters(v);
+        break;
+      case 'prestige':
+        out.prestige = parsePrestige(v);
         break;
       case 'minimums':
         out.resourceMinimums = parseResourceMinimums(v);
@@ -74,6 +78,7 @@ export function sanitizeSettings(raw) {
           atTax: v?.atTax,
           plots: v?.plots,
           booster: v?.booster,
+          prestige: v?.prestige,
         });
         break;
       default:

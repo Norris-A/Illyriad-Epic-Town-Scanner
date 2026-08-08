@@ -161,6 +161,11 @@ export const DEFAULT_SETTINGS = {
   // { observedPerHour, atTax, plots, booster } back-solves the per-plot yield,
   // the way rpCalibration back-solves R_ref. Null uses BASIC_YIELD_L20.
   resourceCalibration: null,
+  // Surplus per hour the plan may not touch, per resource. A city sitting exactly
+  // on T_res puts its whole scarcest resource into upkeep and can never build or
+  // trade in it again — this is where the user says how much to hold back. Zero
+  // is the ceiling as it was.
+  resourceMinimums: { wood: 0, clay: 0, iron: 0, stone: 0 },
   chancery: false,
   rClaim: 2,
   maxBuildings: 20,

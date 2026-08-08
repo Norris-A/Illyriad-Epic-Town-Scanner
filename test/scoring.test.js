@@ -799,6 +799,93 @@ test('the minimum-bonus search reports a tax the user could set', () => {
   assert.ok(above.milsovBonus < roomy.milsovMinBonusAt, 'a higher tax must fall short');
 });
 
+// --- Minimum resource surplus -----------------------------------------------
+
+test('a minimum surplus lowers T_res by exactly what it costs in points', () => {
+  // The floor is production the tax may not take, so it enters the ceiling on
+  // the same footing as the hourly bill: 100 x minimum / (plots x Y) points.
+  const milsovAssignments = [{ sovLevel: 5, buildingLevel: 5 }];
+  const bare = tRes({ milsovAssignments, plots: worked.plots, settings: worked });
+  assert.equal(bare.binding, 'stone');
+
+  const minimum = 1000;
+  const floored = tRes({
+    milsovAssignments,
+    plots: worked.plots,
+    settings: { ...worked, resourceMinimums: { wood: 0, clay: 0, iron: 0, stone: minimum } },
+  });
+  close(floored.ceiling, bare.ceiling - (100 * minimum) / (3 * BASIC_YIELD_L20), 1e-9);
+  assert.equal(floored.binding, 'stone');
+});
+
+test('a floor binds with nothing built, since it is production either way', () => {
+  // No military sovereignty means no hourly bill, but "keep 1,000 wood an hour"
+  // is still a statement about how much tax the city can carry.
+  const plots = worked.plots;
+  const settings = {
+    ...worked, tMin: -1000,
+    resourceMinimums: { wood: 20000, clay: 0, iron: 0, stone: 0 },
+  };
+  const bare = scoreSite({ neighbours: ring8, settings: { ...worked, tMin: -1000 } });
+  const held = scoreSite({ neighbours: ring8, settings });
+  assert.ok(held.tMax < bare.tMax, 'a floor the city cannot meet at that tax must lower it');
+  assert.equal(held.binding, 'res');
+  // 5 wood plots: the ceiling is where production of wood equals the floor.
+  close(held.tMaxExact, 125 - (100 * 20000) / (plots.wood * BASIC_YIELD_L20), 1e-9);
+  // And the surplus reads the whole production, not what is left above the floor.
+  assert.ok(held.surplus.wood >= 20000 - 1e-6, 'the floor must actually be held');
+});
+
+test('a floor on a resource the city has no plots of is impossible, not merely low', () => {
+  const r = tRes({
+    milsovAssignments: [],
+    plots: { wood: 5, clay: 5, iron: 5, stone: 0, food: 10 },
+    settings: { resourceMinimums: { wood: 0, clay: 0, iron: 0, stone: 500 } },
+  });
+  assert.equal(r.impossible, true);
+  assert.equal(r.binding, 'stone');
+  assert.equal(r.ceiling, -Infinity);
+
+  // Zero plots and nothing asked of them is not a constraint at all.
+  const none = tRes({
+    milsovAssignments: [],
+    plots: { wood: 5, clay: 5, iron: 5, stone: 0, food: 10 },
+    settings: { resourceMinimums: { wood: 0, clay: 0, iron: 0, stone: 0 } },
+  });
+  assert.equal(none.ceiling, Infinity);
+  assert.equal(none.impossible, false);
+});
+
+test('a floor takes military sovereignty out of the budget, not out of the tax', () => {
+  const at = (minimums) => scoreSite({
+    neighbours: spare,
+    settings: withMil({
+      tMin: -1000, resourceMinimums: minimums,
+      rpCalibration: { observedRpPerHour: 8000, atTax: 25 },
+    }),
+  });
+  const free = at({ wood: 0, clay: 0, iron: 0, stone: 0 });
+  const held = at({ wood: 0, clay: 0, iron: 0, stone: 4000 });
+  assert.ok(free.milsovUpkeep > 0, 'precondition: something was affordable');
+  assert.ok(held.milsovUpkeep < free.milsovUpkeep, 'the fenced-off stone must buy less');
+  assert.ok(held.surplus.stone >= 4000 - 1e-6, 'and the floor is what it is fenced for');
+
+  // milsovHeadroom is where that comes from: the budget is production less floor.
+  const settings = { ...worked, resourceMinimums: { wood: 0, clay: 0, iron: 0, stone: 4000 } };
+  const { yield: y } = computeBasicYield(settings);
+  const h = milsovHeadroom({ tax: 50, settings, uRp: 0, buildingsUsed: 0 });
+  close(h.upkeep, (worked.plots.stone * y * (125 - 50)) / 100 - 4000, 1e-6);
+
+  // A floor above the whole production leaves nothing rather than a negative.
+  const starved = milsovHeadroom({
+    tax: 50,
+    settings: { ...worked, resourceMinimums: { wood: 0, clay: 0, iron: 0, stone: 1e6 } },
+    uRp: 0,
+    buildingsUsed: 0,
+  });
+  assert.equal(starved.upkeep, 0);
+});
+
 // --- Equal bonuses are broken on research -----------------------------------
 
 test('among equally good staircases the cheapest in research wins', () => {

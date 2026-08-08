@@ -117,6 +117,16 @@ export function boosterBonus(s, resource) {
 }
 
 /**
+ * How much of one resource the plan may not spend, per hour — the surplus the
+ * user has fenced off from sovereignty upkeep. A missing or negative figure is
+ * no floor rather than a licence to run the resource negative.
+ */
+export function resourceMinimum(s, resource) {
+  const v = s.resourceMinimums?.[resource];
+  return Number.isFinite(v) && v > 0 ? v : 0;
+}
+
+/**
  * Hourly output of one basic resource at a given tax. Same additive shape as
  * food: the booster is points on the production percentage, not a multiplier,
  * so it is worth its face value in tax headroom.
@@ -191,41 +201,48 @@ export function tRp({ uRp, rRef }) {
 }
 
 /**
- * T_res — per-resource ceiling from military sovereignty structure upkeep.
+ * T_res — per-resource ceiling from military sovereignty structure upkeep and
+ * from the surplus the user asked to keep on top of it.
  *
- * Returns Infinity (non-binding, unflagged) whenever nothing placed is charged
- * hourly upkeep: no military sovereignty at all, or Resource Structures, which
- * pay only their claims.
+ * Returns Infinity (non-binding, unflagged) whenever there is nothing to pay
+ * for: no minimum set, and nothing placed that is charged hourly upkeep — no
+ * military sovereignty at all, or Resource Structures, which pay only their
+ * claims. A minimum alone is a ceiling on the same terms as an hourly bill,
+ * being production the tax may not take, so it binds with nothing built.
  *
  * `indicative` says the ceiling rests on a yield the engine cannot stand behind,
  * in which case scoreSite reports it without letting it into T_max. A measured
  * yield does not set it — see computeBasicYield for why the flag is carried.
  *
- * `impossible` marks a resource the settle tile has no plots of: it produces
- * nothing at any tax rate, so the ceiling is genuinely -Infinity rather than
- * merely low. It is reported as a flag because a caller filtering on the number
- * alone would drop the site without ever being able to say why.
+ * `impossible` marks a resource the settle tile has no plots of while something
+ * is owed in it — a bill or a minimum, since no plots cannot leave 1,000/hr
+ * standing either. It produces nothing at any tax, so the ceiling is genuinely
+ * -Infinity rather than merely low, and it is reported as a flag because a
+ * caller filtering on the number alone would drop the site unable to say why.
  *
  * All four resources are checked even once one has come back impossible, so
  * `binding` always names the worst of them rather than the first bad one.
  */
 export function tRes({ milsovAssignments, plots, settings = {} }) {
   const none = { ceiling: Infinity, indicative: false, binding: null, impossible: false };
-  if (!milsovAssignments || milsovAssignments.length === 0) return none;
-  const upkeep = milsovUpkeep(milsovAssignments);
-  // Structures that cost nothing per hour impose no ceiling — nothing but
-  // Resource Structures, or the degenerate case of a level with no entry in the
-  // upkeep table.
-  if (upkeep <= 0) return none;
+  const upkeep = milsovUpkeep(milsovAssignments ?? []);
+  // A zero bill covers nothing placed, Resource Structures, and the degenerate
+  // case of a level with no entry in the upkeep table.
+  const fenced = BASIC_RESOURCES.some((res) => resourceMinimum(settings, res) > 0);
+  if (upkeep <= 0 && !fenced) return none;
   const { yield: y, measured } = computeBasicYield(settings);
   let worst = Infinity;
   let binding = null;
   for (const res of BASIC_RESOURCES) {
-    // production(T) >= upkeep  =>  T <= 125 + booster - 100*upkeep/(plots*Y)
+    // production(T) - upkeep >= minimum
+    //   =>  T <= 125 + bonus - 100*(upkeep + minimum)/(plots*Y)
+    const need = upkeep + resourceMinimum(settings, res);
     const perPoint = plots[res] * y;
+    // No plots owing nothing is not a constraint; no plots owing something is
+    // one no tax rate satisfies.
     const ceiling = perPoint > 0
-      ? PRODUCTION_BASE + boosterBonus(settings, res) - (100 * upkeep) / perPoint
-      : -Infinity;
+      ? PRODUCTION_BASE + boosterBonus(settings, res) - (100 * need) / perPoint
+      : (need > 0 ? -Infinity : Infinity);
     if (ceiling < worst) {
       worst = ceiling;
       binding = res;
@@ -238,8 +255,11 @@ export function tRes({ milsovAssignments, plots, settings = {} }) {
  * What the city has left over per hour at a given tax, once the plan is paid
  * for: the two ceilings' own quantities, gold, and the four basic resources.
  *
- * Gold imposes no ceiling of its own: the claims are paid from it at a fixed
- * 10:1 against research, so it never runs out before research does.
+ * Gold is not a ceiling but a FLOOR, which is why no T_gold sits beside the
+ * other three: income is 0.04 x T x C and RISES with tax, against a bill fixed
+ * at 10x the claims' research. So the constraint is 0.04 x T x C >= 10 x U_RP,
+ * satisfied from above — roughly T >= U_RP/123 at C = 30,800 — and a plan fails
+ * it only by taxing too LITTLE. Reported, never solved for.
  *
  * These are the same equations as the ceilings, read as a balance instead of
  * solved for T — so at T_max the binding one comes out at 0, which is what
@@ -249,6 +269,10 @@ export function tRes({ milsovAssignments, plots, settings = {} }) {
  *
  * `indicative` is copied from the yield and covers the four basic figures only;
  * food and research do not depend on it.
+ *
+ * A basic resource reads as the whole surplus, not the part above any minimum
+ * set: the minimum constrains the plan, and netting it off here would hide the
+ * production it exists to protect.
  *
  * `base` holds the same seven quantities before the plan is paid for, so each
  * figure can be shown as base minus what the plan takes.
@@ -426,9 +450,9 @@ export function recoverSet(candidates, dpResult, spend) {
  *           which is the slack in T_rp. It exists because S_food is a step and
  *           T_rp is a line: the walk stops at the last food tile worth buying,
  *           and the change left over is too little for another one.
- *  - `upkeep` hourly production of the SCARCEST basic resource at `tax`, which
- *           is the slack in T_res. Charged of each of the four, so the worst one
- *           is the budget.
+ *  - `upkeep` hourly production of the SCARCEST basic resource at `tax`, less
+ *           any surplus of it the user asked to keep, which is the slack in
+ *           T_res. Charged of each of the four, so the worst one is the budget.
  *  - `slots` the building cap, less what the food plan is already using.
  *
  * A research-bound site returns rp = 0, correctly: T_rp is what set the tax
@@ -447,12 +471,15 @@ export function milsovHeadroom({ tax, settings, uRp = 0, buildingsUsed = 0 }) {
   const { yield: y } = computeBasicYield(s);
   let upkeep = Infinity;
   for (const res of BASIC_RESOURCES) {
-    upkeep = Math.min(upkeep, basicProduction({
+    const produced = basicProduction({
       plots: s.plots[res], yield: y, bonus: boosterBonus(s, res), tax,
-    }));
+    });
+    upkeep = Math.min(upkeep, produced - resourceMinimum(s, res));
   }
   return {
     rp: Math.max(0, (computeRRef(s) * (PRODUCTION_BASE - tax)) / 100 - uRp),
+    // A minimum bigger than the production it protects leaves nothing to spend
+    // rather than a negative budget.
     upkeep: Math.max(0, upkeep),
     slots,
   };
@@ -816,8 +843,10 @@ export function milsovAtFloor(ctx, { required, floor, ceiling }) {
 
 /**
  * Walk the DP frontier for the site's own ceiling — the best tax any food plan
- * reaches, and the cheapest plan reaching it. T_res cannot bind here: nothing is
- * charged hourly until a military building is placed.
+ * reaches, and the cheapest plan reaching it. No military building is placed
+ * here, so nothing is charged hourly — but a minimum surplus is a ceiling all
+ * the same, and it is fixed by the city rather than the food spend, so it is
+ * solved once outside the walk.
  *
  * Split out for callers that already hold a context, since rebuilding one is the
  * whole cost of preparing a site.
@@ -826,13 +855,15 @@ export function milsovAtFloor(ctx, { required, floor, ceiling }) {
  *   null only when there is no spend level to evaluate at all.
  */
 export function siteCeiling(ctx) {
+  const floors = tRes({ milsovAssignments: [], plots: ctx.settings.plots, settings: ctx.settings });
+  const res = floors.indicative ? Infinity : floors.ceiling;
   let winner = null;
   for (let spend = 0; spend <= ctx.budget; spend++) {
     const sFood = ctx.dp.best[spend];
     const t = tMax({
       food: tFood({ bOther: ctx.bOther, sFood, consumption: ctx.consumption, k: ctx.k }),
       rp: tRp({ uRp: spend, rRef: ctx.rRef }),
-      res: Infinity,
+      res,
     });
     // A negative T_max is a real answer — the site cannot feed a city at any
     // tax. Report it and let the caller filter on tMin.

@@ -292,6 +292,18 @@ export function parseResourceCalibration({ observed, atTax, plots, booster }) {
   };
 }
 
+/**
+ * Read the four minimum-surplus fields. Zero is off, and negative is refused
+ * rather than read as permission to run a resource into deficit.
+ */
+export function parseResourceMinimums(raw) {
+  const out = {};
+  for (const res of BASIC_RESOURCES) {
+    out[res] = clampNumber(raw?.[res], { min: 0, max: 1e7, integer: true, fallback: 0 });
+  }
+  return out;
+}
+
 /** Read the four booster tick-boxes, defaulting each to off. */
 export function parseResourceBoosters(raw) {
   const out = {};
@@ -347,6 +359,12 @@ export const SETTINGS_FIELDS = [
     group: 'Basic Resources',
     label: 'Booster Buildings at L20',
     type: 'boosters',
+  },
+  {
+    key: 'resourceMinimums',
+    group: 'Basic Resources',
+    label: 'Minimum Surplus per Hour',
+    type: 'minimums',
   },
   {
     key: 'resourceCalibration',
@@ -443,6 +461,26 @@ function boostersFieldHtml(f, boosters) {
 }
 
 /**
+ * The minimum surplus per resource — the difference between a city that can pay
+ * its sovereignty and one that can also build. At T_res the whole of the
+ * scarcest resource goes to upkeep: affordable, and useless.
+ */
+function minimumsFieldHtml(f, minimums) {
+  const boxes = BASIC_RESOURCES.map((res) =>
+    `<label class="sov-f" data-minimum-row="${res}"><span>${res} — keep at least</span>
+      <input type="number" data-minimum="${res}" min="0" step="1"
+        value="${minimums?.[res] ?? 0}"></label>`).join('');
+  return `<div class="sov-f-block" data-key="${f.key}">
+      <p class="sov-hint">${escapeHtml(f.label)} — how much of each resource must still be
+        free after sovereignty upkeep. Zero spends the lot, which is what a city sitting
+        exactly on its resource ceiling does: it can run the buildings and never build or
+        trade in that resource again. Each figure lowers the ceiling by its own worth in
+        production points.</p>
+      ${boxes}
+    </div>`;
+}
+
+/**
  * The yield reading. Everything the back-solve needs travels with the reading
  * itself, so a figure copied off a city that is not the one being planned still
  * divides out correctly.
@@ -502,6 +540,7 @@ function fieldHtml(f, settings) {
     case 'plots': return plotsFieldHtml(f, v);
     case 'calibration': return calibrationFieldHtml(f, v);
     case 'boosters': return boostersFieldHtml(f, v);
+    case 'minimums': return minimumsFieldHtml(f, v);
     case 'resourceCalibration': return resourceCalibrationFieldHtml(f, v);
     case 'milsov': return milsovFieldHtml(f, v);
     default: return numberFieldHtml(f, v ?? f.fallback);
@@ -700,6 +739,14 @@ export function createPanel({ onScan, onExport, initialSettings, onSettingsChang
           out.resourceBoosters = parseResourceBoosters(raw);
           break;
         }
+        case 'minimums': {
+          const raw = {};
+          for (const res of BASIC_RESOURCES) {
+            raw[res] = form.querySelector(`[data-minimum="${res}"]`).value;
+          }
+          out.resourceMinimums = parseResourceMinimums(raw);
+          break;
+        }
         case 'resourceCalibration':
           out.resourceCalibration = parseResourceCalibration({
             observed: form.querySelector('[data-res-cal="observed"]').value,
@@ -740,6 +787,11 @@ export function createPanel({ onScan, onExport, initialSettings, onSettingsChang
         case 'boosters':
           for (const res of BASIC_RESOURCES) {
             form.querySelector(`[data-booster="${res}"]`).checked = !!v?.[res];
+          }
+          break;
+        case 'minimums':
+          for (const res of BASIC_RESOURCES) {
+            form.querySelector(`[data-minimum="${res}"]`).value = v?.[res] ?? 0;
           }
           break;
         case 'resourceCalibration':

@@ -17,6 +17,7 @@ import {
   parseRpCalibration,
   parseResourceBoosters,
   parseResourceCalibration,
+  parseResourceMinimums,
   surplusRows,
   settingsFormHtml,
 } from '../src/panel.js';
@@ -71,6 +72,7 @@ test('the markup carries every hook createPanel reads back out of it', () => {
     'data-res-cal="observed"', 'data-res-cal="atTax"', 'data-res-cal="plots"',
     'data-res-cal="booster"', 'sov-yield-read',
     ...BASIC_RESOURCES.map((r) => `data-booster="${r}"`),
+    ...BASIC_RESOURCES.map((r) => `data-minimum="${r}"`),
     'select data-key="milsovStructure"',
     ...PLOT_KEYS.map((p) => `data-plot="${p}"`),
   ];
@@ -83,7 +85,8 @@ test('the markup carries every hook createPanel reads back out of it', () => {
       assert.ok(html.includes(`<input type="checkbox" data-key="${f.key}"`), `${f.key} is not a checkbox input`);
     } else if (f.type === 'select') {
       assert.ok(html.includes(`<select data-key="${f.key}"`), `${f.key} is not a select`);
-    } else if (!['plots', 'milsov', 'calibration', 'boosters', 'resourceCalibration'].includes(f.type)) {
+    } else if (!['plots', 'milsov', 'calibration', 'boosters', 'minimums',
+      'resourceCalibration'].includes(f.type)) {
       assert.ok(html.includes(`<input type="number" data-key="${f.key}"`), `${f.key} is not a number input`);
     }
   }

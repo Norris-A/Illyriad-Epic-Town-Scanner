@@ -14,6 +14,7 @@ import {
   parseRpCalibration,
   parseResourceBoosters,
   parseResourceCalibration,
+  parseResourceMinimums,
 } from './panel.js';
 
 /** One key per origin. The suffix is the envelope's shape, not the tool's. */
@@ -64,6 +65,9 @@ export function sanitizeSettings(raw) {
       case 'boosters':
         out.resourceBoosters = parseResourceBoosters(v);
         break;
+      case 'minimums':
+        out.resourceMinimums = parseResourceMinimums(v);
+        break;
       case 'resourceCalibration':
         out.resourceCalibration = parseResourceCalibration({
           observed: v?.observedPerHour,
@@ -87,7 +91,11 @@ function driftNote(stored) {
   const gone = storedKeys.filter((k) => !declared.includes(k));
   if (!added.length && !gone.length) return '';
   const parts = [];
-  if (added.length) parts.push(`${added.length} new setting${added.length > 1 ? 's are' : ' is'} at its default`);
+  if (added.length) {
+    parts.push(added.length > 1
+      ? `${added.length} new settings are at their defaults`
+      : '1 new setting is at its default');
+  }
   if (gone.length) parts.push(`${gone.length} no longer exist${gone.length > 1 ? '' : 's'}`);
   return `Settings restored from an older build — ${parts.join(', ')}.`;
 }

@@ -4,19 +4,26 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { toCsv, csvField, resFlag, milsovPlanText } from '../src/panel.js';
+import {
+  toCsv, csvFile, csvFilename, csvField, CSV_BOM, resFlag, milsovPlanText,
+} from '../src/panel.js';
 
-const COLUMNS = 17;
+const COLUMNS = 21;
 
 // The no-military shape: T_res is Infinity and carries no flag, which is what
-// scoreSite returns for the common case.
+// scoreSite returns for the common case. The tax is the whole number the plan is
+// made at; the ceiling it was floored from travels beside it.
 const row = (over = {}) => ({
-  x: 360, y: -3178, tMax: 56.6, binding: 'food', sFood: 100,
+  x: 360, y: -3178, tMax: 56, tMaxExact: 56.6, binding: 'food', sFood: 100,
   uRp: 1000, uGold: 10000, goldNet: 62901,
-  milsov: [], milsovBonus: 0, milsovUpkeep: 0, milsovRp: 0, milsovPrice: 0,
+  milsov: [], milsovBonus: 0, milsovUpkeep: 0, milsovRp: 0, milsovGold: 0, milsovPrice: 0,
+  milsovMinTax: null, milsovMinBonusAt: null,
   resCeiling: Infinity, resIndicative: false, resBinding: null, resImpossible: false,
   ...over,
 });
+
+/** The rows of an export, BOM and line terminators stripped. */
+const lines = (csv) => csv.replace(CSV_BOM, '').split('\r\n');
 
 /** A plan with military sovereignty on it, as scoreSite returns one. */
 const withMil = (over = {}) => row({
@@ -25,7 +32,7 @@ const withMil = (over = {}) => row({
     { buildingLevel: 1, sovLevel: 1 },
     { buildingLevel: 1, sovLevel: 1 },
   ],
-  milsovBonus: 25, milsovUpkeep: 900, milsovRp: 120.4, milsovPrice: 5,
+  milsovBonus: 25, milsovUpkeep: 900, milsovRp: 120.4, milsovGold: 1204, milsovPrice: 5,
   ...over,
 });
 
@@ -41,14 +48,14 @@ test('fields are quoted only when they need it (RFC 4180)', () => {
 });
 
 test('a food-only row keeps its columns unquoted and trailing-empty', () => {
-  const [head, line] = toCsv([row()]).split('\n');
+  const [head, line] = lines(toCsv([row()]));
   assert.equal(head.split(',').length, COLUMNS);
   assert.equal(head.split(',').at(-1), 'milsov_plan');
-  assert.equal(line, '360,-3178,56.60,food,100,1000,10000,62901,0,0,0,0,0,,,,');
+  assert.equal(line, '360,-3178,56,56.60,food,100,1000,10000,62901,0,0,0,0,0,0,,,,,,');
 });
 
 test('the military plan survives export with its commas intact', () => {
-  const line = toCsv([withMil()]).split('\n')[1];
+  const line = lines(toCsv([withMil()]))[1];
   const plan = milsovPlanText(withMil());
   assert.ok(plan.includes(','), 'precondition: the plan text carries a comma');
   assert.ok(line.endsWith(`,"${plan}"`), 'the plan must be quoted, not split');
@@ -57,21 +64,44 @@ test('the military plan survives export with its commas intact', () => {
 });
 
 test('what the engine chose is auditable from the export', () => {
-  const csv = toCsv([withMil()]).split('\n');
-  const head = csv[0].split(',');
-  const line = csv[1].split(',');
-  const col = (name) => line[head.indexOf(name)];
+  const [head, line] = lines(toCsv([withMil({ milsovMinTax: 42, milsovMinBonusAt: 30 })]));
+  const col = (name) => line.split(',')[head.split(',').indexOf(name)];
+  assert.equal(col('T_max'), '56', 'the rate to type into the game');
+  assert.equal(col('T_max_exact'), '56.60', 'and the ceiling it was floored from');
   assert.equal(col('milsov_buildings'), '3');
   assert.equal(col('milsov_bonus'), '25');
   assert.equal(col('milsov_upkeep'), '900');
   assert.equal(col('milsov_RP'), '120');
+  assert.equal(col('milsov_gold'), '1204');
   assert.equal(col('milsov_price'), '5');
+  assert.equal(col('milsov_min_tax'), '42');
+  assert.equal(col('milsov_min_bonus'), '30');
 });
 
-test('a result from before these fields existed still exports as zero', () => {
-  const csv = toCsv([{ ...row(), milsov: undefined, milsovBonus: undefined,
-    milsovUpkeep: undefined, milsovRp: undefined, milsovPrice: undefined }]).split('\n');
-  assert.equal(csv[1], '360,-3178,56.60,food,100,1000,10000,62901,0,0,0,0,0,,,,');
+test('a result from before these fields existed still exports as zero or blank', () => {
+  const csv = lines(toCsv([{ ...row(), tMaxExact: undefined, milsov: undefined,
+    milsovBonus: undefined, milsovUpkeep: undefined, milsovRp: undefined,
+    milsovGold: undefined, milsovPrice: undefined, milsovMinTax: undefined,
+    milsovMinBonusAt: undefined }]));
+  assert.equal(csv[1], '360,-3178,56,,food,100,1000,10000,62901,0,0,0,0,0,0,,,,,,');
+});
+
+// --- the file a spreadsheet actually opens -----------------------------------
+
+test('the file leads with a BOM and separates records with CRLF', () => {
+  // Without the BOM, Excel reads the em dash in the plan column as mojibake;
+  // without CRLF it reads the whole export as one row.
+  const file = csvFile([withMil(), row()]);
+  assert.ok(file.startsWith(CSV_BOM), 'no BOM — Excel will not read this as UTF-8');
+  assert.ok(file.includes('—'), 'precondition: the export carries a non-ASCII character');
+  assert.equal(file.slice(CSV_BOM.length), toCsv([withMil(), row()]));
+  assert.equal(file.split('\r\n').length, 3, 'header and two rows');
+  assert.ok(!/[^\r]\n/.test(file), 'a bare LF is not a record separator');
+});
+
+test('the filename sorts chronologically and does not collide', () => {
+  assert.equal(csvFilename(new Date(2026, 7, 8, 20, 43)), 'sov-sites-20260808-2043.csv');
+  assert.equal(csvFilename(new Date(2026, 0, 1, 9, 5)), 'sov-sites-20260101-0905.csv');
 });
 
 test('the plan text reads as a level split, not as a tile list', () => {
@@ -85,8 +115,8 @@ test('the plan text reads as a level split, not as a tile list', () => {
 // --- the resource ceiling travels with the row ------------------------------
 
 const resCells = (r) => {
-  const head = toCsv([r]).split('\n')[0].split(',');
-  const line = toCsv([r]).split('\n')[1].split(',');
+  const head = lines(toCsv([r]))[0].split(',');
+  const line = lines(toCsv([r]))[1].split(',');
   return Object.fromEntries(['T_res', 'res_binding', 'res_status'].map(
     (k) => [k, line[head.indexOf(k)]]));
 };
@@ -106,7 +136,7 @@ test('a zero-plot resource exports as impossible, not as a numeric sentinel', ()
   });
   assert.deepEqual(resCells(r), { T_res: '', res_binding: 'stone', res_status: 'impossible' });
   assert.ok(!toCsv([r]).includes('Infinity'));
-  assert.equal(cells(toCsv([r]).split('\n')[1]).length, COLUMNS);
+  assert.equal(cells(lines(toCsv([r]))[1]).length, COLUMNS);
 });
 
 test('no military sovereignty exports three blanks, not a ceiling of Infinity', () => {

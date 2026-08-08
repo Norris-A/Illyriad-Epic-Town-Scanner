@@ -3,7 +3,7 @@
 // worker code as a string literal.
 
 import { probeInPageData, installInterceptor, getLatestPayload } from './capture.js';
-import { createPanel, toCsv } from './panel.js';
+import { createPanel, csvFile, csvFilename } from './panel.js';
 import { createSettingsStore } from './settings-store.js';
 import { DEFAULT_SETTINGS } from './constants.js';
 
@@ -43,12 +43,21 @@ const panel = createPanel({
   getPayload: getLatestPayload,
   onExport: () => {
     if (!lastResults.length) return;
-    const blob = new Blob([toCsv(lastResults)], { type: 'text/csv' });
+    const blob = new Blob([csvFile(lastResults)], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = 'sov-sites.csv';
+    a.href = url;
+    a.download = csvFilename();
+    // In the document and revoked a tick later: a detached anchor is not
+    // clickable in every browser, and revoking in the same turn as the click can
+    // cancel the download before it has read the blob.
+    a.style.display = 'none';
+    document.body.appendChild(a);
     a.click();
-    URL.revokeObjectURL(a.href);
+    setTimeout(() => {
+      a.remove();
+      URL.revokeObjectURL(url);
+    }, 0);
   },
 });
 

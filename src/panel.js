@@ -1319,6 +1319,15 @@ export function csvField(v) {
   return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 
+// RFC 4180 says CRLF between records, and every spreadsheet reads it. LF alone
+// is what a bare join produces and what Excel on Windows renders as one line.
+const CSV_EOL = '\r\n';
+
+// A UTF-8 byte-order mark. Excel reads a BOM-less file as the system codepage,
+// which turns the em dash in the military plan into mojibake — the one column
+// that is prose is the one that breaks, and it breaks silently.
+export const CSV_BOM = '﻿';
+
 /**
  * `T_res` stays a number or blank, so a spreadsheet can total the column: the
  * two cases that have no number — no milsov requested, and no plots of the
@@ -1327,26 +1336,53 @@ export function csvField(v) {
  */
 function resColumns(r) {
   if (!r.resIndicative) {
-    const known = Number.isFinite(r.resCeiling);
-    return [known ? r.resCeiling.toFixed(2) : '', known ? r.resBinding : '', ''];
+    return [num(r.resCeiling, 2), Number.isFinite(r.resCeiling) ? r.resBinding : '', ''];
   }
   return r.resImpossible
     ? ['', r.resBinding, 'impossible']
-    : [r.resCeiling.toFixed(2), r.resBinding, 'indicative'];
+    : [num(r.resCeiling, 2), r.resBinding, 'indicative'];
+}
+
+/**
+ * A number, or blank where there is nothing to state. Blank rather than a
+ * sentinel so a column stays summable: -Infinity and null both poison a SUM,
+ * and "not applicable" is not a quantity.
+ */
+function num(v, dp = 0) {
+  return Number.isFinite(v) ? v.toFixed(dp) : '';
 }
 
 export function toCsv(results) {
-  // The one free-text field stays last, so a column added later does not land
-  // after the only one that can carry a comma.
-  const head = ['x', 'y', 'T_max', 'binding', 'S_food', 'U_RP', 'U_gold', 'Gold_net',
-    'milsov_buildings', 'milsov_bonus', 'milsov_upkeep', 'milsov_RP', 'milsov_price',
+  // `T_max` is the whole-number rate the plan is made at — the one to type into
+  // the game — and `T_max_exact` the ceiling it was floored from, so a row can be
+  // audited without re-deriving it. The one free-text field stays last, so a
+  // column added later does not land after the only one that can carry a comma.
+  const head = ['x', 'y', 'T_max', 'T_max_exact', 'binding', 'S_food', 'U_RP', 'U_gold',
+    'Gold_net', 'milsov_buildings', 'milsov_bonus', 'milsov_upkeep', 'milsov_RP',
+    'milsov_gold', 'milsov_price', 'milsov_min_tax', 'milsov_min_bonus',
     'T_res', 'res_binding', 'res_status', 'milsov_plan'];
   const lines = results.map((r) =>
-    [r.x, r.y, r.tMax.toFixed(2), r.binding, r.sFood.toFixed(0),
-     r.uRp.toFixed(0), r.uGold.toFixed(0), r.goldNet.toFixed(0),
+    [r.x, r.y, num(r.tMax), num(r.tMaxExact, 2), r.binding, num(r.sFood),
+     num(r.uRp), num(r.uGold), num(r.goldNet),
      r.milsov?.length ?? 0, r.milsovBonus ?? 0, r.milsovUpkeep ?? 0,
-     (r.milsovRp ?? 0).toFixed(0), r.milsovPrice ?? 0,
+     num(r.milsovRp ?? 0), num(r.milsovGold ?? 0), r.milsovPrice ?? 0,
+     // Where a minimum bonus is met, if it was not met for free. Blank covers
+     // both "nothing was asked for" and "nothing in range reaches it" — the
+     // milsovShortfall rows never reach the export, having been filtered out.
+     num(r.milsovMinTax), num(r.milsovMinBonusAt),
      ...resColumns(r),
      milsovPlanText(r)].map(csvField).join(','));
-  return [head.join(','), ...lines].join('\n');
+  return [head.join(','), ...lines].join(CSV_EOL);
+}
+
+/** toCsv as the bytes to hand a download: BOM first, so Excel reads UTF-8. */
+export function csvFile(results) {
+  return CSV_BOM + toCsv(results);
+}
+
+/** `sov-sites-20260808-2043.csv` — sortable, and two exports never collide. */
+export function csvFilename(now = new Date()) {
+  const p = (n) => String(n).padStart(2, '0');
+  return `sov-sites-${now.getFullYear()}${p(now.getMonth() + 1)}${p(now.getDate())}`
+    + `-${p(now.getHours())}${p(now.getMinutes())}.csv`;
 }

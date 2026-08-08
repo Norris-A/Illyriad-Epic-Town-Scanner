@@ -9,10 +9,12 @@ import {
   computeK, computeBOther, computeConsumption, computeRRef,
   tFood, tRp, tMax, goldNet, claimUpkeep, distance, knapsack, recoverSet, scoreSite,
   milsovHeadroom, planMilsov, tRes, surplusAt, computeBasicYield,
+  prepareSite, planSiteAt, settableTax,
 } from '../src/scoring.js';
 import {
   DEFAULT_SETTINGS, BASIC_YIELD_L20, BASIC_RESOURCES,
   MILSOV_UPKEEP_BY_LEVEL, MILSOV_BONUS_PER_LEVEL, CHANCERY_FACTOR,
+  CLAIM_RP_PER_LEVEL_DISTANCE,
 } from '../src/constants.js';
 
 const close = (a, b, eps = 0.05) =>
@@ -471,9 +473,19 @@ test('a research-bound site has no free research, and says so', () => {
   assert.equal(plan.binding, 'rp');
   assert.equal(plan.milsov.length, 0);
   assert.equal(plan.milsovBlocked, 'rp');
+  // At the exact ceiling the research is spent to the last point.
   close(milsovHeadroom({
-    tax: plan.tMax, settings, uRp: plan.spend, buildingsUsed: plan.tiles.length,
+    tax: plan.tMaxExact, settings, uRp: plan.spend, buildingsUsed: plan.tiles.length,
   }).rp, 0, 1e-6);
+
+  // At the whole-number tax the plan is actually made at there is a little,
+  // because a point of tax is a point of production — but never more than that
+  // one point's worth, and here not enough to reach the cheapest free tile.
+  const free = milsovHeadroom({
+    tax: plan.tMax, settings, uRp: plan.spend, buildingsUsed: plan.tiles.length,
+  }).rp;
+  assert.ok(free > 0, 'flooring the ceiling has to leave something');
+  assert.ok(free <= computeRRef(settings) / 100 + 1e-6, 'but no more than one point produces');
 });
 
 test('a city with no plots of a resource cannot run a structure at all', () => {
@@ -688,23 +700,28 @@ test('a calibration reading overrides the default yield for that city', () => {
   assert.ok(rich.upkeep > lean.upkeep);
 });
 
-test('the binding ceiling has exactly zero left over at T_max', () => {
+test('the binding ceiling has exactly zero left over at the exact ceiling', () => {
   // The surplus figures are the ceiling equations read as a balance, so this is
-  // the two derivations checking each other.
+  // the two derivations checking each other. It has to be asked at T_max itself:
+  // the plan is made at the whole-number tax below it, where the binding
+  // quantity is short of zero by exactly the fraction that was rounded away.
   for (const structure of [null, 'trainingGround']) {
     for (const neighbours of [ring8, ring(() => 9), ring(() => 16)]) {
-      const plan = scoreSite({
-        neighbours, settings: { ...worked, tMin: -1000, milsovStructure: structure },
-      });
-      const s = plan.surplus;
-      close(s.tax, plan.tMax, 1e-9);
-      if (plan.binding === 'food') close(s.food, 0, 1e-6);
-      if (plan.binding === 'rp') close(s.rp, 0, 1e-6);
-      assert.ok(s.food >= -1e-6, `food deficit at T_max: ${s.food}`);
-      assert.ok(s.rp >= -1e-6, `research deficit at T_max: ${s.rp}`);
-      for (const r of BASIC_RESOURCES) {
-        assert.ok(s[r] >= -1e-6, `${r} deficit at T_max: ${s[r]}`);
+      const settings = { ...worked, tMin: -1000, milsovStructure: structure };
+      const ctx = prepareSite({ neighbours, settings });
+      const plan = scoreSite({ neighbours, settings });
+      const exact = planSiteAt(ctx, plan.tMaxExact);
+      close(exact.surplus.tax, plan.tMaxExact, 1e-9);
+      if (plan.binding === 'food') close(exact.surplus.food, 0, 1e-6);
+      if (plan.binding === 'rp') close(exact.surplus.rp, 0, 1e-6);
+
+      // And nothing is ever overspent at either tax.
+      for (const s of [exact.surplus, plan.surplus]) {
+        assert.ok(s.food >= -1e-6, `food deficit: ${s.food}`);
+        assert.ok(s.rp >= -1e-6, `research deficit: ${s.rp}`);
+        for (const r of BASIC_RESOURCES) assert.ok(s[r] >= -1e-6, `${r} deficit: ${s[r]}`);
       }
+      close(plan.surplus.tax, plan.tMax, 1e-9);
     }
   }
 });
@@ -736,6 +753,127 @@ test('gold is on the balance, and agrees with the goldNet the row shows', () => 
   const plan = scoreSite({ neighbours: ring(() => 9), settings: withMil({ tMin: -1000 }) });
   close(plan.surplus.gold, plan.goldNet, 1e-6);
   close(plan.surplus.base.gold - plan.surplus.gold, plan.uGold, 1e-6);
+});
+
+// --- Whole-number tax -------------------------------------------------------
+
+test('the reported tax is one the game will accept, and the ceiling is kept', () => {
+  for (const neighbours of [ring8, ring(() => 9), ring(() => 16), spare]) {
+    const plan = scoreSite({ neighbours, settings: withMil({ tMin: -1000 }) });
+    assert.equal(plan.tMax, Math.floor(plan.tMax), 'the tax must be a whole number');
+    assert.equal(plan.tax, plan.tMax, 'the plan is made at the tax that is reported');
+    // The exact ceiling survives for display, and is what was rounded down.
+    assert.ok(plan.tMaxExact >= plan.tMax - 1e-9);
+    assert.ok(plan.tMaxExact < plan.tMax + 1, 'more than a point away is not a floor');
+    assert.equal(settableTax(plan.tMaxExact), plan.tMax);
+  }
+});
+
+test('the integer plan spends the rounding, and never buys less military', () => {
+  // The fraction between floor(T_max) and T_max is research produced and upkeep
+  // affordable. A plan pinned to the exact ceiling cannot spend it; the plan at
+  // the settable rate can, so it is never worse and is usually better.
+  const settings = withMil({ tMin: -1000 });
+  let better = 0;
+  for (const neighbours of [spare, ring8, ring(() => 9), ring((dx) => (dx > 0 ? 7 : 0))]) {
+    const ctx = prepareSite({ neighbours, settings });
+    const plan = scoreSite({ neighbours, settings });
+    const atExact = planSiteAt(ctx, plan.tMaxExact);
+    assert.ok(plan.milsovBonus >= atExact.milsovBonus,
+      `the integer plan bought less: ${plan.milsovBonus} < ${atExact.milsovBonus}`);
+    if (plan.milsovBonus > atExact.milsovBonus) better++;
+  }
+  assert.ok(better > 0, 'the fixtures never actually exercised the extra headroom');
+});
+
+test('the minimum-bonus search reports a tax the user could set', () => {
+  const plan = scoreSite({ neighbours: spare, settings: withMil({ tMin: -1000 }) });
+  const roomy = scoreSite({
+    neighbours: spare,
+    settings: withMil({ tMin: plan.tMax - 30, milsovMinBonus: plan.milsovBonus + 5 }),
+  });
+  assert.equal(roomy.milsovMinTax, Math.floor(roomy.milsovMinTax));
+  // And it is the HIGHEST such tax: one point up no longer delivers it.
+  const ctx = prepareSite({ neighbours: spare, settings: withMil({ tMin: plan.tMax - 30 }) });
+  const above = planSiteAt(ctx, roomy.milsovMinTax + 1);
+  assert.ok(above.milsovBonus < roomy.milsovMinBonusAt, 'a higher tax must fall short');
+});
+
+// --- Equal bonuses are broken on research -----------------------------------
+
+test('among equally good staircases the cheapest in research wins', () => {
+  // Two tiles, one near and one far, and an upkeep budget of exactly 300 —
+  // a real boundary, since the bonus is quantised in fives. +10% is reachable
+  // twice over: one building at level 2 on the near tile (300/hr, 20 RP) or one
+  // level 1 on each (300/hr, 60 RP). The first descent finds the spread, and
+  // pruning on "cannot beat" instead of "cannot tie" used to keep it.
+  const tiles = [{ d: 1 }, { d: 5 }];
+  const plan = planMilsov({ tiles, headroom: { rp: 1000, upkeep: 300, slots: 2 }, chancery: false });
+  assert.equal(plan.bonus, 10);
+  assert.deepEqual(plan.levels, [2], 'the RP-cheaper staircase is the concentrated one');
+  close(plan.rp, CLAIM_RP_PER_LEVEL_DISTANCE * 2 * 1, 1e-9);
+  close(plan.upkeep, 300, 1e-9);
+
+  // Give the far tile the same distance and the two are genuinely equal in RP,
+  // so either answer is correct — but the bonus and the bill must not change.
+  const level = planMilsov({
+    tiles: [{ d: 1 }, { d: 1 }], headroom: { rp: 1000, upkeep: 300, slots: 2 }, chancery: false,
+  });
+  assert.equal(level.bonus, 10);
+  close(level.rp, 20, 1e-9);
+});
+
+test('the fast path is untouched: budgets that cover everything skip the search', () => {
+  const tiles = [{ d: 1 }, { d: 1.414 }, { d: 2 }];
+  const plan = planMilsov({
+    tiles, headroom: { rp: 1e9, upkeep: 1e9, slots: 3 }, chancery: false,
+  });
+  assert.deepEqual(plan.levels, [5, 5, 5]);
+  assert.equal(plan.bonus, 75);
+  close(plan.upkeep, 3 * MILSOV_UPKEEP_BY_LEVEL[5], 1e-9);
+});
+
+test('the tie-break never costs bonus, and only ever lowers the research', () => {
+  // The sweep the exhaustive check already runs, asked the second question too:
+  // no plan may be beaten on RP by another plan of the same bonus.
+  const cheapestAt = (tiles, headroom, chancery, bonus) => {
+    const f = chancery ? CHANCERY_FACTOR : 1;
+    const n = Math.min(tiles.length, Math.floor(headroom.slots));
+    let best = Infinity;
+    const rec = (i, rp, up, b) => {
+      if (rp > headroom.rp + 1e-9 || up > headroom.upkeep + 1e-9) return;
+      if (i === n) {
+        if (b === bonus && rp < best) best = rp;
+        return;
+      }
+      for (let level = 0; level <= 5; level++) {
+        rec(i + 1, rp + 10 * level * tiles[i].d * f,
+          up + (level ? MILSOV_UPKEEP_BY_LEVEL[level] : 0),
+          b + MILSOV_BONUS_PER_LEVEL * level);
+      }
+    };
+    rec(0, 0, 0, 0);
+    return best;
+  };
+
+  let seed = 99991;
+  const rnd = (n) => {
+    seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+    return seed % n;
+  };
+  let checked = 0;
+  for (let trial = 0; trial < 300; trial++) {
+    const n = 1 + rnd(5);
+    const tiles = Array.from({ length: n }, () => ({ d: 1 + rnd(2000) / 1000 }))
+      .sort((a, b) => a.d - b.d);
+    const headroom = { rp: rnd(400), upkeep: rnd(4000), slots: rnd(n + 2) };
+    const chancery = trial % 3 === 0;
+    const plan = planMilsov({ tiles, headroom, chancery });
+    if (plan.bonus === 0) continue;
+    close(plan.rp, cheapestAt(tiles, headroom, chancery, plan.bonus), 1e-9);
+    checked++;
+  }
+  assert.ok(checked > 50, 'the sweep never exercised a real plan');
 });
 
 test('gold upkeep still tracks research at exactly 10:1 with military in the plan', () => {

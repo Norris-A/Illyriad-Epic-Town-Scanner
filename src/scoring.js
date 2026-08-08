@@ -34,9 +34,15 @@ import {
 // on measured constants — anything this close together is equal.
 const EPS = 1e-9;
 
-// How far the minimum-bonus search refines the tax it reports. 26 halvings take
-// the bracket below a thousandth of a point, finer than any tax the game sets.
-const FLOOR_SEARCH_STEPS = 26;
+/**
+ * The highest tax the game will accept at or below a ceiling — the rate is whole
+ * numbers only. What the floor discards is not rounding error but headroom:
+ * research produced and upkeep affordable that a plan pinned to the fraction
+ * never spends.
+ */
+export function settableTax(t) {
+  return Number.isFinite(t) ? Math.floor(t) : t;
+}
 
 // --- Derived city figures ---------------------------------------------------
 
@@ -491,6 +497,14 @@ export function milsovHeadroom({ tax, settings, uRp = 0, buildingsUsed = 0 }) {
  * The search walks layers cheapest-first, taking the largest feasible count at
  * each, so its first descent is already a strong answer and the bound prunes the
  * rest hard. A site whose budgets cover every tile at level 5 skips it entirely.
+ *
+ * **Equal bonuses are broken on research.** Bonus is quantised in fives, so
+ * several staircases routinely reach the same total by different routes — one
+ * tile at level 2, or two at level 1 — and they are not equally good: gold tracks
+ * research at exactly 10:1, so the cheaper one in RP is strictly better in gold
+ * as well, and leaves more research for everything else. Hence the bound keeps
+ * branches that can only TIE, and a tie is taken on lower RP. Cutting ties
+ * instead handed the answer to whichever staircase the descent found first.
  */
 export function planMilsov({ tiles, headroom, chancery }) {
   const EPS = 1e-9;
@@ -536,7 +550,9 @@ export function planMilsov({ tiles, headroom, chancery }) {
 
   const search = (j, units, rp, upkeep, cap) => {
     if (j === MILSOV_MAX_LEVEL) {
-      if (!best || units > best.units) best = { counts: [...m], units };
+      if (!best || units > best.units || (units === best.units && rp < best.rp - EPS)) {
+        best = { counts: [...m], units, rp };
+      }
       return;
     }
     // The largest count this layer can still afford. Both costs rise with the
@@ -548,9 +564,16 @@ export function planMilsov({ tiles, headroom, chancery }) {
 
     for (let v = vMax; v >= 0; v--) {
       // No later layer may exceed this one, so (layers left) x v bounds
-      // everything below — and it only falls as v does, so this ends the loop
-      // rather than skipping a branch.
-      if (best && units + (MILSOV_MAX_LEVEL - j) * v <= best.units) break;
+      // everything below — and it only falls as v does, so both cuts end the
+      // loop rather than skipping a branch. A branch that can only TIE survives
+      // the first, because the RP tie-break is decided at the leaf; it dies on
+      // the second once its RP already matches the incumbent's, since research
+      // only grows with depth.
+      if (best) {
+        const bound = units + (MILSOV_MAX_LEVEL - j) * v;
+        if (bound < best.units) break;
+        if (bound === best.units && rp >= best.rp - EPS) break;
+      }
       m[j] = v;
       search(j + 1, units + v, rp + rpOf(v), upkeep + MILSOV_UPKEEP_STEP[j] * v, v);
     }
@@ -760,6 +783,10 @@ export function planSiteAt(ctx, tax) {
  * upkeep, all pulling the same way — so the answer is a bisection, and the most
  * that will ever fit above the floor is whatever fits AT the floor.
  *
+ * The game takes whole-number taxes only, so the bisection is over integers —
+ * exact, where refining a fractional bracket could only approximate. `floor`
+ * rounds UP: below it is a tax the user said they would not accept.
+ *
  * Returns `{ bonus, tax }` for the best tax meeting the requirement, or null
  * when even the floor cannot.
  */
@@ -768,12 +795,14 @@ export function milsovAtFloor(ctx, { required, floor, ceiling }) {
     const p = planSiteAt(ctx, tax);
     return p && p.milsovBonus >= required ? p : null;
   };
-  let best = at(floor);
+  let lo = Math.ceil(floor);
+  let best = at(lo);
   if (!best) return null;
-  let lo = floor;
-  let hi = ceiling;                      // known not to meet it
-  for (let i = 0; i < FLOOR_SEARCH_STEPS; i++) {
-    const mid = (lo + hi) / 2;
+  // `lo` is the highest tax known to meet the requirement, `hi` the lowest known
+  // not to — which the caller's ceiling already is, or it would not have asked.
+  let hi = Math.floor(ceiling);
+  while (hi - lo > 1) {
+    const mid = Math.floor((lo + hi) / 2);
     const p = at(mid);
     if (p) {
       best = p;
@@ -793,8 +822,8 @@ export function milsovAtFloor(ctx, { required, floor, ceiling }) {
  * Split out for callers that already hold a context, since rebuilding one is the
  * whole cost of preparing a site.
  *
- * @returns {{tMax: number, sFood: number, spend: number}|null} null only when
- *   there is no spend level to evaluate at all.
+ * @returns {{tMax: number, binding: string, sFood: number, spend: number}|null}
+ *   null only when there is no spend level to evaluate at all.
  */
 export function siteCeiling(ctx) {
   let winner = null;
@@ -809,7 +838,7 @@ export function siteCeiling(ctx) {
     // tax. Report it and let the caller filter on tMin.
     const net = goldNet({ tax: t.value, consumption: ctx.consumption, uGold: spend * 10 });
     if (!winner || betterPlan({ tMax: t.value, uRp: spend, goldNet: net }, winner)) {
-      winner = { tMax: t.value, sFood, spend };
+      winner = { tMax: t.value, binding: t.binding, sFood, spend };
     }
   }
   return winner;
@@ -825,8 +854,12 @@ export function scoreSiteFrom(ctx) {
   const winner = siteCeiling(ctx);
   if (!winner) return null;
 
-  // The plan at that ceiling: the military it fits there costs no tax at all.
-  const plan = planSiteAt(ctx, winner.tMax) ?? fallbackPlan(ctx, winner);
+  // The plan at the settable rate, not at the ceiling itself, and the military
+  // it fits there — which costs no tax, the food plan holding that rate
+  // outright. Rounding down frees the fraction the exact ceiling could never
+  // spend, so this plan is never worse than the one at the ceiling and is often
+  // strictly better.
+  const plan = planSiteAt(ctx, settableTax(winner.tMax)) ?? fallbackPlan(ctx, winner);
   const cheaper = ctx.structure ? planSiteAt(ctx, plan.tax - 1) : null;
 
   // Whether a minimum bonus is met is a question about the whole tax RANGE the
@@ -842,8 +875,14 @@ export function scoreSiteFrom(ctx) {
 
   return {
     ...plan,
-    // The site's own ceiling, and the military that is free there.
-    tMax: plan.tMax,
+    // What the site is reported and ranked at: the highest whole number its food
+    // plan holds. `tMaxExact` is what the arithmetic solved for, kept because it
+    // is the true ceiling — and because it is not a rate anyone can set.
+    tMax: plan.tax,
+    tMaxExact: winner.tMax,
+    // Which ceiling stopped the tax going higher is a question about the exact
+    // one; the plan's own ceiling has the rounding slack in it.
+    binding: winner.binding,
     milsovPrice: cheaper ? cheaper.milsovBonus - plan.milsovBonus : 0,
     // Where the minimum is met, if it is not met for free: the highest tax that
     // still delivers it. Null means the free plan already covers it, or nothing

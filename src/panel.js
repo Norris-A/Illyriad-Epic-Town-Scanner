@@ -554,7 +554,7 @@ export function focusFormHtml(focus, settings) {
       </fieldset>
       <fieldset><legend>Plan</legend>
         <label class="sov-f"><span>Starting Tax (%)</span>
-          <input type="number" data-focus="tax" min="${FOCUS_TAX_FLOOR}" max="100" step="0.5"
+          <input type="number" data-focus="tax" min="${FOCUS_TAX_FLOOR}" max="100" step="1"
             value="${f.tax ?? FOCUS_DEFAULT_TAX}"></label>
         <label class="sov-f"><span>Use City Configuration Plots</span>
           <input type="checkbox" data-focus="useConfiguredPlots"${f.useConfiguredPlots ? ' checked' : ''}></label>
@@ -947,7 +947,9 @@ export function createPanel({ onScan, onExport, initialSettings, onSettingsChang
       const rows = results.slice(0, 200).map((r, n) => `
         <tr class="sov-row" data-n="${n}">
           <td>${r.x}|${r.y}</td>
-          <td>${r.tMax.toFixed(1)}%</td>
+          <td${Number.isFinite(r.tMaxExact)
+            ? ` title="The arithmetic reaches ${r.tMaxExact.toFixed(2)}%, but tax is whole numbers only, so the plan is made at this rate."`
+            : ''}>${Number.isFinite(r.tMax) ? r.tMax.toFixed(0) : r.tMax}%</td>
           <td>${r.binding}</td>
           <td>${r.sFood.toFixed(0)}</td>
           <td>${r.uRp.toFixed(0)}</td>
@@ -959,7 +961,7 @@ export function createPanel({ onScan, onExport, initialSettings, onSettingsChang
         <p>${summary}</p>
         <table>
           <thead><tr><th>Site</th>
-            <th title="The highest tax this site can hold on food alone">Tax Max</th>
+            <th title="The highest whole-number tax this site can hold on food alone — the game takes no other kind">Tax Max</th>
             <th title="Which ceiling stops the tax going higher">Limiter</th><th>Food</th>
             <th>RP</th><th>Net Gold</th>
             <th title="Free military unit production bonus — costs this site no tax">Mil</th>
@@ -1006,7 +1008,7 @@ function flagsHtml(r) {
       cls: 'sov-advice',
       text: `min @ ${r.milsovMinTax.toFixed(0)}%`,
       title: `This site reaches your minimum military bonus (+${r.milsovMinBonusAt}%) `
-        + `at ${r.milsovMinTax.toFixed(1)}% tax, against the ${r.tMax.toFixed(1)}% it holds `
+        + `at ${r.milsovMinTax.toFixed(0)}% tax, against the ${r.tMax.toFixed(0)}% it holds `
         + `on food alone. Open the row and drag the tax slider to see the trade.`,
     });
   }
@@ -1024,12 +1026,15 @@ function flagsHtml(r) {
  * optimiser opens at whatever tax was asked for, so they differ from the start.
  */
 function planBlockHtml({ ctx, base, plan, floor }) {
-  const slider = ctx && Number.isFinite(base.tMax) && base.tMax - floor > 0.5
+  // Whole points only, because that is all the game accepts — a half-point drag
+  // would report a plan at a tax the user cannot set.
+  const lowest = Math.ceil(floor);
+  const slider = ctx && Number.isFinite(base.tMax) && base.tMax - lowest >= 1
     ? `<div class="sov-tax">
-        <div class="sov-f"><span>Tax <output class="sov-tax-at">${plan.tax.toFixed(1)}%</output>
+        <div class="sov-f"><span>Tax <output class="sov-tax-at">${plan.tax.toFixed(0)}%</output>
           <span class="sov-hint">— drag to trade tax for sovereignty</span></span>
-          <input type="range" class="sov-tax-range" min="${floor}" max="${base.tMax}"
-            step="0.5" value="${plan.tax}"></div>
+          <input type="range" class="sov-tax-range" min="${lowest}" max="${base.tMax}"
+            step="1" value="${plan.tax}"></div>
       </div>`
     : '';
   return `${slider}<div class="sov-body-at">${detailBodyHtml(plan, base)}</div>`;
@@ -1043,7 +1048,7 @@ function bindPlanBlock(scope, ctx, base) {
   const body = scope.querySelector('.sov-body-at');
   range.addEventListener('input', () => {
     const tax = Number(range.value);
-    at.textContent = `${tax.toFixed(1)}%`;
+    at.textContent = `${tax.toFixed(0)}%`;
     const plan = planSiteAt(ctx, tax);
     body.innerHTML = plan
       ? detailBodyHtml(plan, base)
@@ -1093,11 +1098,16 @@ function focusResultHtml(r) {
   if (r.centre.isTown) warnings.push('This tile already carries a town.');
   if (r.centre.claimedBy) warnings.push(`This tile is already claimed (${r.centre.claimedBy}).`);
 
+  // The settable rate first, since it is the one the user types into the game;
+  // the exact ceiling behind it says how much of the next point is already paid.
+  const exact = Number.isFinite(r.base.tMaxExact)
+    ? ` The arithmetic reaches ${r.base.tMaxExact.toFixed(2)}%, but tax is whole numbers only.`
+    : '';
   const ceiling = `<p class="sov-note">Highest tax this tile holds on food alone: <strong>${
-    r.base.tMax.toFixed(1)}%</strong>, limited by ${escapeHtml(r.base.binding)}.</p>`;
+    r.base.tMax.toFixed(0)}%</strong>, limited by ${escapeHtml(r.base.binding)}.${exact}</p>`;
   const asked = r.aboveCeiling
-    ? `<p class="sov-flag">This tile cannot hold ${r.requestedTax.toFixed(1)}% — the plan below `
-      + `is at its ceiling of ${r.ceiling.toFixed(1)}%.</p>`
+    ? `<p class="sov-flag">This tile cannot hold ${r.requestedTax.toFixed(0)}% — the plan below `
+      + `is at its ceiling of ${r.ceiling.toFixed(0)}%.</p>`
     : '';
 
   return `<h3>${r.x}|${r.y}</h3>
@@ -1132,7 +1142,7 @@ function detailBodyHtml(plan, base) {
   const rows = surplusRows(plan.surplus, atCeiling ? plan.binding : null);
   const num = (v) => (Number.isFinite(v) ? Math.round(v).toLocaleString('en-GB') : '');
   const balance = rows.length
-    ? `<table class="sov-balance"><thead><tr><th>At ${plan.tax.toFixed(1)}% Tax</th>
+    ? `<table class="sov-balance"><thead><tr><th>At ${plan.tax.toFixed(0)}% Tax</th>
         <th>Produced</th><th>Spent</th><th>Net</th><th></th></tr></thead><tbody>${
       rows.map((r) => `<tr><td>${r.label}</td><td class="sov-hint">${num(r.base)}</td>
         <td class="sov-hint">${num(r.spent)}</td><td class="${

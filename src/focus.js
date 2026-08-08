@@ -31,12 +31,6 @@ function toInt(raw, { min = -Infinity, max = Infinity, fallback = null } = {}) {
   return Math.min(max, Math.max(min, Math.round(n)));
 }
 
-function toNumber(raw, { min = -Infinity, max = Infinity, fallback = 0 } = {}) {
-  const n = Number(String(raw ?? '').trim());
-  if (String(raw ?? '').trim() === '' || !Number.isFinite(n)) return fallback;
-  return Math.min(max, Math.max(min, n));
-}
-
 /**
  * Read the four inputs. Only the coordinates can fail; the rest fall back rather
  * than erroring, and a blank radius resolves later rather than clamping to 1.
@@ -55,7 +49,9 @@ export function parseFocus(raw) {
       y,
       // Blank tracks the configuration; a number overrides it for this run only.
       radius: toInt(raw?.radius, { min: 1, max: 6, fallback: null }),
-      tax: toNumber(raw?.tax, { min: FOCUS_TAX_FLOOR, max: 100, fallback: FOCUS_DEFAULT_TAX }),
+      // Whole points only, since the game accepts no other rate — a fractional
+      // request would answer a question the user cannot act on.
+      tax: toInt(raw?.tax, { min: FOCUS_TAX_FLOOR, max: 100, fallback: FOCUS_DEFAULT_TAX }),
       useConfiguredPlots: !!raw?.useConfiguredPlots,
     },
     errors,

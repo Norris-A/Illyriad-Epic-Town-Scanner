@@ -76,9 +76,25 @@ export function isClaimable(tile, key, idx, settings) {
   return true;
 }
 
+/**
+ * Can a city sit on this tile?
+ *
+ * `set:1` answers it outright, on the payloads that carry the field — the live
+ * one no longer does. Without it the answer is what a settleable tile is not:
+ * impassable, a bridge, an NPC lair, or water. `hos` is the positive marker,
+ * but it rides on water and lairs too, so it cannot decide this alone.
+ */
+export function isSettleable(tile) {
+  if (!tile) return false;
+  if (tile.set !== undefined) return tile.set === 1;
+  if (tile.imp || tile.brg || tile.npc) return false;
+  if (isWaterTile(tile)) return false;
+  return tile.sov === 1 && tile.hos === 1;
+}
+
 /** Does this tile qualify as a candidate settle site? */
 export function isCandidateSite(tile, key, idx, settings, towns) {
-  if (!tile || tile.set !== 1) return { ok: false, reason: 'not-settleable' };
+  if (!isSettleable(tile)) return { ok: false, reason: 'not-settleable' };
   if (idx.claims.has(key)) return { ok: false, reason: 'already-claimed' };
   if (idx.towns.has(key)) return { ok: false, reason: 'town-tile' };
 

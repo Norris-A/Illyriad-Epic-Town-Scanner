@@ -25,6 +25,20 @@ export function foodOf(tile) {
   return rs ? rs.food : 0;
 }
 
+/** `b` is 20 on water, 4 or 5 on land. */
+const WATER_BIOME = 20;
+
+/**
+ * Water, from the ratings rather than the sprite: land rates all five
+ * resources, water rates food alone, so four zeros is the test. `b` answers
+ * the tile whose `rs` is missing or unparseable, rather than calling it land.
+ */
+export function isWaterTile(tile) {
+  const rs = parseRs(tile);
+  if (!rs) return tile?.b === WATER_BIOME;
+  return rs.wood + rs.clay + rs.iron + rs.stone === 0;
+}
+
 /**
  * Index the auxiliary blocks into lookups keyed by "y|x".
  * Block coverage is NOT aligned with `data` — the `s` block can
@@ -120,7 +134,9 @@ export function collectNeighbourhood(payload, key, rClaim, idx, settings) {
         continue;
       }
       if (!isClaimable(tile, nKey, idx, settings)) continue;
-      neighbours.push({ dx, dy, food: foodOf(tile), key: nKey, i: tile.i });
+      neighbours.push({
+        dx, dy, food: foodOf(tile), key: nKey, i: tile.i, water: isWaterTile(tile),
+      });
     }
   }
   return { neighbours, missing };

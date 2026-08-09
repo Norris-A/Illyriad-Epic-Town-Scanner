@@ -215,3 +215,35 @@ test('the neighbourhood still respects claimability', () => {
   assert.equal(r.ring, 8);
   assert.equal(r.claimable, 4);
 });
+
+test('claimable water is planned for food but never for a structure', () => {
+  // Tiles as the game sends them, not as the engine's other tests fake them:
+  // a ring of claimable water rated on food alone, one land corner, and one
+  // `brg` tile carrying no `sov`. The water outrates the land on food, so a
+  // pass that took the flag for "worthless" would still satisfy the milsov
+  // assertion below while quietly throwing the food plan away.
+  const payload = { data: {}, s: {}, t: {} };
+  const land = (rs) => ({ sov: 1, set: 1, b: 4, l: 1, rs });
+  const water = { sov: 1, b: 20, l: 0, rs: '0|0|0|0|10' };
+  for (let dy = -2; dy <= 2; dy++) {
+    for (let dx = -2; dx <= 2; dx++) {
+      payload.data[tileKey(100 + dy, 100 + dx)] = { ...water };
+    }
+  }
+  payload.data[tileKey(100, 100)] = land('4|4|4|4|9');
+  payload.data[tileKey(98, 98)] = land('5|5|5|5|5');
+  payload.data[tileKey(102, 102)] = { b: 20, l: 0, brg: 1, rs: '0|0|0|0|0' };
+
+  const r = focusSite({
+    payload,
+    focus: { ...DEFAULT_FOCUS, x: 100, y: 100, radius: 2, tax: 0 },
+    settings: { ...DEFAULT_SETTINGS, tMin: -1000, milsovStructure: 'joustingYard' },
+  });
+
+  assert.equal(r.ok, true);
+  assert.equal(r.claimable, 23, 'only the dead water tile is unclaimable');
+  assert.ok(r.base.tiles.some((t) => t.water), 'water is the best food here and was skipped');
+  for (const m of [...r.base.milsov, ...r.plan.milsov]) {
+    assert.equal(m.water, false, `a Jousting Yard was placed on water at ${m.key}`);
+  }
+});

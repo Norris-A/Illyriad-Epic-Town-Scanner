@@ -544,6 +544,35 @@ test('a site with no spare tile says so rather than blaming a budget', () => {
   assert.equal(plan.milsovBlocked, 'tiles');
 });
 
+test('a Production Structure is never planned on water', () => {
+  // Eight 9-food water tiles the food plan takes, then two it will not: a
+  // nearer water one and a further land one. Only the land one can host, so the
+  // plan must pass over the tile it would otherwise reach for first.
+  const neighbours = [
+    ...ring8.map((t) => ({ ...t, food: 9, water: true })),
+    { dx: 2, dy: 0, food: 0, water: true },
+    { dx: 2, dy: 2, food: 0, water: false },
+  ];
+  const plan = scoreSite({ neighbours, settings: withMil({ tMin: -1000 }) });
+
+  assert.ok(plan.milsov.length > 0, 'the land tile should still host something');
+  for (const m of plan.milsov) assert.equal(m.water, false, 'a structure was put on water');
+  // The nearer free tile is water, so the plan takes the further land one.
+  close(plan.milsov[0].d, Math.SQRT2 * 2, 1e-9);
+});
+
+test('a site whose spare tiles are all water says which of the two it is', () => {
+  const plan = scoreSite({
+    // The food plan takes the land tile and leaves the unrated water one, so a
+    // spare tile does exist — 'tiles' would send the user looking for a
+    // neighbourhood problem they do not have.
+    neighbours: [{ dx: 1, dy: 0, food: 7 }, { dx: 2, dy: 0, food: 0, water: true }],
+    settings: withMil({ tMin: -1000 }),
+  });
+  assert.equal(plan.milsov.length, 0);
+  assert.equal(plan.milsovBlocked, 'water', 'tiles were left over — they were just wet');
+});
+
 test('milsovHeadroom prices the scarcest resource, not the average', () => {
   const settings = { ...worked, plots: { wood: 5, clay: 5, iron: 5, stone: 1, food: 9 } };
   const { yield: y } = computeBasicYield(settings);

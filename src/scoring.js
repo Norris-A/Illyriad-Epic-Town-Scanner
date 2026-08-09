@@ -536,9 +536,9 @@ export function milsovHeadroom({ tax, settings, uRp = 0, buildingsUsed = 0 }) {
  * Choose how many military buildings to place, at what levels, on which tiles —
  * the most total production bonus those budgets will buy.
  *
- * `tiles` are the free tiles in ASCENDING distance; the plan takes a prefix of
- * them. Two facts about the game's costs make this exact and cheap rather than a
- * search over 6^24 assignments.
+ * `tiles` are the free land tiles in ASCENDING distance; the plan takes a
+ * prefix of them. Two facts about the game's costs make this exact and cheap
+ * rather than a search over 6^24 assignments.
  *
  * **Level cancels out of the research cost.** A claim costs 10 x level x
  * distance and the bonus is 5 x level, so research per point of bonus is 2 x
@@ -678,18 +678,21 @@ function milsovClaims({ tiles, levels, structure, chancery }) {
  * Why a site got no military sovereignty, in the user's terms. Returned only
  * when nothing was placed — when something was, the plan speaks for itself.
  */
-function milsovBlockedBy({ free, headroom, chancery }) {
+function milsovBlockedBy({ hosts, free, headroom, chancery }) {
   if (free.length === 0) return 'tiles';
+  // Tiles were left over; none of them can host. Distinct from 'tiles' because
+  // the two send the user to different places.
+  if (hosts.length === 0) return 'water';
   if (headroom.slots < 1) return 'slots';
   if (headroom.upkeep + 1e-9 < MILSOV_UPKEEP_BY_LEVEL[1]) return 'upkeep';
-  const cheapest = CLAIM_RP_PER_LEVEL_DISTANCE * (chancery ? CHANCERY_FACTOR : 1) * free[0].d;
+  const cheapest = CLAIM_RP_PER_LEVEL_DISTANCE * (chancery ? CHANCERY_FACTOR : 1) * hosts[0].d;
   if (headroom.rp + 1e-9 < cheapest) return 'rp';
   return null;
 }
 
 /**
  * Score one candidate site. `neighbours` are the claimable tiles already
- * filtered for claimability, each { dx, dy, food, key, i }.
+ * filtered for claimability, each { dx, dy, food, key, i, water }.
  *
  * Food is planned first and alone. It is what a city is settled for,
  * it is what pays for a tax rate, and it is the only claim that gives the city
@@ -797,14 +800,19 @@ export function planSiteAt(ctx, tax) {
   const tiles = recoverSet(ctx.foodCandidates, ctx.dp, spend).map((i) => ctx.foodCandidates[i]);
   const claimed = new Set(tiles.map((t) => t.idx));
   const free = ctx.byDistance.filter((t) => !claimed.has(t.idx));
+  // Water takes no Production Structure, so a military plan gets the free LAND
+  // tiles. planMilsov and milsovClaims both take this one list, in this order:
+  // milsovClaims maps levels onto tiles by position, so filtering one and not
+  // the other puts a level on a tile it was not costed against.
+  const hosts = free.filter((t) => !t.water);
   const headroom = milsovHeadroom({
     tax, settings: s, uRp: spend, buildingsUsed: tiles.length,
   });
   const military = planMilsov({
-    tiles: ctx.structure ? free : [], headroom, chancery: ctx.chancery,
+    tiles: ctx.structure ? hosts : [], headroom, chancery: ctx.chancery,
   });
   const milsov = milsovClaims({
-    tiles: free, levels: military.levels, structure: ctx.structure, chancery: ctx.chancery,
+    tiles: hosts, levels: military.levels, structure: ctx.structure, chancery: ctx.chancery,
   });
 
   const sFood = ctx.dp.best[spend];
@@ -844,7 +852,7 @@ export function planSiteAt(ctx, tax) {
     milsovRp,
     milsovGold: milsov.reduce((sum, a) => sum + a.gold, 0),
     milsovBlocked: ctx.structure && milsov.length === 0
-      ? milsovBlockedBy({ free, headroom, chancery: ctx.chancery })
+      ? milsovBlockedBy({ hosts, free, headroom, chancery: ctx.chancery })
       : null,
     resCeiling: resCeiling.ceiling,
     resIndicative: resCeiling.indicative,
@@ -1008,7 +1016,11 @@ function fallbackPlan(ctx, winner) {
     milsovUpkeep: 0,
     milsovRp: 0,
     milsovGold: 0,
-    milsovBlocked: ctx.structure ? milsovBlockedBy({ free, headroom, chancery: ctx.chancery }) : null,
+    milsovBlocked: ctx.structure
+      ? milsovBlockedBy({
+        hosts: free.filter((t) => !t.water), free, headroom, chancery: ctx.chancery,
+      })
+      : null,
     resCeiling: Infinity,
     resIndicative: false,
     resBinding: null,

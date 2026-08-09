@@ -177,6 +177,7 @@ export function milsovPlanText(plan) {
 /** Why a site got no military sovereignty, in the user's terms. */
 export const MILSOV_BLOCKED_TEXT = {
   tiles: 'every claimable tile went to the food plan',
+  water: 'every tile the food plan left over is water, which takes no Production Structure',
   slots: 'the food plan used every building slot',
   upkeep: 'the city produces too little wood, clay, iron or stone to run one',
   rp: 'the food plan spent the research this site produces',

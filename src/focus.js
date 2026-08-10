@@ -8,7 +8,9 @@
 // DOM-free like the rest of the engine, so it is testable under Node.
 
 import { PLOT_KEYS, PLOT_TOTAL } from './constants.js';
-import { indexPayload, tileKey, parseRs, collectNeighbourhood } from './payload.js';
+import {
+  indexPayload, tileKey, parseRs, collectNeighbourhood, isSettleable,
+} from './payload.js';
 import { prepareSite, planSiteAt, scoreSiteFrom } from './scoring.js';
 
 /** Where the slider starts. Not a game constant — nothing derives from it. */
@@ -117,7 +119,7 @@ export function resolvePlots(focus, settings, rs) {
 function centreFacts(tile, key, idx) {
   const claim = idx.claims.get(key);
   return {
-    settleable: tile.set === 1,
+    settleable: isSettleable(tile),
     claimedBy: claim ? (claim.rd ?? 'someone') : null,
     isTown: idx.towns.has(key),
   };

@@ -23,6 +23,10 @@ const settings = { ...DEFAULT_SETTINGS, tMin: -1000 };
 /**
  * A payload covering radius `r` around 100|100, every tile claimable and rated
  * `rs`. The centre gets its own so the two allocations can be told apart.
+ *
+ * Tiles carry what the live game sends — `sov` and `hos` on plain land, and no
+ * `set` field, which the game stopped sending. Keeping `set` here reported every
+ * tile settleable whatever the code did with the fields it really receives.
  */
 function payloadAround({ r = 3, rs = '5|5|5|5|5', centreRs = '4|4|4|4|9' } = {}) {
   const data = {};
@@ -31,7 +35,9 @@ function payloadAround({ r = 3, rs = '5|5|5|5|5', centreRs = '4|4|4|4|9' } = {})
       const centre = dx === 0 && dy === 0;
       data[tileKey(100 + dy, 100 + dx)] = {
         sov: 1,
-        set: 1,
+        hos: 1,
+        b: 5,
+        l: 2,
         rs: centre ? centreRs : rs,
       };
     }
@@ -192,9 +198,18 @@ test('the requested tax is clamped up to the floor T_min sets', () => {
   assert.equal(r.tax, 30);
 });
 
+test('plain land off the live map is settleable', () => {
+  // The whole fixture is this shape, so this pins what the rest of the file is
+  // planning on. Reading `set` raw calls a perfectly good tile unsettleable.
+  const r = run();
+  assert.equal(r.ok, true);
+  assert.equal(r.centre.settleable, true);
+});
+
 test('the candidacy filters do not apply — an owned, settled tile still plans', () => {
   const payload = payloadAround();
-  payload.data[tileKey(100, 100)].set = 0;
+  // A town tile as the live payload sends one: `hos`, and no `sov`.
+  delete payload.data[tileKey(100, 100)].sov;
   payload.s = { [tileKey(100, 100)]: { rd: 'Yours' } };
   payload.t = { [tileKey(100, 100)]: 'Town|1|100|100|500|9' };
 
@@ -203,6 +218,19 @@ test('the candidacy filters do not apply — an owned, settled tile still plans'
   assert.equal(r.centre.settleable, false);
   assert.equal(r.centre.isTown, true);
   assert.equal(r.centre.claimedBy, 'Yours');
+});
+
+test('a payload that still carries set is answered by it, either way', () => {
+  // Older payloads state it outright, and that outranks the terrain the rest of
+  // these tests infer from, including where the two disagree.
+  const yes = payloadAround();
+  delete yes.data[tileKey(100, 100)].sov;
+  yes.data[tileKey(100, 100)].set = 1;
+  assert.equal(run({}, settings, yes).centre.settleable, true);
+
+  const no = payloadAround();
+  no.data[tileKey(100, 100)].set = 0;
+  assert.equal(run({}, settings, no).centre.settleable, false);
 });
 
 test('the neighbourhood still respects claimability', () => {
@@ -223,7 +251,7 @@ test('claimable water is planned for food but never for a structure', () => {
   // pass that took the flag for "worthless" would still satisfy the milsov
   // assertion below while quietly throwing the food plan away.
   const payload = { data: {}, s: {}, t: {} };
-  const land = (rs) => ({ sov: 1, set: 1, b: 4, l: 1, rs });
+  const land = (rs) => ({ sov: 1, hos: 1, b: 4, l: 1, rs });
   const water = { sov: 1, b: 20, l: 0, rs: '0|0|0|0|10' };
   for (let dy = -2; dy <= 2; dy++) {
     for (let dx = -2; dx <= 2; dx++) {

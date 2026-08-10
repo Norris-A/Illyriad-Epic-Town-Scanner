@@ -34,6 +34,7 @@ import {
   structureUpkeep,
   prepareSite,
   planSiteAt,
+  scoreSiteFrom,
 } from './scoring.js';
 import {
   DEFAULT_FOCUS,
@@ -123,12 +124,21 @@ const CSS = `
 .sov-grid .sov-cell-mil .sov-lv{color:#eb8}
 .sov-grid .sov-cell-free .sov-cv{color:#7d7d7d}
 .sov-grid .sov-cell-water{background:#16202a;border-color:#2a3a4a}
+/* A tile the user crossed out and one the game never offered are both tiles the
+   plan cannot have, so they differ in weight, not in kind. */
+.sov-grid .sov-cell-out{background:#2b1a1a;border-color:#8a3a3a}
+.sov-grid .sov-cell-out .sov-x{color:#e55}
 .sov-grid .sov-cell-none{background:#161616;border-color:#252525}
+.sov-grid .sov-cell-none .sov-x{color:#3f3f3f}
+.sov-x{display:block;font-size:13px;line-height:1.3}
+.sov-grid .sov-pick{cursor:pointer}
+.sov-grid .sov-pick:hover{outline:1px solid #6bf}
 .sov-legend{color:#a9a9a9;font-size:10px;margin:2px 0 0}
 .sov-legend b{font-weight:600;font-size:10px}
 .sov-legend .sov-key-food{color:#8d8}
 .sov-legend .sov-key-mil{color:#eb8}
 .sov-legend .sov-key-free{color:#7d7d7d}
+.sov-legend .sov-key-out{color:#e55}
 `;
 
 // --- Settings model ---------------------------------------------------------
@@ -1048,8 +1058,16 @@ export function createPanel({ onScan, onExport, initialSettings, onSettingsChang
     }
     status.textContent = '';
     out.innerHTML = focusResultHtml(result);
-    bindPlanBlock(out, result.ctx, result.base,
-      { radius: result.radius, x: result.x, y: result.y });
+    mountPlanBlock(out.querySelector('.sov-plan-block'), {
+      neighbours: result.neighbours,
+      // What the plan on screen was made with, which is not what the form holds.
+      settings: result.settings,
+      ctx: result.ctx,
+      base: result.base,
+      floor: result.floor,
+      geom: { radius: result.radius, x: result.x, y: result.y },
+      tax: result.plan.tax,
+    });
   }
 
   focusForm.addEventListener('submit', (e) => e.preventDefault());
@@ -1192,8 +1210,12 @@ function planBlockHtml({ ctx, base, plan, floor, geom }) {
   return `${slider}<div class="sov-body-at">${detailBodyHtml(plan, base, geom)}</div>`;
 }
 
-/** Make a rendered plan block live. Does nothing when there is no slider. */
-function bindPlanBlock(scope, ctx, base, geom) {
+/**
+ * Make a rendered plan block live. Does nothing when there is no slider.
+ * `onTax` records the rate the user dragged to, so redrawing the block after a
+ * tile is crossed out can come back to it.
+ */
+function bindPlanBlock(scope, ctx, base, geom, onTax) {
   const range = scope.querySelector('.sov-tax-range');
   if (!range) return;
   const at = scope.querySelector('.sov-tax-at');
@@ -1201,11 +1223,62 @@ function bindPlanBlock(scope, ctx, base, geom) {
   range.addEventListener('input', () => {
     const tax = Number(range.value);
     at.textContent = `${tax.toFixed(0)}%`;
+    onTax?.(tax);
     const plan = planSiteAt(ctx, tax);
     body.innerHTML = plan
       ? detailBodyHtml(plan, base, geom)
       : '<p class="sov-flag">This site cannot hold that tax.</p>';
   });
+}
+
+/**
+ * Render the plan block into `scope` and keep it live: the slider re-plans at a
+ * new tax, and clicking a grid cell crosses that tile out and re-plans without
+ * it. Exclusions live here and nowhere else, so closing the block clears them.
+ *
+ * @param {Element} scope the element to own the block
+ * @param {object} state `{neighbours, settings, ctx, base, floor, geom, tax}`.
+ *   `ctx` and `base` are the caller's own, used while nothing is crossed out;
+ *   `neighbours` is the site's claimable tiles unfiltered, and without them the
+ *   block cannot re-plan, so it renders once and takes no clicks
+ */
+function mountPlanBlock(scope, state) {
+  const excluded = new Set();
+  let tax = state.tax;
+
+  const draw = () => {
+    // Rebuilding the knapsack with nothing crossed out would only reproduce the
+    // ctx the caller handed over, and it is the expensive part of the plan.
+    let ctx = state.ctx;
+    let base = state.base;
+    if (excluded.size) {
+      const usable = state.neighbours.filter((n) => !excluded.has(cellKey(n.dx, n.dy)));
+      ctx = usable.length ? prepareSite({ neighbours: usable, settings: state.settings }) : null;
+      base = ctx ? scoreSiteFrom(ctx) : null;
+    }
+    const geom = { ...state.geom, excluded, pickable: !!state.neighbours };
+
+    if (!base) {
+      scope.innerHTML = `<p class="sov-flag">No plan holds with those tiles crossed out.</p>${
+        planGridHtml({ tiles: [], free: [], milsov: [] }, geom)}`;
+      return;
+    }
+    // A smaller neighbourhood may not hold the tax the user dragged to.
+    tax = Math.min(base.tMax, Math.max(Math.ceil(state.floor), tax));
+    const plan = (ctx ? planSiteAt(ctx, tax) : null) ?? base;
+    scope.innerHTML = planBlockHtml({ ctx, base, plan, floor: state.floor, geom });
+    bindPlanBlock(scope, ctx, base, geom, (t) => { tax = t; });
+  };
+
+  // Delegated once, since every redraw replaces the grid inside `scope`.
+  scope.addEventListener('click', (e) => {
+    const cell = e.target.closest('.sov-pick');
+    if (!cell || !scope.contains(cell)) return;
+    const key = cellKey(Number(cell.dataset.dx), Number(cell.dataset.dy));
+    if (!excluded.delete(key)) excluded.add(key);
+    draw();
+  });
+  draw();
 }
 
 function toggleDetail(row, result, settings) {
@@ -1222,14 +1295,20 @@ function toggleDetail(row, result, settings) {
   // R_ref the DP is some 3,000 spend levels against 24 tiles, and the building
   // cap puts it on the count-limited path, which is another factor of twenty.
   const ctx = result.neighbours ? prepareSite({ neighbours: result.neighbours, settings }) : null;
-  const floor = Math.min(settings.tMin ?? 0, result.tMax);
 
-  const geom = { radius: Math.round(settings.rClaim ?? 2), x: result.x, y: result.y };
-
-  tr.innerHTML = `<td colspan="8">${
-    planBlockHtml({ ctx, base: result, plan: result, floor, geom })}</td>`;
+  const cell = document.createElement('td');
+  cell.colSpan = 8;
+  tr.append(cell);
   row.after(tr);
-  bindPlanBlock(tr, ctx, result, geom);
+  mountPlanBlock(cell, {
+    neighbours: result.neighbours ?? null,
+    settings,
+    ctx,
+    base: result,
+    floor: Math.min(settings.tMin ?? 0, result.tMax),
+    geom: { radius: Math.round(settings.rClaim ?? 2), x: result.x, y: result.y },
+    tax: result.tax,
+  });
 }
 
 /**
@@ -1264,17 +1343,13 @@ function focusResultHtml(r) {
       + `is at its ceiling of ${r.ceiling.toFixed(0)}%.</p>`
     : '';
 
+  // The plan block owns state, so the caller mounts it into the empty div rather
+  // than it being rendered into this string.
   return `<h3>${r.x}|${r.y}</h3>
     ${warnings.map((w) => `<p class="sov-warn">${escapeHtml(w)}</p>`).join('')}
     ${notes.map((n) => `<p class="sov-note">${escapeHtml(n)}</p>`).join('')}
     ${ceiling}${asked}
-    ${planBlockHtml({
-    ctx: r.ctx,
-    base: r.base,
-    plan: r.plan,
-    floor: r.floor,
-    geom: { radius: r.radius, x: r.x, y: r.y },
-  })}`;
+    <div class="sov-plan-block"></div>`;
 }
 
 /** A sovereignty level as its numeral, or as the number itself if it is not 1-5. */
@@ -1283,10 +1358,20 @@ function roman(level) {
 }
 
 const FOOD_ICON = `<img src="${ICONS.food}" alt="food">`;
+const CROSS = '<span class="sov-x">✕</span>';
 
-/** One cell's markup. `body` is icon HTML or already-escaped text. */
-function gridCell({ cls, title, level, body }) {
-  return `<td class="sov-cell ${cls}" title="${escapeHtml(title)}">${
+/** How a grid cell and an exclusion name the same tile. */
+export function cellKey(dx, dy) {
+  return `${dx},${dy}`;
+}
+
+/**
+ * One cell's markup. `body` is icon HTML or already-escaped text. `pick` makes
+ * the cell clickable and carries the offsets the click handler reads back.
+ */
+function gridCell({ cls, title, level, body, dx, dy, pick }) {
+  return `<td class="sov-cell ${cls}${pick ? ' sov-pick' : ''}"${
+    pick ? ` data-dx="${dx}" data-dy="${dy}"` : ''} title="${escapeHtml(title)}">${
     level ? `<span class="sov-lv">${level}</span>` : ''}${
     body ? `<span class="sov-cv">${body}</span>` : ''}</td>`;
 }
@@ -1297,17 +1382,25 @@ function gridCell({ cls, title, level, body }) {
  * the way the game map does.
  *
  * Only claimable tiles reach the panel, so water, foreign claims and unsettleable
- * terrain render blank, the same as tiles the payload never carried.
+ * terrain are crossed out too — a tile the plan cannot have looks the same
+ * whether the game ruled it out or the user did.
+ *
+ * A tile in `excluded` is drawn crossed whatever the plan says, so a stale plan
+ * cannot show a claim on a square the user has ruled out.
  *
  * @param {object} plan the plan to draw, as planSiteAt returns it
- * @param {{radius: number, x: number, y: number}} geom the square to draw and the
- *   centre's own coordinates; non-finite coordinates fall back to offset labels
+ * @param {{radius: number, x: number, y: number, excluded: Set<string>,
+ *   pickable: boolean}} geom the square to draw, the centre's own coordinates,
+ *   the tiles crossed out by the user, and whether cells respond to a click.
+ *   Non-finite coordinates fall back to offset labels
  * @returns {string} the grid, with its legend under it
  */
 export function planGridHtml(plan, geom) {
   const r = Math.max(1, Math.round(geom?.radius ?? 0) || spanOf(plan));
   const cx = geom?.x;
   const cy = geom?.y;
+  const excluded = geom?.excluded ?? new Set();
+  const pickable = !!geom?.pickable;
   const absolute = Number.isFinite(cx) && Number.isFinite(cy);
   // Real coordinates where they are known, since those are what the user types
   // into the game.
@@ -1315,32 +1408,31 @@ export function planGridHtml(plan, geom) {
   const yLabel = (dy) => (absolute ? String(cy + dy) : signed(dy));
   const name = (dx, dy) => (absolute ? `${cx + dx}|${cy + dy}` : `${signed(dx)},${signed(dy)}`);
 
-  const cells = new Map();
-  const key = (dx, dy) => `${dx},${dy}`;
+  const specs = new Map();
 
   // `free` goes down first because the other two overwrite it: military claims
   // are placed on free tiles, so those squares appear in both lists.
   for (const t of plan.free ?? []) {
-    cells.set(key(t.dx, t.dy), gridCell({
+    specs.set(cellKey(t.dx, t.dy), {
       cls: t.water ? 'sov-cell-free sov-cell-water' : 'sov-cell-free',
       title: `${name(t.dx, t.dy)} — unclaimed${t.water ? ' water' : ''}, food ${t.food}, `
         + `distance ${t.d.toFixed(2)}`,
       body: `${FOOD_ICON} ${t.food}`,
-    }));
+    });
   }
   for (const t of plan.tiles ?? []) {
-    cells.set(key(t.dx, t.dy), gridCell({
+    specs.set(cellKey(t.dx, t.dy), {
       cls: 'sov-cell-food',
       title: `${name(t.dx, t.dy)} — Sov ${roman(t.level)} food claim, food ${t.food}, `
         + `distance ${t.d.toFixed(2)}, ${t.rp.toFixed(0)} RP`,
       level: roman(t.level),
       body: `${FOOD_ICON} ${t.food}`,
-    }));
+    });
   }
   for (const m of plan.milsov ?? []) {
     const structure = sovStructure(m);
     const icon = STRUCTURE_ICONS[structure.key];
-    cells.set(key(m.dx, m.dy), gridCell({
+    specs.set(cellKey(m.dx, m.dy), {
       cls: 'sov-cell-mil',
       title: `${name(m.dx, m.dy)} — Sov ${roman(m.sovLevel)} claim carrying a level `
         + `${m.buildingLevel} ${structure.name}, distance ${m.d.toFixed(2)}, `
@@ -1348,28 +1440,43 @@ export function planGridHtml(plan, geom) {
       level: roman(m.sovLevel),
       body: `${icon ? `<img src="${icon}" alt="${escapeHtml(structure.name)}">` : ''} L${
         m.buildingLevel}`,
-    }));
+    });
   }
-  cells.set(key(0, 0), gridCell({
-    cls: 'sov-cell-town',
-    title: `${name(0, 0)} — the town`,
-    level: 'TOWN',
-  }));
+
+  const cell = (dx, dy) => {
+    if (dx === 0 && dy === 0) {
+      return gridCell({ cls: 'sov-cell-town', title: `${name(0, 0)} — the town`, level: 'TOWN' });
+    }
+    if (excluded.has(cellKey(dx, dy))) {
+      return gridCell({
+        cls: 'sov-cell-out',
+        title: `${name(dx, dy)} — crossed out${pickable ? ', click to put it back' : ''}`,
+        body: CROSS,
+        dx,
+        dy,
+        pick: pickable,
+      });
+    }
+    const spec = specs.get(cellKey(dx, dy));
+    if (!spec) {
+      return gridCell({ cls: 'sov-cell-none', title: `${name(dx, dy)} — not claimable`, body: CROSS });
+    }
+    return gridCell({ ...spec, dx, dy, pick: pickable });
+  };
 
   const head = `<tr><th></th>${
     range(r).map((dx) => `<th>${xLabel(dx)}</th>`).join('')}</tr>`;
   // Descending, so the highest y is the top row.
   const body = range(r).slice().reverse().map((dy) =>
-    `<tr><th>${yLabel(dy)}</th>${range(r).map((dx) =>
-      cells.get(key(dx, dy))
-        ?? gridCell({ cls: 'sov-cell-none', title: `${name(dx, dy)} — not claimable` })
-    ).join('')}</tr>`).join('');
+    `<tr><th>${yLabel(dy)}</th>${range(r).map((dx) => cell(dx, dy)).join('')}</tr>`).join('');
 
   return `<div class="sov-grid-wrap"><table class="sov-grid">
       <thead>${head}</thead><tbody>${body}</tbody></table></div>
     <p class="sov-legend"><b class="sov-key-food">I–V</b> food claim,
       <b class="sov-key-mil">I–V</b> military claim with its building level,
-      <b class="sov-key-free">grey</b> claimable but unclaimed, blank not claimable.
+      <b class="sov-key-free">grey</b> claimable but unclaimed,
+      <b class="sov-key-out">✕</b> not available.${
+  pickable ? ' Click a tile to cross it out and re-plan without it.' : ''}
       Hover a tile for its distance, research cost and upkeep.</p>`;
 }
 

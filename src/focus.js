@@ -210,6 +210,10 @@ export function focusSite({ payload, focus, settings }) {
     plotSource,
     plotNote,
     centre: centreFacts(centre, key, idx),
+    // Both kept so the caller can re-plan this site without a tile, which needs
+    // the settings this plan was made with — the pane overrides two of them.
+    neighbours,
+    settings: effective,
     claimable: neighbours.length,
     ring: (2 * radius + 1) ** 2 - 1,
     ctx,

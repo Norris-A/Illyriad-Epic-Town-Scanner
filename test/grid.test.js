@@ -5,7 +5,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { planGridHtml } from '../src/panel.js';
+import { planGridHtml, cellKey } from '../src/panel.js';
 
 /** The grid's rows, each as the list of cell class attributes across it. */
 function rows(html) {
@@ -98,6 +98,41 @@ test('without coordinates the labels fall back to offsets', () => {
   assert.deepEqual(xLabels(html), ['-1', '+0', '+1']);
   assert.deepEqual(yLabels(html), ['+1', '+0', '-1']);
   assert.match(html, /title="\+1,\+1 — not claimable"/);
+});
+
+test('a crossed-out tile is crossed out even if the plan still claims it', () => {
+  // The plan should never still hold a crossed tile — the caller re-plans without
+  // it. Drawing the claim anyway is the failure this ordering exists to prevent.
+  const html = planGridHtml({
+    ...EMPTY,
+    tiles: [{ dx: 1, dy: 0, food: 10, d: 1, rp: 50, level: 5 }],
+  }, { radius: 1, x: 100, y: 200, excluded: new Set([cellKey(1, 0)]) });
+  const grid = rows(html);
+  assert.match(grid[1][2], /sov-cell-out/);
+  assert.equal(/sov-cell-food/.test(html), false);
+  assert.match(html, /title="101\|200 — crossed out"/);
+});
+
+test('pickable cells carry their offsets, the rest do not', () => {
+  const html = planGridHtml({
+    ...EMPTY,
+    free: [{ dx: 1, dy: 0, food: 4, d: 1 }],
+  }, { radius: 1, x: 100, y: 200, excluded: new Set([cellKey(0, 1)]), pickable: true });
+  // The claimable tile and the crossed one both take a click; the town and the
+  // tiles the game never offered do not.
+  assert.match(html, /class="sov-cell sov-cell-free sov-pick" data-dx="1" data-dy="0"/);
+  assert.match(html, /class="sov-cell sov-cell-out sov-pick" data-dx="0" data-dy="1"/);
+  assert.equal((html.match(/sov-pick/g) ?? []).length, 2);
+  assert.match(html, /Click a tile to cross it out/);
+});
+
+test('a grid nothing can be clicked on says nothing about clicking', () => {
+  const html = planGridHtml({
+    ...EMPTY,
+    free: [{ dx: 1, dy: 0, food: 4, d: 1 }],
+  }, { radius: 1, x: 100, y: 200 });
+  assert.equal(/sov-pick|data-dx/.test(html), false);
+  assert.equal(/Click a tile/.test(html), false);
 });
 
 test('without a radius the grid is sized to reach the furthest claim', () => {

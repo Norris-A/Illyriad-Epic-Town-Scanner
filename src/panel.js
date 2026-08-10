@@ -25,6 +25,7 @@ import {
   PLOT_KEYS,
   PLOT_TOTAL,
 } from './constants.js';
+import { ICONS, STRUCTURE_ICONS } from './icons.js';
 import {
   computeBOther,
   computeK,
@@ -102,6 +103,32 @@ const CSS = `
 .sov-focus-out h3{margin:8px 0 2px;font-size:12px;font-weight:600;color:#fff}
 .sov-note{color:#a9a9a9;font-size:11px;margin:2px 0}
 .sov-warn{color:#e66;font-weight:bold;font-size:11px;margin:2px 0}
+/* The claim grid. Cell colours are qualified with .sov-grid and the table width
+   with .sov-panel, because the panel's own table and td rules carry an element in
+   the selector and a bare class loses to them. */
+.sov-grid-wrap{overflow-x:auto;margin:6px 0}
+.sov-panel table.sov-grid{width:auto;border-collapse:separate;border-spacing:2px}
+.sov-grid th{padding:0 2px;border:0;text-align:center;font-size:10px;font-weight:400;
+  color:#8a8a8a;font-variant-numeric:tabular-nums}
+.sov-grid td{width:46px;height:38px;padding:1px;border:1px solid #303030;text-align:center;
+  vertical-align:middle;background:#1e1e1e}
+.sov-grid img{width:12px;height:12px;vertical-align:-2px;image-rendering:pixelated}
+.sov-lv{display:block;font-size:10px;font-weight:700;letter-spacing:.5px;color:#8a8a8a}
+.sov-cv{display:block;font-size:11px;font-variant-numeric:tabular-nums}
+.sov-grid .sov-cell-town{background:#243;border-color:#6bf}
+.sov-grid .sov-cell-town .sov-lv{color:#6bf}
+.sov-grid .sov-cell-food{background:#1d2a1d;border-color:#3a5}
+.sov-grid .sov-cell-food .sov-lv{color:#8d8}
+.sov-grid .sov-cell-mil{background:#2a241a;border-color:#a83}
+.sov-grid .sov-cell-mil .sov-lv{color:#eb8}
+.sov-grid .sov-cell-free .sov-cv{color:#7d7d7d}
+.sov-grid .sov-cell-water{background:#16202a;border-color:#2a3a4a}
+.sov-grid .sov-cell-none{background:#161616;border-color:#252525}
+.sov-legend{color:#a9a9a9;font-size:10px;margin:2px 0 0}
+.sov-legend b{font-weight:600;font-size:10px}
+.sov-legend .sov-key-food{color:#8d8}
+.sov-legend .sov-key-mil{color:#eb8}
+.sov-legend .sov-key-free{color:#7d7d7d}
 `;
 
 // --- Settings model ---------------------------------------------------------
@@ -1021,7 +1048,8 @@ export function createPanel({ onScan, onExport, initialSettings, onSettingsChang
     }
     status.textContent = '';
     out.innerHTML = focusResultHtml(result);
-    bindPlanBlock(out, result.ctx, result.base);
+    bindPlanBlock(out, result.ctx, result.base,
+      { radius: result.radius, x: result.x, y: result.y });
   }
 
   focusForm.addEventListener('submit', (e) => e.preventDefault());
@@ -1146,8 +1174,10 @@ function flagsHtml(r) {
  * `plan` is what to show now; `base` is the plan at the site's own ceiling, which
  * detailBodyHtml diffs against. The detail row opens with the two the same; the
  * optimiser opens at whatever tax was asked for, so they differ from the start.
+ *
+ * `geom` is the square the claim grid draws and the centre it draws it around.
  */
-function planBlockHtml({ ctx, base, plan, floor }) {
+function planBlockHtml({ ctx, base, plan, floor, geom }) {
   // Whole points only, because that is all the game accepts — a half-point drag
   // would report a plan at a tax the user cannot set.
   const lowest = Math.ceil(floor);
@@ -1159,11 +1189,11 @@ function planBlockHtml({ ctx, base, plan, floor }) {
             step="1" value="${plan.tax}"></div>
       </div>`
     : '';
-  return `${slider}<div class="sov-body-at">${detailBodyHtml(plan, base)}</div>`;
+  return `${slider}<div class="sov-body-at">${detailBodyHtml(plan, base, geom)}</div>`;
 }
 
 /** Make a rendered plan block live. Does nothing when there is no slider. */
-function bindPlanBlock(scope, ctx, base) {
+function bindPlanBlock(scope, ctx, base, geom) {
   const range = scope.querySelector('.sov-tax-range');
   if (!range) return;
   const at = scope.querySelector('.sov-tax-at');
@@ -1173,7 +1203,7 @@ function bindPlanBlock(scope, ctx, base) {
     at.textContent = `${tax.toFixed(0)}%`;
     const plan = planSiteAt(ctx, tax);
     body.innerHTML = plan
-      ? detailBodyHtml(plan, base)
+      ? detailBodyHtml(plan, base, geom)
       : '<p class="sov-flag">This site cannot hold that tax.</p>';
   });
 }
@@ -1194,10 +1224,12 @@ function toggleDetail(row, result, settings) {
   const ctx = result.neighbours ? prepareSite({ neighbours: result.neighbours, settings }) : null;
   const floor = Math.min(settings.tMin ?? 0, result.tMax);
 
+  const geom = { radius: Math.round(settings.rClaim ?? 2), x: result.x, y: result.y };
+
   tr.innerHTML = `<td colspan="8">${
-    planBlockHtml({ ctx, base: result, plan: result, floor })}</td>`;
+    planBlockHtml({ ctx, base: result, plan: result, floor, geom })}</td>`;
   row.after(tr);
-  bindPlanBlock(tr, ctx, result);
+  bindPlanBlock(tr, ctx, result, geom);
 }
 
 /**
@@ -1236,28 +1268,142 @@ function focusResultHtml(r) {
     ${warnings.map((w) => `<p class="sov-warn">${escapeHtml(w)}</p>`).join('')}
     ${notes.map((n) => `<p class="sov-note">${escapeHtml(n)}</p>`).join('')}
     ${ceiling}${asked}
-    ${planBlockHtml({ ctx: r.ctx, base: r.base, plan: r.plan, floor: r.floor })}`;
+    ${planBlockHtml({
+    ctx: r.ctx,
+    base: r.base,
+    plan: r.plan,
+    floor: r.floor,
+    geom: { radius: r.radius, x: r.x, y: r.y },
+  })}`;
+}
+
+/** A sovereignty level as its numeral, or as the number itself if it is not 1-5. */
+function roman(level) {
+  return SOV_LEVEL_ROMAN[level - 1] ?? String(level);
+}
+
+const FOOD_ICON = `<img src="${ICONS.food}" alt="food">`;
+
+/** One cell's markup. `body` is icon HTML or already-escaped text. */
+function gridCell({ cls, title, level, body }) {
+  return `<td class="sov-cell ${cls}" title="${escapeHtml(title)}">${
+    level ? `<span class="sov-lv">${level}</span>` : ''}${
+    body ? `<span class="sov-cv">${body}</span>` : ''}</td>`;
+}
+
+/**
+ * The plan as a map: the town in the middle, every claim on the tile it sits on,
+ * x across the top and y down the left, highest y in the top row so the grid sits
+ * the way the game map does.
+ *
+ * Only claimable tiles reach the panel, so water, foreign claims and unsettleable
+ * terrain render blank, the same as tiles the payload never carried.
+ *
+ * @param {object} plan the plan to draw, as planSiteAt returns it
+ * @param {{radius: number, x: number, y: number}} geom the square to draw and the
+ *   centre's own coordinates; non-finite coordinates fall back to offset labels
+ * @returns {string} the grid, with its legend under it
+ */
+export function planGridHtml(plan, geom) {
+  const r = Math.max(1, Math.round(geom?.radius ?? 0) || spanOf(plan));
+  const cx = geom?.x;
+  const cy = geom?.y;
+  const absolute = Number.isFinite(cx) && Number.isFinite(cy);
+  // Real coordinates where they are known, since those are what the user types
+  // into the game.
+  const xLabel = (dx) => (absolute ? String(cx + dx) : signed(dx));
+  const yLabel = (dy) => (absolute ? String(cy + dy) : signed(dy));
+  const name = (dx, dy) => (absolute ? `${cx + dx}|${cy + dy}` : `${signed(dx)},${signed(dy)}`);
+
+  const cells = new Map();
+  const key = (dx, dy) => `${dx},${dy}`;
+
+  // `free` goes down first because the other two overwrite it: military claims
+  // are placed on free tiles, so those squares appear in both lists.
+  for (const t of plan.free ?? []) {
+    cells.set(key(t.dx, t.dy), gridCell({
+      cls: t.water ? 'sov-cell-free sov-cell-water' : 'sov-cell-free',
+      title: `${name(t.dx, t.dy)} — unclaimed${t.water ? ' water' : ''}, food ${t.food}, `
+        + `distance ${t.d.toFixed(2)}`,
+      body: `${FOOD_ICON} ${t.food}`,
+    }));
+  }
+  for (const t of plan.tiles ?? []) {
+    cells.set(key(t.dx, t.dy), gridCell({
+      cls: 'sov-cell-food',
+      title: `${name(t.dx, t.dy)} — Sov ${roman(t.level)} food claim, food ${t.food}, `
+        + `distance ${t.d.toFixed(2)}, ${t.rp.toFixed(0)} RP`,
+      level: roman(t.level),
+      body: `${FOOD_ICON} ${t.food}`,
+    }));
+  }
+  for (const m of plan.milsov ?? []) {
+    const structure = sovStructure(m);
+    const icon = STRUCTURE_ICONS[structure.key];
+    cells.set(key(m.dx, m.dy), gridCell({
+      cls: 'sov-cell-mil',
+      title: `${name(m.dx, m.dy)} — Sov ${roman(m.sovLevel)} claim carrying a level `
+        + `${m.buildingLevel} ${structure.name}, distance ${m.d.toFixed(2)}, `
+        + `${m.rp.toFixed(0)} RP, ${structureUpkeep(m).toLocaleString('en-GB')}/hr upkeep`,
+      level: roman(m.sovLevel),
+      body: `${icon ? `<img src="${icon}" alt="${escapeHtml(structure.name)}">` : ''} L${
+        m.buildingLevel}`,
+    }));
+  }
+  cells.set(key(0, 0), gridCell({
+    cls: 'sov-cell-town',
+    title: `${name(0, 0)} — the town`,
+    level: 'TOWN',
+  }));
+
+  const head = `<tr><th></th>${
+    range(r).map((dx) => `<th>${xLabel(dx)}</th>`).join('')}</tr>`;
+  // Descending, so the highest y is the top row.
+  const body = range(r).slice().reverse().map((dy) =>
+    `<tr><th>${yLabel(dy)}</th>${range(r).map((dx) =>
+      cells.get(key(dx, dy))
+        ?? gridCell({ cls: 'sov-cell-none', title: `${name(dx, dy)} — not claimable` })
+    ).join('')}</tr>`).join('');
+
+  return `<div class="sov-grid-wrap"><table class="sov-grid">
+      <thead>${head}</thead><tbody>${body}</tbody></table></div>
+    <p class="sov-legend"><b class="sov-key-food">I–V</b> food claim,
+      <b class="sov-key-mil">I–V</b> military claim with its building level,
+      <b class="sov-key-free">grey</b> claimable but unclaimed, blank not claimable.
+      Hover a tile for its distance, research cost and upkeep.</p>`;
+}
+
+/** -r..r, for both axes. */
+function range(r) {
+  return Array.from({ length: 2 * r + 1 }, (_, i) => i - r);
+}
+
+function signed(v) {
+  return `${v >= 0 ? '+' : ''}${v}`;
+}
+
+/**
+ * How far out the plan itself reaches, for a caller with no radius to hand. An
+ * outer ring that is entirely unclaimable is invisible from the plan, so this can
+ * draw a smaller square than the site was scored over.
+ */
+function spanOf(plan) {
+  let span = 1;
+  for (const t of [...(plan.free ?? []), ...(plan.tiles ?? []), ...(plan.milsov ?? [])]) {
+    span = Math.max(span, Math.abs(t.dx), Math.abs(t.dy));
+  }
+  return span;
 }
 
 /**
  * Everything about one plan, at the tax it is run at. Rendered from the plan
  * alone so the slider can replace it wholesale — the balance, the buildings and
- * the tile list all move together, which is the point of dragging it.
+ * the claim grid all move together, which is the point of dragging it.
  *
  * `base` is the plan at the site's own maximum, so a lower tax can say what it
  * bought and what it cost rather than leaving two screens of numbers to diff.
  */
-function detailBodyHtml(plan, base) {
-  const dxy = (t) => `${t.dx >= 0 ? '+' : ''}${t.dx},${t.dy >= 0 ? '+' : ''}${t.dy}`;
-  const tiles = plan.tiles.map((t) =>
-    `<li>${dxy(t)} — food ${t.food}, distance ${t.d.toFixed(2)}, ${
-      t.rp.toFixed(0)} RP, Sov ${t.level}</li>`).join('');
-  // One line per building the engine placed, on the square it chose.
-  const mil = plan.milsov.map((m) =>
-    `<li class="sov-advice">${dxy(m)} — Sov ${m.sovLevel} claim carrying a level ${m.buildingLevel} ${
-      escapeHtml(sovStructure(m).name)}, distance ${m.d.toFixed(2)}, ${m.rp.toFixed(0)} RP, ${
-      structureUpkeep(m).toLocaleString('en-GB')}/hr upkeep</li>`).join('');
-
+function detailBodyHtml(plan, base, geom) {
   // A ceiling only BINDS at the tax it was solved for. Below that everything has
   // slack, so marking a row "binds" there would be a lie.
   const atCeiling = Math.abs(plan.tax - plan.tMax) < 0.05;
@@ -1303,9 +1449,9 @@ function detailBodyHtml(plan, base) {
     : '';
 
   // The balance goes first, directly under the slider, so dragging moves numbers
-  // the eye is already on. The claim list is the longest block, so it goes last
-  // rather than pushing the table off the screen.
-  return `${balance}${milPlan}${res}${trade}<ul>${tiles}${mil}</ul>`;
+  // the eye is already on. The grid is the tallest block, so it goes last rather
+  // than pushing the table off the screen.
+  return `${balance}${milPlan}${res}${trade}${planGridHtml(plan, geom)}`;
 }
 
 function escapeHtml(s) {

@@ -122,6 +122,10 @@ export const PRESTIGE_PRODUCTION_BONUS = 20;
 // one total of the city's food bonuses and nothing can count them twice.
 export const PRESTIGE_KEYS = [...BASIC_RESOURCES, 'food', 'research'];
 
+// What a minimum surplus can be asked for — the four basic resources plus food
+// and research, which are produced differently but take a floor the same way.
+export const MINIMUM_KEYS = [...BASIC_RESOURCES, 'food', 'research'];
+
 // [V] Food consumed per hour, which the user reads off their own town. Only a
 // starting figure — every city differs, so the number itself is the input.
 export const DEFAULT_CITY_CONSUMPTION = 30800;
@@ -179,8 +183,9 @@ export const DEFAULT_SETTINGS = {
   // Surplus per hour the plan may not touch, per resource. A city sitting exactly
   // on T_res puts its whole scarcest resource into upkeep and can never build or
   // trade in it again — this is where the user says how much to hold back. Zero
-  // is the ceiling as it was.
-  resourceMinimums: { wood: 0, clay: 0, iron: 0, stone: 0 },
+  // is the ceiling as it was. Food is counted above what the city eats and
+  // research above what the claims cost.
+  resourceMinimums: { wood: 0, clay: 0, iron: 0, stone: 0, food: 0, research: 0 },
   // Which productions the boost is running on, PRESTIGE_PRODUCTION_BONUS points
   // each.
   prestige: {

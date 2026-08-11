@@ -22,6 +22,7 @@ import {
   RESOURCE_BOOSTER_BONUS,
   PRESTIGE_KEYS,
   PRESTIGE_PRODUCTION_BONUS,
+  MINIMUM_KEYS,
   PLOT_KEYS,
   PLOT_TOTAL,
 } from './constants.js';
@@ -349,13 +350,14 @@ export function parseResourceBoosters(raw) {
 }
 
 /**
- * Read the four minimum-surplus fields. Zero is off, and negative is refused
- * rather than read as permission to run a resource into deficit.
+ * Read the minimum-surplus fields — one per production, food and research
+ * included. Zero is off, and negative is refused rather than read as permission
+ * to run a resource into deficit.
  */
 export function parseResourceMinimums(raw) {
   const out = {};
-  for (const res of BASIC_RESOURCES) {
-    out[res] = clampNumber(raw?.[res], { min: 0, max: 1e7, integer: true, fallback: 0 });
+  for (const key of MINIMUM_KEYS) {
+    out[key] = clampNumber(raw?.[key], { min: 0, max: 1e7, integer: true, fallback: 0 });
   }
   return out;
 }
@@ -419,12 +421,6 @@ export const SETTINGS_FIELDS = [
     type: 'boosters',
   },
   {
-    key: 'resourceMinimums',
-    group: 'Basic Resources',
-    label: 'Minimum Surplus per Hour',
-    type: 'minimums',
-  },
-  {
     key: 'resourceCalibration',
     group: 'Basic Resources',
     label: 'Per-Plot Yield Calibration',
@@ -438,6 +434,15 @@ export const SETTINGS_FIELDS = [
     group: 'Prestige',
     label: 'Prestige Production Boost',
     type: 'prestige',
+  },
+
+  // Its own group: a floor can be asked for on any of the six productions, so
+  // it belongs under no single one.
+  {
+    key: 'resourceMinimums',
+    group: 'Minimums',
+    label: 'Minimum Surplus per Hour',
+    type: 'minimums',
   },
 
   { key: 'chancery', group: 'Sovereignty', label: 'Chancery of Estates (×0.6 upkeep)', type: 'checkbox' },
@@ -548,21 +553,22 @@ function prestigeFieldHtml(f, prestige) {
 }
 
 /**
- * The minimum surplus per resource — the difference between a city that can pay
- * its sovereignty and one that can also build. At T_res the whole of the
+ * The minimum surplus per production — the difference between a city that can
+ * pay its sovereignty and one that can also build. At T_res the whole of the
  * scarcest resource goes to upkeep: affordable, and useless.
  */
 function minimumsFieldHtml(f, minimums) {
-  const boxes = BASIC_RESOURCES.map((res) =>
-    `<label class="sov-f" data-minimum-row="${res}"><span>${res} — keep at least</span>
-      <input type="number" data-minimum="${res}" min="0" step="1"
-        value="${minimums?.[res] ?? 0}"></label>`).join('');
+  const boxes = MINIMUM_KEYS.map((key) =>
+    `<label class="sov-f" data-minimum-row="${key}"><span>${key} — keep at least</span>
+      <input type="number" data-minimum="${key}" min="0" step="1"
+        value="${minimums?.[key] ?? 0}"></label>`).join('');
   return `<div class="sov-f-block" data-key="${f.key}">
-      <p class="sov-hint">${escapeHtml(f.label)} — how much of each resource must still be
-        free after sovereignty upkeep. Zero spends the lot, which is what a city sitting
-        exactly on its resource ceiling does: it can run the buildings and never build or
-        trade in that resource again. Each figure lowers the ceiling by its own worth in
-        production points.</p>
+      <p class="sov-hint">${escapeHtml(f.label)} — how much of each must still be free once
+        the plan is paid for: the four resources after sovereignty upkeep, food after the
+        town has eaten, research after the claims. Zero spends the lot, which is what a
+        city sitting exactly on a ceiling does — it can run what it has placed and never
+        build, grow or trade on top of it. Each figure lowers the ceiling it belongs to by
+        its own worth in production points.</p>
       ${boxes}
     </div>`;
 }
@@ -840,8 +846,8 @@ export function createPanel({ onScan, onExport, initialSettings, onSettingsChang
         }
         case 'minimums': {
           const raw = {};
-          for (const res of BASIC_RESOURCES) {
-            raw[res] = form.querySelector(`[data-minimum="${res}"]`).value;
+          for (const key of MINIMUM_KEYS) {
+            raw[key] = form.querySelector(`[data-minimum="${key}"]`).value;
           }
           out.resourceMinimums = parseResourceMinimums(raw);
           break;
@@ -896,8 +902,8 @@ export function createPanel({ onScan, onExport, initialSettings, onSettingsChang
           }
           break;
         case 'minimums':
-          for (const res of BASIC_RESOURCES) {
-            form.querySelector(`[data-minimum="${res}"]`).value = v?.[res] ?? 0;
+          for (const key of MINIMUM_KEYS) {
+            form.querySelector(`[data-minimum="${key}"]`).value = v?.[key] ?? 0;
           }
           break;
         case 'resourceCalibration':

@@ -153,9 +153,10 @@ export function resourceBonus(s, resource) {
 }
 
 /**
- * How much of one resource the plan may not spend, per hour — the surplus the
+ * How much of one production the plan may not spend, per hour — the surplus the
  * user has fenced off from sovereignty upkeep. A missing or negative figure is
- * no floor rather than a licence to run the resource negative.
+ * no floor rather than a licence to run the resource negative. Keyed by any of
+ * MINIMUM_KEYS, food and research included.
  */
 export function resourceMinimum(s, resource) {
   const v = s.resourceMinimums?.[resource];
@@ -235,14 +236,20 @@ export function milsovUpkeep(entries) {
 
 // --- The three ceilings ----------------------------------------------------
 
-/** T_food = 125 + B_other + S_food - C/K */
-export function tFood({ bOther, sFood, consumption, k }) {
-  return PRODUCTION_BASE + bOther + sFood - consumption / k;
+/**
+ * T_food = 125 + B_other + S_food - (C + M_food)/K. A minimum adds to
+ * consumption: both are food per hour the tax may not take.
+ */
+export function tFood({ bOther, sFood, consumption, k, minimum = 0 }) {
+  return PRODUCTION_BASE + bOther + sFood - (consumption + minimum) / k;
 }
 
-/** T_rp = 125 + prestige - 100 * U_RP / R_ref */
-export function tRp({ uRp, rRef, rpBonus = 0 }) {
-  return PRODUCTION_BASE + rpBonus - (100 * uRp) / rRef;
+/**
+ * T_rp = 125 + prestige - 100 * (U_RP + M_rp) / R_ref. A minimum adds to the
+ * claims' bill, being research they may not have.
+ */
+export function tRp({ uRp, rRef, rpBonus = 0, minimum = 0 }) {
+  return PRODUCTION_BASE + rpBonus - (100 * (uRp + minimum)) / rRef;
 }
 
 /**
@@ -315,9 +322,10 @@ export function tRes({ milsovAssignments, plots, settings = {} }) {
  * `indicative` is copied from the yield and covers the four basic figures only;
  * food and research do not depend on it.
  *
- * A basic resource reads as the whole surplus, not the part above any minimum
- * set: the minimum constrains the plan, and netting it off here would hide the
- * production it exists to protect.
+ * Every figure reads as the whole surplus, not the part above any minimum set:
+ * the minimum constrains the plan, and netting it off here would hide the
+ * production it exists to protect. A figure held up by its own minimum
+ * therefore reads at that minimum rather than at zero.
  *
  * `base` holds the same seven quantities before the plan is paid for, so each
  * figure can be shown as base minus what the plan takes.
@@ -491,10 +499,11 @@ export function recoverSet(candidates, dpResult, spend) {
  * so every building can only ever push a ceiling down. What it may have is
  * whatever the food plan did not need:
  *
- *  - `rp`   research produced at `tax` less what the food claims already cost,
- *           which is the slack in T_rp. It exists because S_food is a step and
- *           T_rp is a line: the walk stops at the last food tile worth buying,
- *           and the change left over is too little for another one.
+ *  - `rp`   research produced at `tax` less what the food claims already cost
+ *           and less any the user asked to keep, which is the slack in T_rp. It
+ *           exists because S_food is a step and T_rp is a line: the walk stops
+ *           at the last food tile worth buying, and the change left over is too
+ *           little for another one.
  *  - `upkeep` hourly production of the SCARCEST basic resource at `tax`, less
  *           any surplus of it the user asked to keep, which is the slack in
  *           T_res. Charged of each of the four, so the worst one is the budget.
@@ -524,7 +533,7 @@ export function milsovHeadroom({ tax, settings, uRp = 0, buildingsUsed = 0 }) {
   return {
     rp: Math.max(0, researchAt({
       rRef: computeRRef(s), rpBonus: prestigeBonus(s, 'research'), tax,
-    }) - uRp),
+    }) - uRp - resourceMinimum(s, 'research')),
     // A minimum bigger than the production it protects leaves nothing to spend
     // rather than a negative budget.
     upkeep: Math.max(0, upkeep),
@@ -752,6 +761,8 @@ export function prepareSite({ neighbours, settings }) {
     consumption: computeConsumption(s),
     rRef: computeRRef(s),
     rpBonus,
+    minFood: resourceMinimum(s, 'food'),
+    minRp: resourceMinimum(s, 'research'),
     byDistance,
     foodCandidates,
     budget,
@@ -769,7 +780,7 @@ export function prepareSite({ neighbours, settings }) {
  * longer spends is most of what pays for military sovereignty.
  */
 function foodSpendFor(ctx, tax) {
-  const needed = tax - PRODUCTION_BASE - ctx.bOther + ctx.consumption / ctx.k;
+  const needed = tax - PRODUCTION_BASE - ctx.bOther + (ctx.consumption + ctx.minFood) / ctx.k;
   if (!(ctx.dp.best[ctx.budget] >= needed - EPS)) return null;
   let lo = 0;
   let hi = ctx.budget;
@@ -778,9 +789,10 @@ function foodSpendFor(ctx, tax) {
     if (ctx.dp.best[mid] >= needed - EPS) hi = mid;
     else lo = mid + 1;
   }
-  // The food claims alone must not outspend the research produced at this tax.
+  // The food claims alone must not outspend the research produced at this tax,
+  // nor eat into any research the user asked to keep free of sovereignty.
   const produced = researchAt({ rRef: ctx.rRef, rpBonus: ctx.rpBonus, tax });
-  return produced - lo < -EPS ? null : lo;
+  return produced - lo - ctx.minRp < -EPS ? null : lo;
 }
 
 /**
@@ -824,8 +836,10 @@ export function planSiteAt(ctx, tax) {
   // marks one today — the yields are measured — but the path stays wired for a
   // figure that is ever computed before it is trusted.
   const ceiling = tMax({
-    food: tFood({ bOther: ctx.bOther, sFood, consumption: ctx.consumption, k: ctx.k }),
-    rp: tRp({ uRp, rRef: ctx.rRef, rpBonus: ctx.rpBonus }),
+    food: tFood({
+      bOther: ctx.bOther, sFood, consumption: ctx.consumption, k: ctx.k, minimum: ctx.minFood,
+    }),
+    rp: tRp({ uRp, rRef: ctx.rRef, rpBonus: ctx.rpBonus, minimum: ctx.minRp }),
     res: resCeiling.indicative ? Infinity : resCeiling.ceiling,
   });
 
@@ -921,8 +935,10 @@ export function siteCeiling(ctx) {
   for (let spend = 0; spend <= ctx.budget; spend++) {
     const sFood = ctx.dp.best[spend];
     const t = tMax({
-      food: tFood({ bOther: ctx.bOther, sFood, consumption: ctx.consumption, k: ctx.k }),
-      rp: tRp({ uRp: spend, rRef: ctx.rRef, rpBonus: ctx.rpBonus }),
+      food: tFood({
+        bOther: ctx.bOther, sFood, consumption: ctx.consumption, k: ctx.k, minimum: ctx.minFood,
+      }),
+      rp: tRp({ uRp: spend, rRef: ctx.rRef, rpBonus: ctx.rpBonus, minimum: ctx.minRp }),
       res,
     });
     // A negative T_max is a real answer — the site cannot feed a city at any

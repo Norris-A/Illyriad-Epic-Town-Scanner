@@ -916,6 +916,58 @@ test('a floor takes military sovereignty out of the budget, not out of the tax',
   assert.equal(starved.upkeep, 0);
 });
 
+test('a food floor is consumption the city does not have', () => {
+  const k = computeK(worked.plots.food);
+  const bOther = computeBOther(worked);
+  const consumption = computeConsumption(worked);
+  const minimum = 5000;
+  close(
+    tFood({ bOther, sFood: 100, consumption, k, minimum }),
+    tFood({ bOther, sFood: 100, consumption: consumption + minimum, k }),
+    1e-9,
+  );
+
+  const noFloor = { ...worked, tMin: -1000 };
+  const bare = scoreSite({ neighbours: ring8, settings: noFloor });
+  const held = scoreSite({
+    neighbours: ring8,
+    settings: { ...noFloor, resourceMinimums: { ...noFloor.resourceMinimums, food: minimum } },
+  });
+  assert.ok(held.tMax < bare.tMax, 'food kept back is tax the site can no longer carry');
+  // Worth exactly its own share of K, the same as any other food the plan owes,
+  // once both sites are compared at the same S_food.
+  close(held.tMaxExact, bare.tMaxExact - minimum / k, 1e-9);
+  assert.ok(held.surplus.food >= minimum - 1e-6, 'and the floor is actually held');
+});
+
+test('a research floor is charged like a claim, and buys no military', () => {
+  const rRef = computeRRef(worked);
+  const minimum = 300;
+  close(tRp({ uRp: 1000, rRef, minimum }), tRp({ uRp: 1300, rRef }), 1e-9);
+
+  // The headroom is the same subtraction: research the plan may not spend.
+  const settings = {
+    ...worked,
+    resourceMinimums: { ...worked.resourceMinimums, research: minimum },
+  };
+  const free = milsovHeadroom({ tax: 50, settings: worked, uRp: 200, buildingsUsed: 0 });
+  const held = milsovHeadroom({ tax: 50, settings, uRp: 200, buildingsUsed: 0 });
+  close(held.rp, free.rp - minimum, 1e-9);
+
+  const at = (min) => scoreSite({
+    neighbours: spare,
+    settings: withMil({
+      tMin: -1000,
+      resourceMinimums: { ...worked.resourceMinimums, research: min },
+    }),
+  });
+  const bare = at(0);
+  const fenced = at(400);
+  assert.ok(bare.milsovBonus > 0, 'precondition: something was affordable');
+  assert.ok(fenced.milsovRp <= bare.milsovRp, 'the fenced-off research must buy less');
+  assert.ok(fenced.surplus.rp >= 400 - 1e-6, 'and the floor survives the whole plan');
+});
+
 // --- Prestige ---------------------------------------------------------------
 
 const prestigeOn = (...keys) => Object.fromEntries(

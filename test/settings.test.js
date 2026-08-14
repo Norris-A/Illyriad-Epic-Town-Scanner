@@ -255,15 +255,24 @@ test('every structure in the table is one kind or the other, and named', () => {
   assert.equal(SOV_STRUCTURE_BY_KEY[DEFAULT_SOV_STRUCTURE].type, 'production',
     'the fallback has to be the charged kind');
 
-  // The picker is the table filtered to the charged kind, derived rather than
-  // retyped — a Resource Structure has no hourly bill, so nothing would stop the
-  // planner claiming every spare tile with one for a bonus that is not scored.
+  // The picker is the five military structures, derived rather than retyped. It
+  // is NARROWER than the Production Structures: the thirteen crafting ones are
+  // in the table because the terrain descriptors name them and the engine has
+  // to cost them, but the question the form asks is which unit the city makes.
   assert.deepEqual(
     MILSOV_STRUCTURES.map((s) => s.key),
-    SOV_STRUCTURES.filter((s) => s.type === 'production').map((s) => s.key),
+    ['trainingGround', 'targetRange', 'militaryAcademy', 'joustingYard', 'assemblyYard'],
   );
+  // Narrower, but still only ever the charged kind — a Resource Structure has no
+  // hourly bill, so nothing would stop the planner claiming every spare tile
+  // with one for a bonus that is not scored.
+  assert.ok(MILSOV_STRUCTURES.every((s) => s.type === 'production'),
+    'the picker must never offer a Resource Structure');
   assert.ok(MILSOV_STRUCTURES.every((s) => milsovUpkeep([{ structure: s.key, buildingLevel: 5 }]) === 2400),
     'every offered structure must actually be charged');
+  // The crafting structures stay costable even though nothing selects them:
+  // a descriptor names one, and a plan that ever carried one must be billed.
+  assert.equal(milsovUpkeep([{ structure: 'bowyer', buildingLevel: 5 }]), 2400);
   assert.deepEqual(
     SOV_STRUCTURES.filter((s) => s.boosts === 'food').map((s) => s.name),
     ['Farmstead', 'Fishery'],

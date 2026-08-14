@@ -46,19 +46,37 @@ export const MILSOV_MAX_LEVEL = 5;
 export const MILSOV_BONUS_BY_LEVEL = { 1: 5, 2: 10, 3: 15, 4: 20, 5: 25 };
 export const MILSOV_BONUS_PER_LEVEL = 5; // [F] the linear coefficient itself
 
-// [F] Every sovereignty structure, and the two fields the rest of the tool
+// [F] Every sovereignty structure, and the three fields the rest of the tool
 // reads off them. `type` is the whole of the arithmetic: a 'production'
 // structure pays MILSOV_UPKEEP_BY_LEVEL every hour, a 'resource' one pays
 // nothing beyond its claim's RP and gold. `boosts` is what a resource structure
-// raises. The table is complete; what the form offers is a filter over it (see
-// MILSOV_STRUCTURES) rather than a second list to keep in step.
+// raises. `military` marks the five the picker offers, which is a smaller set
+// than the Production Structures — see MILSOV_STRUCTURES. The table is
+// complete; what the form offers is a filter over it rather than a second list
+// to keep in step.
 export const SOV_STRUCTURES = [
-  { key: 'trainingGround', name: 'Training Ground', type: 'production' },
-  { key: 'targetRange', name: 'Target Range', type: 'production' },
-  { key: 'militaryAcademy', name: 'Military Academy', type: 'production' },
-  { key: 'joustingYard', name: 'Jousting Yard', type: 'production' },
-  { key: 'assemblyYard', name: 'Assembly Yard', type: 'production' },
-  { key: 'crafting', name: 'Crafting structure', type: 'production' },
+  { key: 'trainingGround', name: 'Training Ground', type: 'production', military: true },
+  { key: 'targetRange', name: 'Target Range', type: 'production', military: true },
+  { key: 'militaryAcademy', name: 'Military Academy', type: 'production', military: true },
+  { key: 'joustingYard', name: 'Jousting Yard', type: 'production', military: true },
+  { key: 'assemblyYard', name: 'Assembly Yard', type: 'production', military: true },
+  // The crafting half of the Production Structures. Same hourly ladder as the
+  // military five — the class is about upkeep, not about what is made — and the
+  // terrain descriptors name these, so they have to be here or a descriptor
+  // reads as a bonus riding on something the tool does not know about.
+  { key: 'cattleRancher', name: 'Cattle Rancher', type: 'production' },
+  { key: 'bladesmith', name: 'Bladesmith', type: 'production' },
+  { key: 'renderer', name: 'Renderer', type: 'production' },
+  { key: 'farrier', name: 'Farrier', type: 'production' },
+  { key: 'bowyer', name: 'Bowyer', type: 'production' },
+  { key: 'poleturner', name: 'Poleturner', type: 'production' },
+  { key: 'bridlemaker', name: 'Bridlemaker', type: 'production' },
+  { key: 'plateForger', name: 'Plate Forger', type: 'production' },
+  { key: 'armourer', name: 'Armourer', type: 'production' },
+  { key: 'engineeringYard', name: 'Engineering Yard', type: 'production' },
+  { key: 'papermill', name: 'Papermill', type: 'production' },
+  { key: 'brewersYard', name: "Brewer's Yard", type: 'production' },
+  { key: 'finishingSchool', name: 'Finishing School', type: 'production' },
   { key: 'loggingCamp', name: 'Logging Camp', type: 'resource', boosts: 'wood' },
   { key: 'earthworks', name: 'Earthworks', type: 'resource', boosts: 'clay' },
   { key: 'mineshaft', name: 'Mineshaft', type: 'resource', boosts: 'iron' },
@@ -69,7 +87,12 @@ export const SOV_STRUCTURES = [
 
 export const SOV_STRUCTURE_BY_KEY = Object.fromEntries(SOV_STRUCTURES.map((s) => [s.key, s]));
 
-// What the form offers for military sovereignty. Production Structures only.
+// What the form offers for military sovereignty: the five military structures.
+//
+// Not every Production Structure. The thirteen crafting ones are in the table
+// above because the terrain descriptors name them and the engine has to know
+// what they cost — but offering eighteen entries made the picker a catalogue,
+// and the question it asks is which unit the city is being built to make.
 //
 // The engine chooses how many buildings to place and at what levels, by
 // maximising production bonus against the hourly upkeep they cost.
@@ -81,7 +104,7 @@ export const SOV_STRUCTURE_BY_KEY = Object.fromEntries(SOV_STRUCTURES.map((s) =>
 // rating, is not scored at all. So resource sovereignty is costed correctly
 // wherever it appears and never placed automatically. The Farmstead and Fishery
 // are out for a second reason: the food plan is what places those.
-export const MILSOV_STRUCTURES = SOV_STRUCTURES.filter((s) => s.type === 'production');
+export const MILSOV_STRUCTURES = SOV_STRUCTURES.filter((s) => s.military);
 
 // A plan that names no structure, or names one this table does not know, is
 // charged as a Production Structure: that is the charged case, so the fallback

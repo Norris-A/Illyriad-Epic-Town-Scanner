@@ -2,6 +2,8 @@
 // Rule zero: never classify on the `t` sprite name. Flags and
 // `rs` only. Read food from rs[4]; `i` is for the descriptor lookup only.
 
+import { descriptorFor } from './constants.js';
+
 /** Tile keys are "y|x" — y first. Town strings in `t` are "x|y". Don't mix them up. */
 export function tileKey(y, x) {
   return `${y}|${x}`;
@@ -151,7 +153,16 @@ export function collectNeighbourhood(payload, key, rClaim, idx, settings) {
       }
       if (!isClaimable(tile, nKey, idx, settings)) continue;
       neighbours.push({
-        dx, dy, food: foodOf(tile), key: nKey, i: tile.i, water: isWaterTile(tile),
+        dx,
+        dy,
+        food: foodOf(tile),
+        key: nKey,
+        i: tile.i,
+        water: isWaterTile(tile),
+        // Carried on the tile so the panel never repeats the lookup, and so a
+        // plan travelling from the worker arrives with its descriptors already
+        // on it. Null where nothing identifies the terrain.
+        descriptor: descriptorFor(tile.i),
       });
     }
   }

@@ -91,6 +91,199 @@ export const DEFAULT_SOV_STRUCTURE = 'trainingGround';
 // Sovereignty levels are written in Roman numerals wherever a level is shown.
 export const SOV_LEVEL_ROMAN = ['I', 'II', 'III', 'IV', 'V'];
 
+// [V] What each terrain type `i` grants a claim built on it, from the account
+// owner's own reading of the tiles. Nothing here is scored: the bonus applies to
+// a unit or item the tool does not model, so this is a column and a flag.
+//
+// `building` is what the bonus scales with, per level of it. Every one of them
+// is a Production Structure, crafting and military alike, so a descriptor names
+// a claim that could be placed on that very tile — it reads as advice about
+// what the tile is FOR, not as a caveat (see descriptorFor).
+//
+// An entry with no `building` is a terrain that grants nothing. That is a
+// finding, not a gap: it has to read differently from an `i` nobody has
+// identified, which is why they are listed rather than omitted.
+//
+// `family` separates the glacial terrain from the temperate. It exists because
+// the two run the ladder independently and so share rungs — see
+// descriptorCollisions. A row without one is temperate.
+//
+// `disputed` marks a row that breaks the one-bonus-per-(building, level) rule
+// below, and shows it marked rather than silently trusted or silently dropped.
+// Nothing carries it today: the four rows that did were all inherited, all
+// wrong, and all corrected against the tiles. The field stays for the next row
+// that is written down before it is checked.
+export const TERRAIN_DESCRIPTORS = {
+  1: { name: 'Plains' },
+  2: { name: 'Plains' },
+  5: { name: 'Plains' },
+  6: { name: 'Rich Clay Seam', bonus: 3, product: 'Books', building: 'Papermill' },
+  7: { name: 'Abundant Clay', bonus: 2, product: 'Books', building: 'Papermill' },
+  8: { name: 'Exposed Clay', bonus: 1, product: 'Leather Armour', building: 'Renderer' },
+  9: { name: 'Clay Seam', bonus: 3, product: 'Leather Armour', building: 'Renderer' },
+  10: { name: 'Turned Clay', bonus: 2, product: 'Saddles', building: 'Bridlemaker' },
+  11: { name: 'Heavy Clay Seam', bonus: 1, product: 'Saddles', building: 'Bridlemaker' },
+  12: { name: 'Abundant Crops', bonus: 3, product: 'Beer', building: "Brewer's Yard" },
+  13: { name: 'Bountiful Land', bonus: 3, product: 'Livestock', building: 'Cattle Rancher' },
+  14: { name: 'Fertile Pasture', bonus: 2, product: 'Cavalry Units', building: 'Jousting Yard' },
+  15: { name: 'Fertile Orchard' },
+  16: { name: 'Alluvial Plain', bonus: 1, product: 'Livestock', building: 'Cattle Rancher' },
+  17: { name: 'Fertile Ground', bonus: 1, product: 'Horses', building: 'Farrier' },
+  18: { name: 'Lake', water: true },
+  19: { name: 'Lake', water: true },
+  20: { name: 'Mountains', impassable: true },
+  21: { name: 'Mountains', impassable: true },
+  22: { name: 'Swamp', impassable: true },
+  23: { name: 'Swamp', impassable: true },
+  24: { name: 'Craggy Peaks', bonus: 3, product: 'Chainmail', building: 'Armourer' },
+  25: {
+    name: 'Bleak Mountains', bonus: 2, product: 'Diplomatic Units', building: 'Finishing School',
+  },
+  26: { name: 'Lonely Peaks', bonus: 1, product: 'Platesteel', building: 'Plate Forger' },
+  27: { name: 'Sharp Crags', bonus: 3, product: 'Swords', building: 'Bladesmith' },
+  28: { name: 'Treacherous Mountains', bonus: 2, product: 'Beer', building: "Brewer's Yard" },
+  29: { name: 'Mountains', bonus: 1, product: 'Swords', building: 'Bladesmith' },
+  30: {
+    name: 'Scrubland', bonus: 1, product: 'Diplomatic Units', building: 'Finishing School',
+  },
+  31: { name: 'Clearing', bonus: 1, product: 'Ranged Units', building: 'Target Range' },
+  32: { name: 'Tundra', bonus: 1, product: 'Spear Units', building: 'Training Ground' },
+  33: { name: 'Open Plains', bonus: 1, product: 'Cavalry Units', building: 'Jousting Yard' },
+  34: { name: 'Moor', bonus: 1, product: 'Infantry Units', building: 'Military Academy' },
+  35: { name: 'Plains' },
+  36: { name: 'Plains' },
+  37: { name: 'Plains' },
+  38: { name: 'Plains' },
+  39: { name: 'Plains' },
+  46: { name: 'Abundant Quarry', bonus: 3, product: 'Platesteel', building: 'Plate Forger' },
+  47: { name: 'Rich Quarry', bonus: 2, product: 'Infantry Units', building: 'Military Academy' },
+  48: { name: 'Wooded Quarry', bonus: 1, product: 'Siege Blocks', building: 'Engineering Yard' },
+  49: { name: 'Rocky Outcrop', bonus: 3, product: 'Horses', building: 'Farrier' },
+  50: { name: 'Landslip', bonus: 2, product: 'Siege Units', building: 'Assembly Yard' },
+  51: { name: 'Stony Ground', bonus: 1, product: 'Chainmail', building: 'Armourer' },
+  52: { name: 'Thick Forest', bonus: 3, product: 'Bows', building: 'Bowyer' },
+  53: { name: 'Dense Forest', bonus: 2, product: 'Ranged Units', building: 'Target Range' },
+  54: { name: 'Forested Hilltop', bonus: 1, product: 'Bows', building: 'Bowyer' },
+  55: { name: 'Wooded Land', bonus: 3, product: 'Spears', building: 'Poleturner' },
+  56: { name: 'Wooded Glade', bonus: 2, product: 'Spear Units', building: 'Training Ground' },
+  57: { name: 'Light Woods', bonus: 1, product: 'Spears', building: 'Poleturner' },
+  58: { name: 'Plains' },
+  // An NPC settlement and the ring of eight it occupies. Neither is claimable —
+  // the centre carries no `sov` and the ring is `imp` — so these are here to
+  // keep a settlement in view from reporting nine unidentified IDs per scan.
+  //
+  // The ring's `rs` is the one place a land tile does NOT sum to 25: it keeps
+  // its terrain ratings with food forced to 0, summing to 20. Nothing reads it,
+  // but do not take it as a counterexample to the 25-plot rule.
+  // Rivers. Food is read from `rs` like any other tile; there is no descriptor
+  // bonus on top of it, so a river is worth exactly its food rating.
+  59: { name: 'Fresh Water', water: true },
+  66: { name: 'NPC settlement', settlement: true },
+  67: { name: 'NPC settlement grounds', impassable: true },
+  80: { name: 'Drumlin' },
+
+  // The glacial set. Read off tiles in a b:2 region whose land does NOT sum to
+  // 25 — every one of these totals 0 to 15, against the 25 every temperate tile
+  // spends. That sum is the test for which family a tile belongs to.
+  //
+  // Five of these repeat a (building, bonus) rung a temperate terrain already
+  // holds, which is why descriptorCollisions is scoped by family rather than
+  // run over the whole table. Two of them, Nunatak and Moraine, fill rungs that
+  // were vacant outright.
+  68: { name: 'Barren Wastes', bonus: 3, product: 'Spears', building: 'Poleturner', family: 'glacial' },
+  69: { name: 'Glacier', family: 'glacial' },
+  70: { name: 'Frozen Ground', family: 'glacial' },
+  71: { name: 'Nunatak', bonus: 3, product: 'Siege Units', building: 'Assembly Yard', family: 'glacial' },
+  72: {
+    name: 'Scoured Bedrock', bonus: 2, product: 'Infantry Units', building: 'Military Academy',
+    family: 'glacial',
+  },
+  74: { name: 'Glacial Crevasse', family: 'glacial' },
+  77: {
+    name: 'Rogen Moraine', bonus: 1, product: 'Ranged Units', building: 'Target Range',
+    family: 'glacial',
+  },
+  78: { name: 'Moraine', bonus: 2, product: 'Chainmail', building: 'Armourer', family: 'glacial' },
+  79: { name: 'Kame', family: 'glacial' },
+  81: {
+    name: 'Roche Moutonnee', bonus: 1, product: 'Chainmail', building: 'Armourer',
+    family: 'glacial',
+  },
+  // Shares its name with i:30, which is temperate and grants a Finishing School
+  // bonus. Same name, different family, different answer — recorded as read.
+  83: { name: 'Scrubland', family: 'glacial' },
+  84: { name: 'Permafrost', family: 'glacial' },
+  85: { name: 'Icy Moss', family: 'glacial' },
+  86: { name: 'Frosty Heath', family: 'glacial' },
+  87: {
+    name: 'Lichen', bonus: 1, product: 'Livestock', building: 'Cattle Rancher', family: 'glacial',
+  },
+};
+
+// The IDs in the 40–45 and 100+ ranges are node classes rather than fixed
+// terrain: i:40 appears as an abandoned mill, a quarry and a lumberyard within
+// one payload, and i:43 and i:45 vary the same way. Their `rs` is the only
+// reliable thing about them, so they are named as a class and carry no bonus.
+// Listing them keeps them out of the unidentified log, where they would suggest
+// a row is missing that cannot be written.
+export const NODE_CLASS_TERRAIN = new Set([
+  40, 41, 42, 43, 44, 45,
+  88,
+  123, 124, 127, 128, 139, 143, 144, 145, 146, 148, 152, 153, 156, 209, 211, 213, 214, 217,
+]);
+
+const SOV_STRUCTURE_BY_NAME = new Map(SOV_STRUCTURES.map((s) => [s.name, s]));
+
+/**
+ * What terrain `i` grants, or null if nothing has identified it.
+ *
+ * `sovKey` is the structure the bonus scales with, and `conditional` says there
+ * is no such structure in the table. Nothing is conditional today — every
+ * building the descriptors name is a Production Structure — but the table is
+ * read off the game, so a row naming something unknown has to be visible rather
+ * than resolve to a silent null.
+ */
+export function descriptorFor(i) {
+  const entry = TERRAIN_DESCRIPTORS[i];
+  if (entry) {
+    const sov = entry.building ? SOV_STRUCTURE_BY_NAME.get(entry.building) : undefined;
+    return { ...entry, i, sovKey: sov?.key ?? null, conditional: !!entry.building && !sov };
+  }
+  if (NODE_CLASS_TERRAIN.has(i)) {
+    return { i, name: 'Resource node', nodeClass: true, conditional: false, sovKey: null };
+  }
+  return null;
+}
+
+/**
+ * Every (building, bonus) pair is one terrain per FAMILY and one only.
+ *
+ * Each building runs a 1/2/3% ladder, so two terrains on one rung means a row
+ * was mis-transcribed — which is what three inherited rows turned out to be,
+ * and why this is checked rather than trusted. But the ladder runs once per
+ * family: five glacial terrains repeat a rung a temperate terrain holds, and
+ * the two are told apart by whether `rs` sums to 25. Scoping by family is what
+ * keeps the check meaningful instead of permanently red.
+ *
+ * Known conflicts carry `disputed` and are skipped; anything added later that
+ * collides fails here instead of quietly shadowing the row it duplicates.
+ *
+ * @returns {string[]} the collisions found, empty when the table is sound.
+ */
+export function descriptorCollisions(table = TERRAIN_DESCRIPTORS) {
+  const seen = new Map();
+  const clashes = [];
+  for (const [i, entry] of Object.entries(table)) {
+    if (!entry.building || entry.disputed) continue;
+    // Scoped by family: a glacial terrain repeating a temperate terrain's rung
+    // is the observed pattern, not a mistake. Within one family it still is.
+    const rung = `${entry.family ?? 'temperate'}|${entry.building} +${entry.bonus}%`;
+    if (seen.has(rung)) clashes.push(`i:${seen.get(rung)} and i:${i} both grant ${rung}`);
+    else seen.set(rung, i);
+  }
+  return clashes;
+}
+
 // The four basic resources, in the order the panel shows them. Food is scored
 // on its own everywhere and is deliberately not in this list.
 export const BASIC_RESOURCES = ['wood', 'clay', 'iron', 'stone'];

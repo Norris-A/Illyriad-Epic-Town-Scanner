@@ -36,14 +36,14 @@ Tampermonkey editor.
 npm test
 ```
 
-Runs the scoring engine against the PRD §6 worked example, plus the CSV writer
-and the settings-form validators.
+Runs the scoring engine against the PRD §6 worked example, plus the CSV writer,
+the settings-form validators and the terrain descriptor table.
 
 ## Layout
 
 | Path | Role |
 |---|---|
-| `src/constants.js` | Game constants, each traced to a mechanics §; confidence markers preserved |
+| `src/constants.js` | Game constants, each traced to a mechanics §; confidence markers preserved. Also the terrain descriptor table and its one-rung-per-family invariant |
 | `src/scoring.js` | Pure engine — the three ceilings, the food knapsack and frontier walk, then the military plan fitted into what they leave. No DOM. Imported by both the worker and the tests |
 | `src/payload.js` | Payload reading and the §3.2/§3.3 filters |
 | `src/capture.js` | Passive payload observation. Reader only — no requests |
@@ -112,6 +112,40 @@ concentrated on near tiles — while the hourly upkeep table is convex
 buildings. Which wins depends on the site, and each site says what it chose and
 what one more point of tax would have bought (§3.6).
 
+## Terrain descriptors
+
+Most tiles grant a small production bonus — 1–3% of one product, per level of a
+named building. It is **not scored**: the products are outside what the tool
+models. It shows on the tile itself as `+3% Bows`, with the full sentence in the
+hover text.
+
+Every building a descriptor names is a **Production Structure** — the thirteen
+crafting ones as much as the five military — so a descriptor is advice about
+what a tile is *for*, not a caveat about something the city might lack. The
+product is written out rather than drawn because the icon set cannot separate
+the rungs: Bowyer makes Bows and Target Range makes Ranged Units, and there is
+one bow icon.
+
+Three things the table deliberately distinguishes, because they are different
+answers and a blank would collapse them:
+
+- a terrain that grants something, which names it;
+- a terrain known to grant **nothing** — `Plains`, `Drumlin` — which says so;
+- an `i` value nothing identifies, which says *that*, so a terrain the table has
+  no row for cannot be mistaken for one that grants nothing.
+
+Every building runs a 1/2/3% ladder, so a duplicate `(building, bonus)` pair
+means a row is wrong — three inherited rows turned out to be exactly that.
+`descriptorCollisions` asserts it and the suite fails on a new one. The ladder
+runs **once per family**, though: the glacial terrain repeats five rungs the
+temperate terrain holds, and the two are told apart by whether `rs` sums to 25.
+Nothing carries `disputed` today. See mechanics §2.
+
+The table is incomplete and expected to stay that way for a while: 20 temperate
+rungs are still empty, the glacial family has barely started, and ids 3, 4,
+60-65, 73, 75, 76 and 82 have never been seen. New rows go in by hand, checked
+against the invariant.
+
 ## Status
 
 The engine implements §3.4–§3.6, and the panel carries the full §4 settings
@@ -129,6 +163,11 @@ Known gaps, all deliberate:
   wood/clay/iron/stone bill a military structure carries. With no hourly bill to
   limit it, nothing would stop the planner claiming every spare tile with one,
   and the host tile's resource rating that would justify doing so is not scored.
+- **The crafting Production Structures are not offered.** All thirteen are in
+  `SOV_STRUCTURES` and cost correctly, because the terrain descriptors name them
+  and a plan carrying one must be billed — but the picker offers the five
+  military structures, since the question it asks is which unit the city is
+  being built to make, and eighteen entries made it a catalogue.
 - **The panel has no automated test of its DOM.** `createPanel` cannot run under
   Node, so the field specs, the validators and both markup contracts are tested
   but the event wiring, the tabs, gating and Prefill are not. Adding jsdom would

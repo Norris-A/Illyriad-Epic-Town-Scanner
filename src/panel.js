@@ -25,8 +25,9 @@ import {
   MINIMUM_KEYS,
   PLOT_KEYS,
   PLOT_TOTAL,
+  descriptorFor,
 } from './constants.js';
-import { ICONS, STRUCTURE_ICONS } from './icons.js';
+import { ICONS, STRUCTURE_ICONS, DEFAULT_STRUCTURE_ICON } from './icons.js';
 import {
   computeBOther,
   computeK,
@@ -94,6 +95,7 @@ const CSS = `
 .sov-tax{margin:6px 0;padding-top:4px;border-top:1px solid #333}
 .sov-tax input[type=range]{width:190px}
 .sov-tax output{color:#6bf;font-variant-numeric:tabular-nums}
+.sov-desc{display:block;font-size:9px;line-height:1.15;opacity:.85;word-break:break-word}
 .sov-balance{margin:4px 0}
 .sov-balance td:nth-child(n+2){font-variant-numeric:tabular-nums}
 .sov-balance th,.sov-balance td{padding:2px 3px}
@@ -1186,6 +1188,19 @@ function flagsHtml(r) {
         + `on food alone. Open the row and drag the tax slider to see the trade.`,
     });
   }
+  // Descriptor bonuses riding on a building the structure table does not carry.
+  // Nothing does today — every building the descriptors name is a Production
+  // Structure — so this is dormant rather than dead: the table is read off the
+  // game, and a row naming something unknown must not pass silently.
+  const conditional = conditionalDescriptors(r);
+  if (conditional.size) {
+    flags.push({
+      cls: 'sov-advice',
+      text: 'cond. bonus',
+      title: `${[...conditional].map(([b, n]) => `${n}× ${b}`).join(', ')} — these tiles carry a `
+        + `terrain bonus that only pays if the city has that building. Not scored either way.`,
+    });
+  }
   return flags
     .map((f) => `<span class="${f.cls}" title="${escapeHtml(f.title)}">${escapeHtml(f.text)}</span>`)
     .join(' ');
@@ -1372,14 +1387,15 @@ export function cellKey(dx, dy) {
 }
 
 /**
- * One cell's markup. `body` is icon HTML or already-escaped text. `pick` makes
- * the cell clickable and carries the offsets the click handler reads back.
+ * One cell's markup. `body` is icon HTML or already-escaped text; `badge` is the
+ * terrain descriptor line, already markup. `pick` makes the cell clickable and
+ * carries the offsets the click handler reads back.
  */
-function gridCell({ cls, title, level, body, dx, dy, pick }) {
+function gridCell({ cls, title, level, body, badge, dx, dy, pick }) {
   return `<td class="sov-cell ${cls}${pick ? ' sov-pick' : ''}"${
     pick ? ` data-dx="${dx}" data-dy="${dy}"` : ''} title="${escapeHtml(title)}">${
     level ? `<span class="sov-lv">${level}</span>` : ''}${
-    body ? `<span class="sov-cv">${body}</span>` : ''}</td>`;
+    body ? `<span class="sov-cv">${body}</span>` : ''}${badge ?? ''}</td>`;
 }
 
 /**
@@ -1401,6 +1417,65 @@ function gridCell({ cls, title, level, body, dx, dy, pick }) {
  *   Non-finite coordinates fall back to offset labels
  * @returns {string} the grid, with its legend under it
  */
+/**
+ * A tile's terrain descriptor, as the tail of its hover text.
+ *
+ * Three outcomes, and they have to read differently. A descriptor that grants
+ * something names it. A terrain known to grant nothing says so — that is an
+ * answer, not a blank. An `i` nothing identifies says THAT, so the user can
+ * tell "this tile is plain" from "the tool does not know this tile".
+ *
+ * A bonus is marked only when it rides on a building the structure table has no
+ * entry for, which nothing does today — see descriptorFor.
+ */
+export function descriptorText(tile) {
+  // No `i` is not an unidentified `i`: there is nothing to say, so say nothing.
+  // Only a value the table has no row for is worth flagging.
+  if (typeof tile?.i !== 'number' && !tile?.descriptor) return '';
+  const d = tile?.descriptor ?? descriptorFor(tile.i);
+  if (!d) return `, terrain ${tile.i} — unidentified`;
+  if (d.nodeClass) return `, ${d.name} (rating varies; not a fixed terrain)`;
+  if (!d.building) return `, ${d.name} — no sovereignty bonus`;
+  const conditional = d.conditional ? `, needs a ${d.building}` : '';
+  const disputed = d.disputed ? ' [unconfirmed]' : '';
+  return `, ${d.name}: +${d.bonus}% ${d.product} per level of ${d.building}${conditional}${disputed}`;
+}
+
+/** Which claimed tiles name a building the structure table does not carry. */
+function conditionalDescriptors(plan) {
+  const out = new Map();
+  for (const t of [...(plan?.tiles ?? []), ...(plan?.milsov ?? [])]) {
+    const d = t.descriptor ?? descriptorFor(t.i);
+    if (d?.conditional) out.set(d.building, (out.get(d.building) ?? 0) + 1);
+  }
+  return out;
+}
+
+/**
+ * The descriptor bonus as it appears ON the tile: "+3% Bows". Read at a glance
+ * across the whole grid, which is the point — hovering shows one tile at a time,
+ * and the interesting question is which tile in the ring is worth which
+ * structure.
+ *
+ * The PRODUCT is written out rather than drawn, because the products are what
+ * distinguish the rungs and the icon set cannot. Bowyer makes Bows and Target
+ * Range makes Ranged Units; Farrier and Jousting Yard both mean horses;
+ * Engineering Yard and Assembly Yard both mean siege. One icon each would make
+ * six of the eighteen unreadable, and there is no art at all for saddles,
+ * livestock, beer, chainmail, leather armour, spears, books or diplomats.
+ *
+ * Empty for terrain that grants nothing and for terrain nothing has identified;
+ * both of those are answered in the hover text, where there is room to say
+ * which of the two it is.
+ */
+export function descriptorBadge(tile) {
+  const d = tile?.descriptor ?? (typeof tile?.i === 'number' ? descriptorFor(tile.i) : null);
+  if (!d?.building) return '';
+  return `<span class="sov-desc" title="${escapeHtml(
+    `+${d.bonus}% ${d.product} per level of ${d.building}`)}">+${d.bonus}% ${
+    escapeHtml(d.product)}</span>`;
+}
+
 export function planGridHtml(plan, geom) {
   const r = Math.max(1, Math.round(geom?.radius ?? 0) || spanOf(plan));
   const cx = geom?.x;
@@ -1421,16 +1496,18 @@ export function planGridHtml(plan, geom) {
   for (const t of plan.free ?? []) {
     specs.set(cellKey(t.dx, t.dy), {
       cls: t.water ? 'sov-cell-free sov-cell-water' : 'sov-cell-free',
+      badge: descriptorBadge(t),
       title: `${name(t.dx, t.dy)} — unclaimed${t.water ? ' water' : ''}, food ${t.food}, `
-        + `distance ${t.d.toFixed(2)}`,
+        + `distance ${t.d.toFixed(2)}${descriptorText(t)}`,
       body: `${FOOD_ICON} ${t.food}`,
     });
   }
   for (const t of plan.tiles ?? []) {
     specs.set(cellKey(t.dx, t.dy), {
       cls: 'sov-cell-food',
+      badge: descriptorBadge(t),
       title: `${name(t.dx, t.dy)} — Sov ${roman(t.level)} food claim, food ${t.food}, `
-        + `distance ${t.d.toFixed(2)}, ${t.rp.toFixed(0)} RP`,
+        + `distance ${t.d.toFixed(2)}, ${t.rp.toFixed(0)} RP${descriptorText(t)}`,
       level: roman(t.level),
       body: `${FOOD_ICON} ${t.food}`,
     });
@@ -1440,9 +1517,11 @@ export function planGridHtml(plan, geom) {
     const icon = STRUCTURE_ICONS[structure.key];
     specs.set(cellKey(m.dx, m.dy), {
       cls: 'sov-cell-mil',
+      badge: descriptorBadge(m),
       title: `${name(m.dx, m.dy)} — Sov ${roman(m.sovLevel)} claim carrying a level `
         + `${m.buildingLevel} ${structure.name}, distance ${m.d.toFixed(2)}, `
-        + `${m.rp.toFixed(0)} RP, ${structureUpkeep(m).toLocaleString('en-GB')}/hr upkeep`,
+        + `${m.rp.toFixed(0)} RP, ${structureUpkeep(m).toLocaleString('en-GB')}/hr upkeep`
+        + descriptorText(m),
       level: roman(m.sovLevel),
       body: `${icon ? `<img src="${icon}" alt="${escapeHtml(structure.name)}">` : ''} L${
         m.buildingLevel}`,
@@ -1483,7 +1562,8 @@ export function planGridHtml(plan, geom) {
       <b class="sov-key-free">grey</b> claimable but unclaimed,
       <b class="sov-key-out">✕</b> not available.${
   pickable ? ' Click a tile to cross it out and re-plan without it.' : ''}
-      Hover a tile for its distance, research cost and upkeep.</p>`;
+      A tile's third line is its terrain bonus, if it has one.
+      Hover for distance, research cost, upkeep and the full descriptor.</p>`;
 }
 
 /** -r..r, for both axes. */

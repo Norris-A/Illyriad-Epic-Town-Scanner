@@ -15,7 +15,7 @@ import {
   DEFAULT_SETTINGS, BASIC_YIELD_L20, BASIC_RESOURCES,
   MILSOV_UPKEEP_BY_LEVEL, MILSOV_BONUS_PER_LEVEL, CHANCERY_FACTOR,
   PRESTIGE_PRODUCTION_BONUS, PRESTIGE_KEYS, RESOURCE_BOOSTER_BONUS,
-  CLAIM_RP_PER_LEVEL_DISTANCE,
+  CLAIM_RP_PER_LEVEL_DISTANCE, descriptorFor,
 } from '../src/constants.js';
 
 const close = (a, b, eps = 0.05) =>
@@ -1160,4 +1160,66 @@ test('gold upkeep still tracks research at exactly 10:1 with military in the pla
   close(plan.uGold, plan.uRp * 10, 1e-6);
   close(plan.uRp, plan.spend + plan.milsovRp, 1e-9);
   close(plan.milsovGold, plan.milsovRp * 10, 1e-6);
+});
+
+// --- descriptor bonuses on military sovereignty ------------------------------
+
+// A tile whose terrain names the structure being built raises that structure's
+// rate per level: a Training Ground on Wooded Glade runs at 7 points a level,
+// not 5. Nothing read this before — the engine charged every tile 5 flat — so a
+// site with matching terrain was ranked as if its terrain said nothing.
+test('a matching descriptor raises the tile rate, a non-matching one does not', () => {
+  const headroom = { slots: 1, rp: 1e9, upkeep: 1e9 };
+  const tile = (descriptor) => [{ d: 1, idx: 0, descriptor }];
+  const wooded = descriptorFor(56);   // Wooded Glade, Training Ground +2%
+  const forest = descriptorFor(52);   // Thick Forest, Bowyer +3% — not military
+
+  const plain = planMilsov({ tiles: tile(null), headroom, structure: 'trainingGround' });
+  assert.equal(plain.bonus, 25);      // 5 levels x 5 points
+
+  const matched = planMilsov({ tiles: tile(wooded), headroom, structure: 'trainingGround' });
+  assert.equal(matched.bonus, 35);    // 5 levels x (5 + 2)
+
+  // Same tile, different structure: the Wooded Glade does nothing for cavalry.
+  const mismatched = planMilsov({ tiles: tile(wooded), headroom, structure: 'joustingYard' });
+  assert.equal(mismatched.bonus, 25);
+
+  // A crafting descriptor never matches a military structure.
+  const crafting = planMilsov({ tiles: tile(forest), headroom, structure: 'trainingGround' });
+  assert.equal(crafting.bonus, 25);
+});
+
+// The gaps in the descriptor table are scored as nothing, so an unread terrain
+// costs a plan points it might really have — never the reverse.
+test('an unread descriptor is worth zero, not a guess', () => {
+  const headroom = { slots: 1, rp: 1e9, upkeep: 1e9 };
+  const cairn = descriptorFor(125);   // named by the client, bonus never read
+  assert.equal(cairn.bonusUnread, true);
+  const plan = planMilsov({
+    tiles: [{ d: 1, idx: 0, descriptor: cairn }], headroom, structure: 'trainingGround',
+  });
+  assert.equal(plan.bonus, 25);
+});
+
+// Levels are per tile, so the bonus has to be summed per tile rather than taken
+// off the total. Two tiles at level 2, one matching: 2x(5+2) + 2x5 = 24.
+test('the bonus is summed per tile, not applied to the total', () => {
+  const wooded = descriptorFor(56);
+  const plan = planMilsov({
+    tiles: [{ d: 1, idx: 0, descriptor: wooded }, { d: 1, idx: 1, descriptor: null }],
+    headroom: { slots: 2, rp: 40, upkeep: 900 },
+    structure: 'trainingGround',
+  });
+  const matched = plan.levels[0] * 7;
+  const rest = plan.levels.slice(1).reduce((a, l) => a + l * 5, 0);
+  assert.equal(plan.bonus, matched + rest);
+});
+
+// No structure named is a food-only scan: nothing is placed, so nothing scales.
+test('with no structure chosen no descriptor applies', () => {
+  const plan = planMilsov({
+    tiles: [{ d: 1, idx: 0, descriptor: descriptorFor(56) }],
+    headroom: { slots: 1, rp: 1e9, upkeep: 1e9 },
+  });
+  assert.equal(plan.bonus, 25);
 });

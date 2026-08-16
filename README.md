@@ -43,7 +43,7 @@ the settings-form validators and the terrain descriptor table.
 
 | Path | Role |
 |---|---|
-| `src/constants.js` | Game constants, each traced to a mechanics §; confidence markers preserved. Also the terrain descriptor table and its one-rung-per-family invariant |
+| `src/constants.js` | Game constants, each traced to a mechanics §; confidence markers preserved. Also the terrain name table read from the game client, and the descriptor bonuses read by hand |
 | `src/scoring.js` | Pure engine — the three ceilings, the food knapsack and frontier walk, then the military plan fitted into what they leave. No DOM. Imported by both the worker and the tests |
 | `src/payload.js` | Payload reading and the §3.2/§3.3 filters |
 | `src/capture.js` | Passive payload observation. Reader only — no requests |
@@ -84,9 +84,7 @@ and the tax slider already runs the same planner there.
 
 The configuration form saves itself to the browser's `localStorage` as you edit
 it, under the game's own origin, and restores on the next visit. Nothing else is
-stored and nothing leaves the machine. "Reset to defaults" clears it back. The
-storage key is unchanged from when this was called Settings, so renaming it cost
-nobody their saved values.
+stored and nothing leaves the machine. "Reset to defaults" clears it back.
 
 A stored blob is never trusted on the way back in. `sanitizeSettings` rebuilds
 the object from `SETTINGS_FIELDS`, running every value through the validator the
@@ -126,25 +124,30 @@ product is written out rather than drawn because the icon set cannot separate
 the rungs: Bowyer makes Bows and Target Range makes Ranged Units, and there is
 one bow icon.
 
-Three things the table deliberately distinguishes, because they are different
-answers and a blank would collapse them:
+Names come from the game itself. `window.terrain` on the map page is the
+client's own 229-entry `i` → terrain lookup, copied verbatim into
+`TERRAIN_NAMES`, and a test checks every hand-written name against it. Bonuses
+are not in it, so those are read off tiles one at a time.
+
+Four things the table distinguishes, because they are different answers and a
+blank would collapse them:
 
 - a terrain that grants something, which names it;
 - a terrain known to grant **nothing** — `Plains`, `Drumlin` — which says so;
-- an `i` value nothing identifies, which says *that*, so a terrain the table has
-  no row for cannot be mistaken for one that grants nothing.
+- a terrain whose bonus **nobody has read yet**, which says *that*;
+- an `i` past the end of the client's table, which means the captured table is
+  stale rather than the reading behind.
 
-Every building runs a 1/2/3% ladder, so a duplicate `(building, bonus)` pair
-means a row is wrong — three inherited rows turned out to be exactly that.
-`descriptorCollisions` asserts it and the suite fails on a new one. The ladder
-runs **once per family**, though: the glacial terrain repeats five rungs the
-temperate terrain holds, and the two are told apart by whether `rs` sums to 25.
-Nothing carries `disputed` today. See mechanics §2.
+A `(building, bonus)` rung is **not** unique to one terrain — several terrains
+can hold the same one, and some rungs are held by none. `sharedRungs` lists the
+duplicates and a test pins that list, so a new one shows up when a row is added:
+an unexpected duplicate is what a transcription error looks like. See mechanics
+§2.
 
-The table is incomplete and expected to stay that way for a while: 20 temperate
-rungs are still empty, the glacial family has barely started, and ids 3, 4,
-60-65, 73, 75, 76 and 82 have never been seen. New rows go in by hand, checked
-against the invariant.
+188 of the 229 named terrains have had their bonus read, which is every terrain
+the world data file contains. The 41 left are named by the client but appear
+nowhere in the world, so there is no tile to stand on and read; they are unread,
+not missing. New rows go in by hand as tiles are read.
 
 ## Status
 

@@ -1116,34 +1116,7 @@ export function createPanel({ onScan, onExport, initialSettings, onSettingsChang
       rendered = results;
       selected = null;
       $('.sov-prefill-src').textContent = '';   // the old selection is gone
-      if (!results.length) {
-        el.innerHTML = '<p>No sites met the minimum tax.</p>';
-        return;
-      }
-      const rows = results.slice(0, 200).map((r, n) => `
-        <tr class="sov-row" data-n="${n}">
-          <td>${r.x}|${r.y}</td>
-          <td${Number.isFinite(r.tMaxExact)
-            ? ` title="The arithmetic reaches ${r.tMaxExact.toFixed(2)}%, but tax is whole numbers only, so the plan is made at this rate."`
-            : ''}>${Number.isFinite(r.tMax) ? r.tMax.toFixed(0) : r.tMax}%</td>
-          <td>${r.binding}</td>
-          <td>${r.sFood.toFixed(0)}</td>
-          <td>${r.uRp.toFixed(0)}</td>
-          <td>${Math.round(r.goldNet).toLocaleString()}</td>
-          <td>${r.milsovBonus ? `+${r.milsovBonus}%` : ''}</td>
-          <td>${flagsHtml(r)}</td>
-        </tr>`).join('');
-      el.innerHTML = `
-        <p>${summary}</p>
-        <table>
-          <thead><tr><th>Site</th>
-            <th title="The highest whole-number tax this site can hold on food alone — the game takes no other kind">Tax Max</th>
-            <th title="Which ceiling stops the tax going higher">Limiter</th><th>Food</th>
-            <th>RP</th><th>Net Gold</th>
-            <th title="Free military unit production bonus — costs this site no tax">Mil</th>
-            <th></th></tr></thead>
-          <tbody>${rows}</tbody>
-        </table>`;
+      el.innerHTML = resultsHtml(results, summary);
 
       el.querySelectorAll('.sov-row').forEach((row) => {
         row.addEventListener('click', () => {
@@ -1434,11 +1407,55 @@ export function descriptorText(tile) {
   if (typeof tile?.i !== 'number' && !tile?.descriptor) return '';
   const d = tile?.descriptor ?? descriptorFor(tile.i);
   if (!d) return `, terrain ${tile.i} — unidentified`;
-  if (d.nodeClass) return `, ${d.name} (rating varies; not a fixed terrain)`;
+  const varies = d.nodeClass ? ' (rating varies; not a fixed terrain)' : '';
+  // Named by the client but never read on a tile. Distinct from "grants
+  // nothing", which is an answer, and from an unidentified `i`, which the game
+  // itself does not know either.
+  if (d.bonusUnread) return `, ${d.name}${varies} — bonus not read yet`;
+  if (d.nodeClass) return `, ${d.name}${varies}`;
   if (!d.building) return `, ${d.name} — no sovereignty bonus`;
   const conditional = d.conditional ? `, needs a ${d.building}` : '';
   const disputed = d.disputed ? ' [unconfirmed]' : '';
   return `, ${d.name}: +${d.bonus}% ${d.product} per level of ${d.building}${conditional}${disputed}`;
+}
+
+/**
+ * The results pane, summary and all.
+ *
+ * Separate from `renderResults` because that one needs a document and this is
+ * where the mistakes are: the summary was once built inside the table branch,
+ * so a scan that found no site printed "No sites met the minimum tax." and
+ * threw away everything the scan had learned — the tile count and the exclusion
+ * breakdown. A region with no candidate is exactly where those are worth the
+ * most. The summary belongs to the scan, not to the table.
+ */
+export function resultsHtml(results, summary) {
+  const head = `<p>${summary}</p>`;
+  if (!results?.length) return `${head}<p>No sites met the minimum tax.</p>`;
+  const rows = results.slice(0, 200).map((r, n) => `
+        <tr class="sov-row" data-n="${n}">
+          <td>${r.x}|${r.y}</td>
+          <td${Number.isFinite(r.tMaxExact)
+    ? ` title="The arithmetic reaches ${r.tMaxExact.toFixed(2)}%, but tax is whole numbers only, so the plan is made at this rate."`
+    : ''}>${Number.isFinite(r.tMax) ? r.tMax.toFixed(0) : r.tMax}%</td>
+          <td>${r.binding}</td>
+          <td>${r.sFood.toFixed(0)}</td>
+          <td>${r.uRp.toFixed(0)}</td>
+          <td>${Math.round(r.goldNet).toLocaleString()}</td>
+          <td>${r.milsovBonus ? `+${r.milsovBonus}%` : ''}</td>
+          <td>${flagsHtml(r)}</td>
+        </tr>`).join('');
+  return `
+        ${head}
+        <table>
+          <thead><tr><th>Site</th>
+            <th title="The highest whole-number tax this site can hold on food alone — the game takes no other kind">Tax Max</th>
+            <th title="Which ceiling stops the tax going higher">Limiter</th><th>Food</th>
+            <th>RP</th><th>Net Gold</th>
+            <th title="Free military unit production bonus — costs this site no tax">Mil</th>
+            <th></th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>`;
 }
 
 /** Which claimed tiles name a building the structure table does not carry. */

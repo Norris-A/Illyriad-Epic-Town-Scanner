@@ -49,7 +49,6 @@ export function isWaterTile(tile) {
 export function indexPayload(payload) {
   const claims = new Map();  // "y|x" -> claim record from `s`
   const towns = new Map();   // "y|x" -> town record from `t`
-  const unknownTerrain = new Set();
 
   for (const [key, claim] of Object.entries(payload.s ?? {})) {
     claims.set(key, claim);
@@ -59,7 +58,7 @@ export function indexPayload(payload) {
     towns.set(key, town);
   }
 
-  return { claims, towns, unknownTerrain };
+  return { claims, towns };
 }
 
 /** Is this neighbour available to claim? */

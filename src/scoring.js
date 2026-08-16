@@ -542,6 +542,25 @@ export function milsovHeadroom({ tax, settings, uRp = 0, buildingsUsed = 0 }) {
 }
 
 /**
+ * What a tile's own terrain adds to the structure being placed on it, in points
+ * per building level.
+ *
+ * Only when the descriptor names THIS structure. A Wooded Glade grants +2%
+ * Spear Units per level of Training Ground, so a Training Ground there runs at
+ * 7 points a level instead of 5 — but the same tile does nothing for a Jousting
+ * Yard. `sovKey` is the descriptor's structure as a key, which is what makes
+ * this a comparison rather than a name match.
+ *
+ * Zero for a tile whose bonus nobody has read yet, which is the honest answer:
+ * an unread descriptor is scored as granting nothing, so a plan can only be
+ * understated by the gaps in the table, never overstated.
+ */
+function descriptorBonus(tile, structure) {
+  const d = tile?.descriptor;
+  return d && structure && d.sovKey === structure ? (d.bonus ?? 0) : 0;
+}
+
+/**
  * Choose how many military buildings to place, at what levels, on which tiles —
  * the most total production bonus those budgets will buy.
  *
@@ -581,6 +600,16 @@ export function milsovHeadroom({ tax, settings, uRp = 0, buildingsUsed = 0 }) {
  * each, so its first descent is already a strong answer and the bound prunes the
  * rest hard. A site whose budgets cover every tile at level 5 skips it entirely.
  *
+ * **The search maximises building LEVELS, not bonus.** Those are the same thing
+ * only while every tile pays 5 points a level, which stops being true when a
+ * tile's descriptor names the structure being placed (descriptorBonus). The
+ * reported bonus is exact — it is summed per tile — but the tiles are still
+ * chosen nearest-first, so a plan can miss a matching tile one square further
+ * out that would have paid more. Rare, since a terrain names one structure in
+ * eighteen and only a handful of tiles in a ring can match, and it errs by
+ * understating rather than by inventing. Making selection bonus-aware means
+ * giving up the prefix-sum distance bound the search is built on.
+ *
  * **Equal bonuses are broken on research.** Bonus is quantised in fives, so
  * several staircases routinely reach the same total by different routes — one
  * tile at level 2, or two at level 1 — and they are not equally good: gold tracks
@@ -589,7 +618,12 @@ export function milsovHeadroom({ tax, settings, uRp = 0, buildingsUsed = 0 }) {
  * branches that can only TIE, and a tie is taken on lower RP. Cutting ties
  * instead handed the answer to whichever staircase the descent found first.
  */
-export function planMilsov({ tiles, headroom, chancery }) {
+/**
+ * @param {string} [structure] the sovereignty structure key being placed. Tiles
+ *   whose descriptor names it run at a higher rate per level — see
+ *   descriptorBonus.
+ */
+export function planMilsov({ tiles, headroom, chancery, structure }) {
   const EPS = 1e-9;
   const f = chancery ? CHANCERY_FACTOR : 1;
   const n = Math.min(tiles.length, Math.floor(headroom.slots));
@@ -606,15 +640,17 @@ export function planMilsov({ tiles, headroom, chancery }) {
   const finish = (counts) => {
     // Tile i carries a level for every layer that reaches past it.
     const levels = [];
+    let bonus = 0;
     for (let i = 0; i < n; i++) {
       const level = counts.filter((m) => m > i).length;
       if (level > 0) levels.push(level);
+      bonus += level * (MILSOV_BONUS_PER_LEVEL + descriptorBonus(tiles[i], structure));
     }
     const units = counts.reduce((a, b) => a + b, 0);
     return {
       counts,
       levels,
-      bonus: MILSOV_BONUS_PER_LEVEL * units,
+      bonus,
       rp: counts.reduce((sum, m) => sum + rpOf(m), 0),
       upkeep: counts.reduce((sum, m, j) => sum + MILSOV_UPKEEP_STEP[j] * m, 0),
       buildings: levels.length,
@@ -821,7 +857,7 @@ export function planSiteAt(ctx, tax) {
     tax, settings: s, uRp: spend, buildingsUsed: tiles.length,
   });
   const military = planMilsov({
-    tiles: ctx.structure ? hosts : [], headroom, chancery: ctx.chancery,
+    tiles: ctx.structure ? hosts : [], headroom, chancery: ctx.chancery, structure: ctx.structure,
   });
   const milsov = milsovClaims({
     tiles: hosts, levels: military.levels, structure: ctx.structure, chancery: ctx.chancery,

@@ -717,19 +717,6 @@ test('a booster is worth exactly its face value in tax headroom', () => {
   close(stoneOnly.ceiling, 125 - (100 * 2400) / (5 * BASIC_YIELD_L20), 0.01);
 });
 
-test('a calibration reading overrides the default yield for that city', () => {
-  const settings = {
-    ...worked,
-    resourceCalibration: { observedPerHour: 15000, atTax: 25, plots: 5, booster: false },
-  };
-  const { yield: y } = computeBasicYield(settings);
-  close(y, 3000, 1e-9);
-  // A richer yield pays a bigger bill, so it buys more military at the same tax.
-  const lean = milsovHeadroom({ tax: 50, settings: worked, uRp: 0, buildingsUsed: 0 });
-  const rich = milsovHeadroom({ tax: 50, settings, uRp: 0, buildingsUsed: 0 });
-  assert.ok(rich.upkeep > lean.upkeep);
-});
-
 test('the binding ceiling has exactly zero left over at the exact ceiling', () => {
   // The surplus figures are the ceiling equations read as a balance, so this is
   // the two derivations checking each other. It has to be asked at T_max itself:
@@ -1055,27 +1042,18 @@ test('prestige raises the tax a research-bound site holds', () => {
     'and never more than the points it adds');
 });
 
-test('a reading taken with prestige running round-trips to the same yield', () => {
-  // The divisor has to carry the bonus. Left out, its points are fitted into the
-  // per-plot yield as a multiplier and every other tax comes out wrong.
-  const plots = 5;
-  const atTax = 25;
-  const observed = (plots * BASIC_YIELD_L20 * (125 - atTax + PRESTIGE_PRODUCTION_BONUS)) / 100;
-  close(computeBasicYield({
-    resourceCalibration: { observedPerHour: observed, atTax, plots, booster: false, prestige: true },
-  }).yield, BASIC_YIELD_L20, 1e-9);
-  // Declared wrongly, the same reading inflates the yield by the ratio of the
-  // two multipliers — which is the mis-extrapolation this flag exists to stop.
-  close(computeBasicYield({
-    resourceCalibration: { observedPerHour: observed, atTax, plots, booster: false, prestige: false },
-  }).yield, (BASIC_YIELD_L20 * (100 + PRESTIGE_PRODUCTION_BONUS)) / 100, 1e-9);
-
-  // Same for R_ref: what a boosted city produces at 25% tax is a smaller library
-  // than the same figure produced without it.
+// The divisor has to carry the prestige bonus. Left out, its points are fitted
+// into R_ref as a multiplier and every other tax comes out wrong.
+test('a research reading taken with prestige running round-trips to the same R_ref', () => {
   const rRef = 1280;
+  const atTax = 25;
   const rpObserved = (rRef * (125 - atTax + PRESTIGE_PRODUCTION_BONUS)) / 100;
   close(computeRRef({ rpCalibration: { observedRpPerHour: rpObserved, atTax, prestige: true } }),
     rRef, 1e-9);
+  // Declared wrongly, the same reading inflates R_ref by the ratio of the two
+  // multipliers — the mis-extrapolation the flag exists to stop.
+  close(computeRRef({ rpCalibration: { observedRpPerHour: rpObserved, atTax, prestige: false } }),
+    (rRef * (100 + PRESTIGE_PRODUCTION_BONUS)) / 100, 1e-9);
 });
 
 // --- Equal bonuses are broken on research -----------------------------------

@@ -16,12 +16,13 @@ import {
   MILSOV_BLOCKED_TEXT,
   parseRpCalibration,
   parseResourceBoosters,
-  parseResourceCalibration,
   parseResourceMinimums,
   parsePrestige,
   surplusRows,
+  productionLabel,
   settingsFormHtml,
 } from '../src/panel.js';
+import { PRODUCTION_ICONS } from '../src/icons.js';
 import {
   DEFAULT_SETTINGS,
   BASIC_RESOURCES,
@@ -62,6 +63,17 @@ test('the defaults render into the form without throwing', () => {
   assert.ok(!/undefined|\[object Object\]/.test(html), 'a field rendered a stray value');
 });
 
+// The red frame is the whole point of the block: it warns that what is typed in
+// it beats the settings above, so it must be in the markup before anything is.
+test('the research reading is drawn as an override', () => {
+  const html = settingsFormHtml(DEFAULT_SETTINGS);
+  assert.ok(
+    html.includes('<fieldset class="sov-f-block sov-override" data-key="rpCalibration">'),
+    'the research reading is not framed as an override',
+  );
+  assert.equal((html.match(/<legend>Override — /g) ?? []).length, 1);
+});
+
 test('the markup carries every hook createPanel reads back out of it', () => {
   // createPanel is the only DOM code here and cannot run under Node, so what is
   // checkable is its contract with the markup: a typo'd selector on either side
@@ -71,9 +83,7 @@ test('the markup carries every hook createPanel reads back out of it', () => {
     'class="sov-form"',
     'class="sov-plot-total"', 'sov-prefill sec', 'sov-prefill-src',
     'class="sov-reset sec"', 'class="sov-derived"', 'sov-derived-food', 'sov-store-note',
-    'data-cal="observedRpPerHour"', 'data-cal="atTax"', 'data-cal="prestige"',
-    'data-res-cal="observed"', 'data-res-cal="atTax"', 'data-res-cal="plots"',
-    'data-res-cal="booster"', 'data-res-cal="prestige"', 'sov-yield-read',
+    'data-cal="observedRpPerHour"', 'data-cal="atTax"', 'data-cal="prestige"', 'sov-rp-read',
     ...BASIC_RESOURCES.map((r) => `data-booster="${r}"`),
     ...BASIC_RESOURCES.map((r) => `data-minimum="${r}"`),
     ...PRESTIGE_KEYS.map((k) => `data-prestige="${k}"`),
@@ -89,8 +99,8 @@ test('the markup carries every hook createPanel reads back out of it', () => {
       assert.ok(html.includes(`<input type="checkbox" data-key="${f.key}"`), `${f.key} is not a checkbox input`);
     } else if (f.type === 'select') {
       assert.ok(html.includes(`<select data-key="${f.key}"`), `${f.key} is not a select`);
-    } else if (!['plots', 'milsov', 'calibration', 'boosters', 'prestige', 'minimums',
-      'resourceCalibration'].includes(f.type)) {
+    } else if (!['plots', 'milsov', 'calibration', 'boosters', 'prestige',
+      'minimums'].includes(f.type)) {
       assert.ok(html.includes(`<input type="number" data-key="${f.key}"`), `${f.key} is not a number input`);
     }
   }
@@ -225,6 +235,24 @@ test('a row with no production figure reports no spend rather than NaN', () => {
   for (const r of rows) assert.equal(r.spent, undefined);
 });
 
+// Icons are decoration over a name that is already there, so the row keeps a
+// plain-text label for anything that is not rendering markup — the CSV writer
+// and these tests included.
+test('every production wears its icon, and the label stays plain text', () => {
+  for (const r of surplusRows({ food: 1, rp: 1, gold: 1 }, null)) {
+    assert.ok(PRODUCTION_ICONS[r.icon], `${r.key} has no icon`);
+    assert.doesNotMatch(r.label, /[<>]/, `${r.key} label carries markup`);
+  }
+  // The surplus calls research "rp"; everything the user sees calls it Research.
+  assert.equal(surplusRows({ rp: 1 }, null).find((r) => r.key === 'rp').icon, 'research');
+
+  const marked = productionLabel('stone');
+  assert.match(marked, /^<img class="sov-ico" src="data:image\/png;base64,/);
+  assert.match(marked, /alt="">Stone$/, 'the icon repeats the word beside it, so alt is empty');
+  // A key with no art still names itself rather than rendering a broken image.
+  assert.equal(productionLabel('mystery'), 'mystery');
+});
+
 // --- the structure table ----------------------------------------------------
 
 test('the upkeep steps are the table read as increments, and are convex', () => {
@@ -312,7 +340,7 @@ test('the plan read-out describes what was placed, and blocking says why not', (
       milsovBonus: 25,
       milsovUpkeep: 750,
     }),
-    '2x Sov II + 1x Sov I — +25% military unit production, upkeep 750/hr of wood, clay, iron and stone.',
+    '2× Sov II + 1× Sov I — +25% military unit production, upkeep 750/hr of wood, clay, iron and stone.',
   );
   assert.equal(milsovPlanText({ milsov: [] }), '');
   assert.equal(milsovPlanText(null), '');
@@ -332,31 +360,6 @@ test('the four boosters read back as booleans, defaulting to off', () => {
   assert.deepEqual(parseResourceBoosters(undefined), parseResourceBoosters({}));
   assert.deepEqual(DEFAULT_SETTINGS.resourceBoosters, parseResourceBoosters({}),
     'the default city has none of them');
-});
-
-test('a reading without plots cannot be divided, so it is treated as absent', () => {
-  assert.equal(parseResourceCalibration({ observed: '', atTax: '', plots: '', booster: false }), null);
-  assert.equal(parseResourceCalibration({ observed: '5000', plots: '0' }), null);
-  assert.equal(parseResourceCalibration({ observed: '0', plots: '5' }), null);
-  // An absent reading falls back to the measured default, not to nothing.
-  const fallback = computeBasicYield({ resourceCalibration: null });
-  assert.equal(fallback.measured, true);
-  close(fallback.yield, BASIC_YIELD_L20, 1e-9);
-});
-
-test('a reading back-solves the per-plot yield, dividing out tax and booster', () => {
-  // 5 plots at 25% tax with no booster: M = 100, so 15,000/hr is 3,000 a plot.
-  const plain = parseResourceCalibration({ observed: '15000', atTax: '25', plots: '5' });
-  assert.deepEqual(plain,
-    { observedPerHour: 15000, atTax: 25, plots: 5, booster: false, prestige: false });
-  const yPlain = computeBasicYield({ resourceCalibration: plain });
-  close(yPlain.yield, 3000);
-  assert.equal(yPlain.measured, true);
-
-  // The same output with the booster running means a LOWER underlying yield:
-  // M = 140, so the booster was doing 40 of the 140 points of the work.
-  const boosted = parseResourceCalibration({ observed: '15000', atTax: '25', plots: '5', booster: true });
-  close(computeBasicYield({ resourceCalibration: boosted }).yield, (15000 * 100) / (5 * 140));
 });
 
 test('the default yield is the measured 2,538, not the farm figure', () => {

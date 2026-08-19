@@ -5,7 +5,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  toCsv, csvFile, csvFilename, csvField, CSV_BOM, resFlag, milsovPlanText,
+  toCsv, csvFile, csvFilename, csvField, CSV_BOM, resFlag, milsovPlanText, milsovPlanHtml, upkeepLimitHtml,
 } from '../src/panel.js';
 
 const COLUMNS = 21;
@@ -107,9 +107,49 @@ test('the filename sorts chronologically and does not collide', () => {
 test('the plan text reads as a level split, not as a tile list', () => {
   assert.equal(
     milsovPlanText(withMil()),
-    '1x Sov III + 2x Sov I — +25% military unit production, upkeep 900/hr of wood, clay, iron and stone.',
+    '1× Sov III + 2× Sov I — +25% military unit production, upkeep 900/hr of wood, clay, iron and stone.',
   );
   assert.equal(milsovPlanText(row()), '', 'nothing placed, nothing to say');
+});
+
+// The bonus is what the tax bought; the composition and the bill are how it was
+// reached. The screen ranks them, where the CSV cannot.
+test('the panel leads with the bonus and demotes the upkeep', () => {
+  const html = milsovPlanHtml(withMil());
+  assert.match(html, /<b class="sov-mil-bonus">\+25%<\/b>/);
+  // The bonus comes before the level split, which comes before the bill.
+  assert.ok(html.indexOf('+25%') < html.indexOf('1× Sov III'), 'the split outranks the bonus');
+  assert.ok(html.indexOf('1× Sov III') < html.indexOf('upkeep 900'), 'the bill outranks the split');
+  // Everything after the headline is hint weight.
+  assert.match(html, /<span class="sov-hint">1× Sov III \+ 2× Sov I, upkeep 900\/hr/);
+  assert.equal(milsovPlanHtml(row()), '', 'nothing placed, nothing to say');
+  assert.equal(milsovPlanHtml(null), '');
+});
+
+// The CSV keeps the flat sentence: a spreadsheet cell has no ranking to give.
+test('the export phrasing is unchanged by the panel getting its own', () => {
+  assert.ok(!/[<>]/.test(milsovPlanText(withMil())), 'markup reached the CSV');
+});
+
+// A ceiling the site can never reach is not information. The plan below is
+// capped at 78%, so a stone limit of 161.1% tells the reader nothing they can
+// act on — and reading it as a warning is worse than not seeing it.
+test('the upkeep limit is stated only when the site could hit it', () => {
+  const at = (over) => upkeepLimitHtml(row({ tMax: 78, resBinding: 'stone', ...over }));
+  assert.equal(at({ resCeiling: 161.1 }), '', 'a limit above the ceiling must be silent');
+  assert.equal(at({ resCeiling: 78 }), '', 'a limit at the ceiling binds nothing further');
+  assert.equal(at({ resCeiling: Infinity }), '', 'nothing to pay, nothing to say');
+  assert.match(at({ resCeiling: 60 }), /Upkeep limit: 60\.0% tax/);
+  assert.match(at({ resCeiling: 60 }), /stone production no longer covers it/);
+});
+
+// The one case with no number: no plots of the binding resource means the
+// upkeep is unpayable at any tax, which is a warning rather than a limit.
+test('an unpayable upkeep is flagged, not silenced', () => {
+  const html = upkeepLimitHtml(row({ resImpossible: true, resBinding: 'stone', tMax: 78 }));
+  assert.match(html, /class="sov-flag"/, 'this one is a warning, not a hint');
+  assert.match(html, /no stone plots/);
+  assert.match(html, /cannot be paid at any tax/);
 });
 
 // --- the resource ceiling travels with the row ------------------------------
@@ -165,7 +205,7 @@ test('an impossible ceiling names the missing resource rather than showing -Infi
   const flag = resFlag(row({
     resCeiling: -Infinity, resIndicative: true, resBinding: 'stone', resImpossible: true,
   }));
-  assert.equal(flag.text, 'no stone');
+  assert.equal(flag.text, 'no stone plots');
   assert.ok(!flag.title.includes('Infinity'));
   assert.match(flag.title, /any tax rate/);
 });

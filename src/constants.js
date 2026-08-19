@@ -824,6 +824,16 @@ export const PRESTIGE_PRODUCTION_BONUS = 20;
 // one total of the city's food bonuses and nothing can count them twice.
 export const PRESTIGE_KEYS = [...BASIC_RESOURCES, 'food', 'research'];
 
+export const PRODUCTION_LABEL = {
+  wood: 'Wood',
+  clay: 'Clay',
+  iron: 'Iron',
+  stone: 'Stone',
+  food: 'Food',
+  research: 'Research',
+  gold: 'Gold',
+};
+
 // What a minimum surplus can be asked for — the four basic resources plus food
 // and research, which are produced differently but take a floor the same way.
 export const MINIMUM_KEYS = [...BASIC_RESOURCES, 'food', 'research'];
@@ -878,10 +888,6 @@ export const DEFAULT_SETTINGS = {
   // Which of the four booster buildings the city has at level 20. Each is worth
   // RESOURCE_BOOSTER_BONUS points against that resource's ceiling.
   resourceBoosters: { wood: false, clay: false, iron: false, stone: false },
-  // { observedPerHour, atTax, plots, booster, prestige } back-solves the
-  // per-plot yield, the way rpCalibration back-solves R_ref. Null uses
-  // BASIC_YIELD_L20.
-  resourceCalibration: null,
   // Surplus per hour the plan may not touch, per resource. A city sitting exactly
   // on T_res puts its whole scarcest resource into upkeep and can never build or
   // trade in it again — this is where the user says how much to hold back. Zero

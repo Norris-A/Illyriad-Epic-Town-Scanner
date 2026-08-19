@@ -25,12 +25,16 @@ import {
   MINIMUM_KEYS,
   PLOT_KEYS,
   PLOT_TOTAL,
+  PRODUCTION_LABEL,
   descriptorFor,
 } from './constants.js';
-import { ICONS, STRUCTURE_ICONS, DEFAULT_STRUCTURE_ICON } from './icons.js';
+import { ICONS, PRODUCTION_ICONS, STRUCTURE_ICONS, DEFAULT_STRUCTURE_ICON } from './icons.js';
 import {
   computeBOther,
   computeK,
+  computeRRef,
+  prestigeBonus,
+  researchAt,
   computeBasicYield,
   sovStructure,
   structureUpkeep,
@@ -99,6 +103,10 @@ const CSS = `
 .sov-balance{margin:4px 0}
 .sov-balance td:nth-child(n+2){font-variant-numeric:tabular-nums}
 .sov-balance th,.sov-balance td{padding:2px 3px}
+/* Sized to the line rather than to the art, so a row's height stays its text's. */
+.sov-panel img.sov-ico{width:12px;height:12px;vertical-align:-2px;margin-right:4px;
+  image-rendering:pixelated}
+.sov-plot-fields label .sov-ico{display:block;margin:0 auto 1px}
 .sov-tabs{display:flex;gap:2px;margin:0 0 8px;border-bottom:1px solid #444}
 .sov-tabs button{background:#2a2a2a;color:#b5b5b5;padding:5px 9px;border-bottom:2px solid transparent}
 .sov-tabs button.on{background:#333;color:#fff;border-bottom-color:#3a5}
@@ -127,6 +135,12 @@ const CSS = `
 .sov-grid .sov-cell-mil .sov-lv{color:#eb8}
 .sov-grid .sov-cell-free .sov-cv{color:#7d7d7d}
 .sov-grid .sov-cell-water{background:#16202a;border-color:#2a3a4a}
+/* Kept claims: neither a tile the plan chose nor one it could not have, so a
+   third colour rather than either of theirs. */
+.sov-grid .sov-cell-kept{background:#1b2430;border-color:#4a6a8a}
+.sov-grid .sov-cell-kept .sov-lv{color:#8ab}
+.sov-grid .sov-cell-kept .sov-cv{color:#7d8fa0}
+.sov-legend .sov-key-kept{color:#8ab}
 /* A tile the user crossed out and one the game never offered are both tiles the
    plan cannot have, so they differ in weight, not in kind. */
 .sov-grid .sov-cell-out{background:#2b1a1a;border-color:#8a3a3a}
@@ -142,6 +156,23 @@ const CSS = `
 .sov-legend .sov-key-mil{color:#eb8}
 .sov-legend .sov-key-free{color:#7d7d7d}
 .sov-legend .sov-key-out{color:#e55}
+/* The bonus is the return on the tax, so it is sized to be read at a glance, in
+   the amber the grid gives military claims. */
+.sov-mil{margin:6px 0;padding:4px 6px;background:#221d15;border-left:2px solid #a83}
+.sov-mil .sov-mil-bonus{font-size:17px;font-weight:700;color:#eb8;
+  font-variant-numeric:tabular-nums}
+.sov-mil .sov-mil-what{color:#eb8}
+.sov-mil .sov-hint{display:block;margin:1px 0 0}
+/* Drawn even while empty: the red frame is the warning that anything typed here
+   beats the settings above. The filled state deepens it rather than adding it. */
+.sov-form fieldset.sov-override{border-color:#a33;background:#231a1a;margin:6px 0 8px}
+.sov-form fieldset.sov-override.sov-override-on{border-color:#e55;background:#2a1b1b}
+.sov-form .sov-override>legend{color:#e88;font-weight:600}
+.sov-form .sov-override.sov-override-on>legend{color:#f99}
+/* The host page's own [hidden] handling cannot be relied on: an author rule like
+   .sov-f{display:flex} beats the user-agent one whatever its specificity, so
+   anything this panel hides needs a rule of its own, last so it wins on order. */
+.sov-panel [hidden]{display:none}
 `;
 
 // --- Settings model ---------------------------------------------------------
@@ -150,6 +181,12 @@ const CSS = `
 // the UI module; re-exported here because this is where the form and its tests
 // have always reached for them.
 export { PLOT_KEYS, PLOT_TOTAL };
+
+/** Alt is empty because the icon is decoration over a name already beside it. */
+export function productionLabel(key) {
+  const icon = PRODUCTION_ICONS[key];
+  return `${icon ? `<img class="sov-ico" src="${icon}" alt="">` : ''}${PRODUCTION_LABEL[key] ?? key}`;
+}
 
 /**
  * Read one number out of a form field. Blank (or unparseable) falls back rather
@@ -198,20 +235,56 @@ export function parseMilsovStructure(raw) {
 }
 
 /**
- * The plan's military sovereignty, in one line — the count, the level split and
- * what it costs per hour. Levels descend, since that is the order the plan puts
- * them on the tiles.
+ * What was placed, as "2× Sov II + 1× Sov I". Levels descend, since that is the
+ * order the plan puts them on the tiles.
+ */
+function milsovSplitText(plan) {
+  const counts = new Map();
+  for (const m of plan.milsov) counts.set(m.buildingLevel, (counts.get(m.buildingLevel) ?? 0) + 1);
+  return [...counts.entries()]
+    .sort((a, b) => b[0] - a[0])
+    .map(([level, n]) => `${n}× Sov ${SOV_LEVEL_ROMAN[level - 1]}`)
+    .join(' + ');
+}
+
+/**
+ * The plan's military sovereignty, in one line — the level split, the bonus and
+ * what it costs per hour. This is the CSV's phrasing, so it stays one flat
+ * string; the panel has milsovPlanHtml, which ranks the same facts.
  */
 export function milsovPlanText(plan) {
   if (!plan?.milsov?.length) return '';
-  const counts = new Map();
-  for (const m of plan.milsov) counts.set(m.buildingLevel, (counts.get(m.buildingLevel) ?? 0) + 1);
-  const split = [...counts.entries()]
-    .sort((a, b) => b[0] - a[0])
-    .map(([level, count]) => `${count}x Sov ${SOV_LEVEL_ROMAN[level - 1]}`)
-    .join(' + ');
-  return `${split} — +${plan.milsovBonus}% military unit production, upkeep ${
+  return `${milsovSplitText(plan)} — +${plan.milsovBonus}% military unit production, upkeep ${
     (plan.milsovUpkeep ?? 0).toLocaleString('en-GB')}/hr of wood, clay, iron and stone.`;
+}
+
+/**
+ * The tax at which sovereignty upkeep stops being affordable, stated only when
+ * the site could actually reach it — a plan capped at 78% learns nothing from
+ * "161.1%". Silent above the ceiling; loud when no tax can pay it at all.
+ *
+ * @returns {string} markup, or '' when there is nothing to warn about
+ */
+export function upkeepLimitHtml(plan) {
+  if (plan?.resImpossible) {
+    return `<p class="sov-flag">The settle allocation has no ${plan.resBinding} plots, so this
+        upkeep cannot be paid at any tax.</p>`;
+  }
+  if (!Number.isFinite(plan?.resCeiling) || !(plan.resCeiling < plan.tMax)) return '';
+  return `<p class="sov-hint">Upkeep limit: ${plan.resCeiling.toFixed(1)}% tax — above that, ${
+    plan.resBinding} production no longer covers it.</p>`;
+}
+
+/**
+ * The same plan for the screen. The bonus leads, since it is what the tax bought;
+ * the composition and the bill follow in hint weight.
+ */
+export function milsovPlanHtml(plan) {
+  if (!plan?.milsov?.length) return '';
+  return `<p class="sov-mil"><b class="sov-mil-bonus">+${plan.milsovBonus}%</b>
+    <span class="sov-mil-what">military unit production</span>
+    <span class="sov-hint">${escapeHtml(milsovSplitText(plan))}, upkeep ${
+  (plan.milsovUpkeep ?? 0).toLocaleString('en-GB')}/hr of wood, clay, iron and stone.</span></p>`;
 }
 
 /** Why a site got no military sovereignty, in the user's terms. */
@@ -237,13 +310,16 @@ export const MILSOV_BLOCKED_TEXT = {
  */
 export function surplusRows(surplus, binding) {
   if (!surplus) return [];
+  // `key` indexes the surplus; `icon` names the production, which differs for
+  // research — the surplus calls it rp and everything user-facing calls it that.
   const rows = [
-    { key: 'food', label: 'Food' },
-    { key: 'rp', label: 'Research' },
-    { key: 'gold', label: 'Gold' },
+    { key: 'food', icon: 'food', label: PRODUCTION_LABEL.food },
+    { key: 'rp', icon: 'research', label: PRODUCTION_LABEL.research },
+    { key: 'gold', icon: 'gold', label: PRODUCTION_LABEL.gold },
     ...BASIC_RESOURCES.map((res) => ({
       key: res,
-      label: `${res[0].toUpperCase()}${res.slice(1)}`,
+      icon: res,
+      label: PRODUCTION_LABEL[res],
       basic: true,
     })),
   ];
@@ -290,7 +366,7 @@ export function resFlag(r) {
     + 'stone are unmeasured, so this figure does not affect the ranking.';
   if (r.resImpossible) {
     return {
-      text: `no ${r.resBinding}`,
+      text: `no ${r.resBinding} plots`,
       title: `The settle allocation has no ${r.resBinding} plots, so the sovereignty `
         + `upkeep cannot be paid at any tax rate. ${caveat}`,
     };
@@ -318,28 +394,6 @@ export function parseRpCalibration(observed, atTax, prestige) {
   return {
     observedRpPerHour: rp,
     atTax: clampNumber(atTax, { min: 0, max: 100, fallback: 0 }),
-    prestige: !!prestige,
-  };
-}
-
-/**
- * Read the basic-resource yield calibration. One reading is enough for all four,
- * since they share a per-plot yield — so it asks for the reading's own plot
- * count and booster state rather than borrowing the settle allocation, which
- * describes the site being planned and not the city the reading came from.
- *
- * A reading without plots cannot be divided and is treated as absent, which
- * falls back to the default yield rather than to nothing.
- */
-export function parseResourceCalibration({ observed, atTax, plots, booster, prestige }) {
-  const perHour = clampNumber(observed, { min: 0, fallback: 0 });
-  const p = clampNumber(plots, { min: 0, max: PLOT_TOTAL, integer: true, fallback: 0 });
-  if (perHour <= 0 || p <= 0) return null;
-  return {
-    observedPerHour: perHour,
-    atTax: clampNumber(atTax, { min: 0, max: 100, fallback: 0 }),
-    plots: p,
-    booster: !!booster,
     prestige: !!prestige,
   };
 }
@@ -380,7 +434,13 @@ export function parsePrestige(raw) {
  * stays the single list of settings.
  *
  * `enabledWhen` disables a control whose precondition is off, rather than
- * leaving it editable but ignored.
+ * leaving it editable but ignored. `overriddenWhen` greys one out for the other
+ * reason: it is still meaningful, but an override below it is answering the same
+ * question and winning.
+ *
+ * `menu: true` moves a control out of the City Configuration form and into the
+ * panel's own settings menu. `advanced: true` hides one until Advanced Mode is
+ * on. Both are still ordinary settings — they save and restore like the rest.
  */
 export const SETTINGS_FIELDS = [
   { key: 'tMin', group: 'Ranking', label: 'Minimum Tax (%)', type: 'number', min: -100, max: 100 },
@@ -397,7 +457,12 @@ export const SETTINGS_FIELDS = [
     integer: true,
     fallback: DEFAULT_CITY_CONSUMPTION,
   },
-  { key: 'flourMill', group: 'City Food', label: `Flour Mill L20 (+${FLOUR_MILL_L20})`, type: 'checkbox' },
+  {
+    key: 'flourMill',
+    group: 'City Food',
+    label: `Flour Mill at Level 20 (+${FLOUR_MILL_L20}%)`,
+    type: 'checkbox',
+  },
   { key: 'naturesBounty', group: 'City Food', label: "Nature's Bounty", type: 'checkbox' },
   {
     key: 'geomancerRetreats',
@@ -405,28 +470,49 @@ export const SETTINGS_FIELDS = [
     label: 'Geomancer Retreats',
     type: 'select',
     parse: 'number',
-    options: NATURES_BOUNTY_BY_RETREATS.map((bonus, n) => ({ value: n, label: `${n} (+${bonus})` })),
+    options: NATURES_BOUNTY_BY_RETREATS.map((bonus, n) => ({ value: n, label: `${n} (+${bonus}%)` })),
     enabledWhen: (s) => !!s.naturesBounty,
   },
-  { key: 'cityCount', group: 'City Food', label: 'City Count', type: 'number', min: 1, max: 999, integer: true, fallback: 1 },
-  { key: 'isCapital', group: 'City Food', label: 'This city is the capital', type: 'checkbox' },
+  { key: 'cityCount', group: 'City Food', label: 'Number of Cities', type: 'number', min: 1, max: 999, integer: true, fallback: 1 },
+  { key: 'isCapital', group: 'City Food', label: 'This City is the Capital', type: 'checkbox' },
 
-  { key: 'libraryLevel', group: 'Research', label: 'Library Level', type: 'number', min: 0, max: 20, integer: true, fallback: 20 },
-  { key: 'allembine', group: 'Research', label: 'Allembine Research', type: 'checkbox' },
-  { key: 'overflowingInsight', group: 'Research', label: 'Overflowing Insight (×1.5)', type: 'checkbox' },
-  { key: 'rpCalibration', group: 'Research', label: 'RP Calibration', type: 'calibration' },
+  {
+    key: 'libraryLevel',
+    group: 'Research',
+    label: 'Library Level',
+    type: 'number',
+    min: 0,
+    max: 20,
+    integer: true,
+    fallback: 20,
+    overriddenWhen: (s) => !!s.rpCalibration,
+  },
+  {
+    key: 'allembine',
+    group: 'Research',
+    label: 'Allembine Research',
+    type: 'checkbox',
+    overriddenWhen: (s) => !!s.rpCalibration,
+  },
+  {
+    key: 'overflowingInsight',
+    group: 'Research',
+    label: 'Overflowing Insight (×1.5)',
+    type: 'checkbox',
+    overriddenWhen: (s) => !!s.rpCalibration,
+  },
+  {
+    key: 'rpCalibration',
+    group: 'Research',
+    label: 'Measured Research Output',
+    type: 'calibration',
+  },
 
   {
     key: 'resourceBoosters',
     group: 'Basic Resources',
-    label: 'Booster Buildings at L20',
+    label: 'Booster Buildings at Level 20',
     type: 'boosters',
-  },
-  {
-    key: 'resourceCalibration',
-    group: 'Basic Resources',
-    label: 'Per-Plot Yield Calibration',
-    type: 'resourceCalibration',
   },
 
   // Its own group because it spans everything the city produces — the four basic
@@ -442,14 +528,14 @@ export const SETTINGS_FIELDS = [
   // it belongs under no single one.
   {
     key: 'resourceMinimums',
-    group: 'Minimums',
+    group: 'Minimum Surplus',
     label: 'Minimum Surplus per Hour',
     type: 'minimums',
   },
 
   { key: 'chancery', group: 'Sovereignty', label: 'Chancery of Estates (×0.6 upkeep)', type: 'checkbox' },
   { key: 'rClaim', group: 'Sovereignty', label: 'Claim Radius', type: 'number', min: 1, max: 6, integer: true, fallback: 2 },
-  { key: 'maxBuildings', group: 'Sovereignty', label: 'Max Buildings', type: 'number', min: 0, max: 200, integer: true, fallback: 20 },
+  { key: 'maxBuildings', group: 'Sovereignty', label: 'Maximum Buildings', type: 'number', min: 0, max: 200, integer: true, fallback: 20 },
   { key: 'milsovStructure', group: 'Sovereignty', label: 'Military Structure', type: 'milsov' },
   {
     key: 'milsovMinBonus',
@@ -463,10 +549,10 @@ export const SETTINGS_FIELDS = [
     enabledWhen: (s) => !!s.milsovStructure,
   },
 
-  { key: 'dOther', group: 'Neighbours', label: 'Min Distance, Other Players', type: 'number', min: 0, max: 100 },
-  { key: 'dOwn', group: 'Neighbours', label: 'Min Distance, Own Cities', type: 'number', min: 0, max: 100 },
-  { key: 'ownClaimsAvailable', group: 'Neighbours', label: 'Treat own claims as available', type: 'checkbox' },
-  { key: 'allianceClaimsAvailable', group: 'Neighbours', label: 'Treat alliance claims as available', type: 'checkbox' },
+  { key: 'dOther', group: 'Neighbours', label: 'Minimum Distance to Other Players', type: 'number', min: 0, max: 100 },
+  { key: 'dOwn', group: 'Neighbours', label: 'Minimum Distance to Your Cities', type: 'number', min: 0, max: 100 },
+  { key: 'ownClaimsAvailable', group: 'Neighbours', label: 'Treat Your Own Claims as Available', type: 'checkbox' },
+  { key: 'allianceClaimsAvailable', group: 'Neighbours', label: 'Treat Alliance Claims as Available', type: 'checkbox' },
 ];
 
 // --- Form markup (strings only — no DOM until createPanel) ------------------
@@ -495,11 +581,11 @@ function checkboxFieldHtml(f, value) {
 
 function plotsFieldHtml(f, plots) {
   const fields = PLOT_KEYS.map((p) =>
-    `<label>${p}<input type="number" data-plot="${p}" min="0" max="${PLOT_TOTAL}" step="1"
-      value="${plots?.[p] ?? 0}"></label>`).join('');
+    `<label>${productionLabel(p)}<input type="number" data-plot="${p}" min="0" max="${PLOT_TOTAL}"
+      step="1" value="${plots?.[p] ?? 0}"></label>`).join('');
   return `<div class="sov-f-block" data-key="${f.key}">
-      <p class="sov-hint">${escapeHtml(f.label)} — wood/clay/iron/stone/food, must sum to ${PLOT_TOTAL}.
-        Terraforming applies to the settle tile only.</p>
+      <p class="sov-hint">${escapeHtml(f.label)} — how the settle tile's ${PLOT_TOTAL} plots are
+        split. The five must total ${PLOT_TOTAL}. Terraforming applies to the settle tile only.</p>
       <div class="sov-plot-fields">${fields}</div>
       <div class="sov-plot-sum">
         <span class="sov-plot-total"></span>
@@ -510,28 +596,34 @@ function plotsFieldHtml(f, plots) {
 }
 
 function calibrationFieldHtml(f, cal) {
-  return `<div class="sov-f-block" data-key="${f.key}">
-      <div class="sov-f"><span>${escapeHtml(f.label)} — observed RP/hr</span>
+  return `<fieldset class="sov-f-block sov-override" data-key="${f.key}">
+      <legend>Override — ${escapeHtml(f.label)}</legend>
+      <p class="sov-hint">Read your city's actual research output off the game and enter it
+        here. While a figure is set it replaces the Library Level, Allembine Research and
+        Overflowing Insight settings above, which grey out to show they no longer apply.</p>
+      <div class="sov-f"><span>Observed research per hour</span>
         <input type="number" data-cal="observedRpPerHour" min="0" step="any"
           placeholder="blank = off"${attr('value', cal?.observedRpPerHour)}></div>
-      <div class="sov-f"><span>…at tax (%)</span>
+      <div class="sov-f"><span>…at this tax rate (%)</span>
         <input type="number" data-cal="atTax" min="0" max="100" step="any"
           value="${cal?.atTax ?? 0}"></div>
-      <div class="sov-f"><span>…with the prestige boost running</span>
+      <div class="sov-f"><span>…with the Prestige boost running</span>
         <input type="checkbox" data-cal="prestige"${cal?.prestige ? ' checked' : ''}></div>
-    </div>`;
+      <p class="sov-hint sov-rp-read"></p>
+    </fieldset>`;
 }
 
 /** One tick-box per booster, named after the building the user would recognise. */
 function boostersFieldHtml(f, boosters) {
   const boxes = BASIC_RESOURCES.map((res) =>
-    `<label class="sov-f" data-booster-row="${res}"><span>${RESOURCE_BOOSTERS[res]} — ${res}
-      (+${RESOURCE_BOOSTER_BONUS})</span>
+    `<label class="sov-f" data-booster-row="${res}"><span>${RESOURCE_BOOSTERS[res]} —
+      ${productionLabel(res)} (+${RESOURCE_BOOSTER_BONUS}%)</span>
       <input type="checkbox" data-booster="${res}"${boosters?.[res] ? ' checked' : ''}></label>`).join('');
   return `<div class="sov-f-block" data-key="${f.key}">
-      <p class="sov-hint">${escapeHtml(f.label)} — each adds ${RESOURCE_BOOSTER_BONUS} points to that
-        resource's production, the same way the Flour Mill adds to food, and so is
-        worth ${RESOURCE_BOOSTER_BONUS} points of tax headroom against its ceiling.</p>
+      <p class="sov-hint">${escapeHtml(f.label)} — each adds ${RESOURCE_BOOSTER_BONUS}% to that
+        resource's production percentage, the same way the Flour Mill adds to food. It is added
+        to that percentage rather than multiplied into it, so it is worth a straight
+        ${RESOURCE_BOOSTER_BONUS} points of tax headroom against the resource's ceiling.</p>
       ${boxes}
     </div>`;
 }
@@ -543,11 +635,12 @@ function boostersFieldHtml(f, boosters) {
  */
 function prestigeFieldHtml(f, prestige) {
   const boxes = PRESTIGE_KEYS.map((key) =>
-    `<label class="sov-f" data-prestige-row="${key}"><span>${key} (+${PRESTIGE_PRODUCTION_BONUS})</span>
+    `<label class="sov-f" data-prestige-row="${key}"><span>${productionLabel(key)}
+      (+${PRESTIGE_PRODUCTION_BONUS}%)</span>
       <input type="checkbox" data-prestige="${key}"${prestige?.[key] ? ' checked' : ''}></label>`).join('');
   return `<div class="sov-f-block" data-key="${f.key}">
-      <p class="sov-hint">${PRESTIGE_PRODUCTION_BONUS} points on the production percentage,
-        cumulative with spells and sovereignty, so each is worth
+      <p class="sov-hint">+${PRESTIGE_PRODUCTION_BONUS}% on the production percentage,
+        cumulative with spells and sovereignty. Added rather than multiplied, so each is worth
         ${PRESTIGE_PRODUCTION_BONUS} points of tax headroom — half a booster building. Tick
         only what the boost is actually running on: these move every ceiling they touch.</p>
       ${boxes}
@@ -561,7 +654,7 @@ function prestigeFieldHtml(f, prestige) {
  */
 function minimumsFieldHtml(f, minimums) {
   const boxes = MINIMUM_KEYS.map((key) =>
-    `<label class="sov-f" data-minimum-row="${key}"><span>${key} — keep at least</span>
+    `<label class="sov-f" data-minimum-row="${key}"><span>${productionLabel(key)} — keep at least</span>
       <input type="number" data-minimum="${key}" min="0" step="1"
         value="${minimums?.[key] ?? 0}"></label>`).join('');
   return `<div class="sov-f-block" data-key="${f.key}">
@@ -572,34 +665,6 @@ function minimumsFieldHtml(f, minimums) {
         build, grow or trade on top of it. Each figure lowers the ceiling it belongs to by
         its own worth in production points.</p>
       ${boxes}
-    </div>`;
-}
-
-/**
- * The yield reading. Everything the back-solve needs travels with the reading
- * itself, so a figure copied off a city that is not the one being planned still
- * divides out correctly.
- */
-function resourceCalibrationFieldHtml(f, cal) {
-  return `<div class="sov-f-block" data-key="${f.key}">
-      <p class="sov-hint">${escapeHtml(f.label)} — optional. The default yield is measured, so
-        this is only for a city that reads differently; one reading from any city
-        fixes all four resources. Read an hourly rate off the city, then say what
-        produced it.</p>
-      <div class="sov-f"><span>Observed /hr of one resource</span>
-        <input type="number" data-res-cal="observed" min="0" step="any"
-          placeholder="blank = off"${attr('value', cal?.observedPerHour)}></div>
-      <div class="sov-f"><span>…at tax (%)</span>
-        <input type="number" data-res-cal="atTax" min="0" max="100" step="any"
-          value="${cal?.atTax ?? 0}"></div>
-      <div class="sov-f"><span>…from this many plots</span>
-        <input type="number" data-res-cal="plots" min="0" max="${PLOT_TOTAL}" step="1"
-          value="${cal?.plots ?? 0}"></div>
-      <div class="sov-f"><span>…with that booster at L20</span>
-        <input type="checkbox" data-res-cal="booster"${cal?.booster ? ' checked' : ''}></div>
-      <div class="sov-f"><span>…with the prestige boost running</span>
-        <input type="checkbox" data-res-cal="prestige"${cal?.prestige ? ' checked' : ''}></div>
-      <p class="sov-hint sov-yield-read"></p>
     </div>`;
 }
 
@@ -639,16 +704,16 @@ function fieldHtml(f, settings) {
     case 'boosters': return boostersFieldHtml(f, v);
     case 'prestige': return prestigeFieldHtml(f, v);
     case 'minimums': return minimumsFieldHtml(f, v);
-    case 'resourceCalibration': return resourceCalibrationFieldHtml(f, v);
     case 'milsov': return milsovFieldHtml(f, v);
     default: return numberFieldHtml(f, v ?? f.fallback);
   }
 }
 
-/** The whole form, grouped in declaration order. */
+/** The whole form, grouped in declaration order. Menu settings are not in it. */
 export function settingsFormHtml(settings) {
   const groups = [];
   for (const f of SETTINGS_FIELDS) {
+    if (f.menu) continue;
     if (!groups.length || groups.at(-1).name !== f.group) groups.push({ name: f.group, fields: [] });
     groups.at(-1).fields.push(f);
   }
@@ -693,11 +758,17 @@ export function focusFormHtml(focus, settings) {
         <label class="sov-f"><span>Starting Tax (%)</span>
           <input type="number" data-focus="tax" min="${FOCUS_TAX_FLOOR}" max="100" step="1"
             value="${f.tax ?? FOCUS_DEFAULT_TAX}"></label>
-        <label class="sov-f"><span>Use City Configuration Plots</span>
+        <label class="sov-f"><span>Use the Plot Allocation from City Configuration</span>
           <input type="checkbox" data-focus="useConfiguredPlots"${f.useConfiguredPlots ? ' checked' : ''}></label>
-        <p class="sov-hint">Off plans on the centre tile's own resource ratings, as the map
-          reports them. On plans on the ${PLOT_TOTAL}-plot allocation in City Configuration —
-          the tile as you intend to terraform it.</p>
+        <p class="sov-hint">On, the plan uses the ${PLOT_TOTAL}-plot allocation from City
+          Configuration — the tile as you intend to terraform it. Off, it uses the tile's own
+          resource ratings, as the map reports them today.</p>
+        <label class="sov-f"><span>Preserve Existing Sovereignty</span>
+          <input type="checkbox" data-focus="preserveSovereignty"${f.preserveSovereignty ? ' checked' : ''}></label>
+        <p class="sov-hint">For a tile you have already settled. On, claims you already hold
+          inside the radius are kept as they are: they are drawn on the grid and the research
+          and gold they already cost are taken off the top, so the plan is what you can still
+          add. Off, the plan is drawn as though the ground were empty.</p>
       </fieldset>
       <p><button type="button" class="sov-focus-run">Optimise</button>
          <button type="button" class="sov-focus-use sec">Use Selected Result</button></p>
@@ -717,7 +788,7 @@ function capitalDerivedHtml(s) {
   ].map(([name, bonus, need]) => {
     const active = s.isCapital && (s.cityCount ?? 1) >= need;
     const why = !s.isCapital ? 'capital only' : `needs ${need} cities`;
-    return `<li class="${active ? 'sov-on' : 'sov-off'}">${name} +${bonus} — ${
+    return `<li class="${active ? 'sov-on' : 'sov-off'}">${name} +${bonus}% — ${
       active ? 'active' : `inactive (${why})`}</li>`;
   }).join('');
 }
@@ -757,7 +828,7 @@ export function createPanel({ onScan, onExport, initialSettings, onSettingsChang
            <button class="sov-export sec">Export CSV</button></p>
         <div class="sov-status"></div>
         <div class="sov-results"></div>
-        <div class="sov-incomplete"></div>
+        <div class="sov-diagnostics"></div>
       </section>
       <section data-pane="focus" hidden>${focusFormHtml(DEFAULT_FOCUS, opening)}</section>
       <section data-pane="config" hidden>${settingsFormHtml(opening)}</section>
@@ -775,6 +846,7 @@ export function createPanel({ onScan, onExport, initialSettings, onSettingsChang
   const scanBtn = $('.sov-scan');
   let rendered = [];       // the results currently in the table
   let selected = null;     // the row Prefill copies `rs` from
+  let incomplete = [];     // sites the last scan could not see all of
 
   root.querySelector('h2').addEventListener('click', () => root.classList.toggle('sov-collapsed'));
   scanBtn.addEventListener('click', onScan);
@@ -854,15 +926,6 @@ export function createPanel({ onScan, onExport, initialSettings, onSettingsChang
           out.resourceMinimums = parseResourceMinimums(raw);
           break;
         }
-        case 'resourceCalibration':
-          out.resourceCalibration = parseResourceCalibration({
-            observed: form.querySelector('[data-res-cal="observed"]').value,
-            atTax: form.querySelector('[data-res-cal="atTax"]').value,
-            plots: form.querySelector('[data-res-cal="plots"]').value,
-            booster: form.querySelector('[data-res-cal="booster"]').checked,
-            prestige: form.querySelector('[data-res-cal="prestige"]').checked,
-          });
-          break;
         default:
           out[f.key] = clampNumber(form.querySelector(`input[data-key="${f.key}"]`).value, f);
       }
@@ -908,13 +971,6 @@ export function createPanel({ onScan, onExport, initialSettings, onSettingsChang
             form.querySelector(`[data-minimum="${key}"]`).value = v?.[key] ?? 0;
           }
           break;
-        case 'resourceCalibration':
-          form.querySelector('[data-res-cal="observed"]').value = v?.observedPerHour ?? '';
-          form.querySelector('[data-res-cal="atTax"]').value = v?.atTax ?? 0;
-          form.querySelector('[data-res-cal="plots"]').value = v?.plots ?? 0;
-          form.querySelector('[data-res-cal="booster"]').checked = !!v?.booster;
-          form.querySelector('[data-res-cal="prestige"]').checked = !!v?.prestige;
-          break;
         default:
           form.querySelector(`input[data-key="${f.key}"]`).value = v ?? f.fallback ?? '';
       }
@@ -934,13 +990,21 @@ export function createPanel({ onScan, onExport, initialSettings, onSettingsChang
     const { settings: s } = readSettings();
     if (save) onSettingsChange?.(s);
 
+    // A control is live only while its precondition holds and nothing below it
+    // is overriding it. Disabled inputs still read back, so greying one out
+    // costs the user nothing if they clear the override again.
     for (const f of SETTINGS_FIELDS) {
-      if (!f.enabledWhen) continue;
-      const on = f.enabledWhen(s);
+      if (!f.enabledWhen && !f.overriddenWhen) continue;
+      const on = (f.enabledWhen?.(s) ?? true) && !f.overriddenWhen?.(s);
       const wrap = form.querySelector(`[data-key="${f.key}"]`);
       wrap.classList.toggle('sov-gated', !on);
       wrap.querySelectorAll('input,select').forEach((el) => { el.disabled = !on; });
     }
+
+    // The override frame lights up while it holds a figure, so "this is winning"
+    // and "this is available" never look the same.
+    form.querySelector('.sov-override[data-key="rpCalibration"]')
+      .classList.toggle('sov-override-on', !!s.rpCalibration);
 
     // The running total and the K it produces, so the cost of an edit to the
     // food plots is visible while making it.
@@ -949,21 +1013,23 @@ export function createPanel({ onScan, onExport, initialSettings, onSettingsChang
     total.className = `sov-plot-total ${plots.ok ? 'sov-ok' : 'sov-bad'}`;
     total.textContent = `Total ${plots.total} / ${PLOT_TOTAL}${
       plots.ok ? '' : ` — ${plots.message}`} · ${
-      computeK(plots.plots.food).toFixed(2)} food/hr per point of production`;
+      computeK(plots.plots.food).toFixed(2)} food/hr per production point`;
 
     form.querySelector('.sov-derived').innerHTML = capitalDerivedHtml(s);
     const bOther = computeBOther(s);
     form.querySelector('.sov-derived-food').textContent =
-      `City food bonuses total ${bOther >= 0 ? '+' : ''}${bOther} points.`;
+      `City food bonuses total ${bOther >= 0 ? '+' : ''}${bOther}% on food production.`;
 
-    // The back-solved yield, shown as it is entered — a reading that produces an
-    // implausible figure is far easier to spot here than in a results row.
-    const { yield: y } = computeBasicYield(s);
-    const perPlot = Math.round(y).toLocaleString('en-GB');
-    form.querySelector('.sov-yield-read').textContent = s.resourceCalibration
-      ? `${perPlot}/hr per plot at L20, from your reading.`
-      : `${perPlot}/hr per plot at L20, the measured default. `
-        + 'Fill this in only for a city that reads differently.';
+    // The research the plan will actually spend against, shown as the override is
+    // typed — a reading that produces an implausible figure is far easier to spot
+    // here than in a results row.. Stated at 0% tax because that is the figure every
+    // claim is bought out of, whatever tax the site ends up holding.
+    const rp = Math.round(researchAt({
+      rRef: computeRRef(s), rpBonus: prestigeBonus(s, 'research'), tax: 0,
+    })).toLocaleString('en-GB');
+    form.querySelector('.sov-rp-read').textContent = s.rpCalibration
+      ? `In use: ${rp} research per hour at 0% tax, from your reading.`
+      : `In use: ${rp} research per hour at 0% tax, from the settings above.`;
 
     // An allocation that is not 25 plots is not a tile the game can produce,
     // so there is nothing to score it against — block the scan outright.
@@ -1022,6 +1088,22 @@ export function createPanel({ onScan, onExport, initialSettings, onSettingsChang
     }
   }
 
+  // --- what the scan could not see ---
+
+  /**
+   * Sites the payload did not reach all the way around. This is the one thing a
+   * scan withholds that the user can act on: the answer is to pan and run it
+   * again. Why the other tiles were dropped is the tool's business, not theirs.
+   */
+  function drawIncomplete() {
+    $('.sov-diagnostics').innerHTML = incomplete.length
+      ? `<p class="sov-hint">${incomplete.length} ${
+        incomplete.length === 1 ? 'site was' : 'sites were'} skipped because the map data does
+        not reach all the way around them. Zoom out or pan so the whole area is on screen,
+        then scan again.</p>`
+      : '';
+  }
+
   // --- Optimal Sovereignty ---
 
   const focusForm = $('.sov-focus-form');
@@ -1036,7 +1118,9 @@ export function createPanel({ onScan, onExport, initialSettings, onSettingsChang
     for (const key of ['x', 'y', 'radius', 'tax']) {
       raw[key] = focusForm.querySelector(`[data-focus="${key}"]`).value;
     }
-    raw.useConfiguredPlots = focusForm.querySelector('[data-focus="useConfiguredPlots"]').checked;
+    for (const key of ['useConfiguredPlots', 'preserveSovereignty']) {
+      raw[key] = focusForm.querySelector(`[data-focus="${key}"]`).checked;
+    }
     return raw;
   }
 
@@ -1073,7 +1157,7 @@ export function createPanel({ onScan, onExport, initialSettings, onSettingsChang
       ctx: result.ctx,
       base: result.base,
       floor: result.floor,
-      geom: { radius: result.radius, x: result.x, y: result.y },
+      geom: { radius: result.radius, x: result.x, y: result.y, kept: result.kept?.claims },
       tax: result.plan.tax,
     });
   }
@@ -1111,12 +1195,18 @@ export function createPanel({ onScan, onExport, initialSettings, onSettingsChang
     setStatus(html) {
       root.querySelector('.sov-status').innerHTML = html;
     },
-    renderResults(results, summary) {
+    /**
+     * @param {object[]} results ranked sites
+     * @param {object} scan `{x, y, zoom, scanned}` — the facts of the run. The
+     *   wording is the panel's, not the caller's.
+     */
+    renderResults(results, scan) {
       const el = root.querySelector('.sov-results');
       rendered = results;
       selected = null;
+      const summary = { ...scan, candidates: results.length };
       $('.sov-prefill-src').textContent = '';   // the old selection is gone
-      el.innerHTML = resultsHtml(results, summary);
+      el.innerHTML = resultsHtml(results, scanSummaryText(summary));
 
       el.querySelectorAll('.sov-row').forEach((row) => {
         row.addEventListener('click', () => {
@@ -1128,13 +1218,41 @@ export function createPanel({ onScan, onExport, initialSettings, onSettingsChang
       });
     },
     renderIncomplete(list) {
-      const el = root.querySelector('.sov-incomplete');
-      el.innerHTML = list.length
-        ? `<p>${list.length} site(s) excluded: neighbourhood extends beyond the payload.</p>`
-        : '';
+      incomplete = list;
+      drawIncomplete();
     },
   };
 }
+
+/**
+ * The ceiling that set a site's tax, named for the reader. The engine's codes
+ * stay as they are — the CSV exports them, and a spreadsheet filters on a stable
+ * token rather than on prose.
+ */
+const BINDING_LABEL = {
+  cap: 'Tax cap',
+  food: 'Food',
+  rp: 'Research',
+  res: 'Resources',
+};
+
+export function bindingLabel(binding) {
+  return BINDING_LABEL[binding] ?? binding;
+}
+
+const count = (v) => Number(v ?? 0).toLocaleString('en-GB');
+
+/**
+ * What the scan looked at and what it found. Said whether or not it found a site:
+ * a region with no candidate is where the area covered matters most.
+ */
+export function scanSummaryText(scan) {
+  const side = 2 * scan.zoom + 1;
+  return `Centred on ${scan.x}|${scan.y}, ${side}×${side} tiles. Checked ${
+    count(scan.scanned)} tiles and found ${count(scan.candidates)} candidate${
+    scan.candidates === 1 ? '' : 's'}.`;
+}
+
 
 /** The last column: whatever the row has to warn about, space-separated. */
 function flagsHtml(r) {
@@ -1144,7 +1262,7 @@ function flagsHtml(r) {
   if (r.milsovBlocked) {
     flags.push({
       cls: 'sov-flag',
-      text: 'no mil',
+      text: 'no military',
       title: `No military sovereignty fits here for free — ${
         MILSOV_BLOCKED_TEXT[r.milsovBlocked] ?? 'nothing was left over'}.`,
     });
@@ -1155,7 +1273,7 @@ function flagsHtml(r) {
   if (r.milsovMinTax != null) {
     flags.push({
       cls: 'sov-advice',
-      text: `min @ ${r.milsovMinTax.toFixed(0)}%`,
+      text: `minimum at ${r.milsovMinTax.toFixed(0)}%`,
       title: `This site reaches your minimum military bonus (+${r.milsovMinBonusAt}%) `
         + `at ${r.milsovMinTax.toFixed(0)}% tax, against the ${r.tMax.toFixed(0)}% it holds `
         + `on food alone. Open the row and drag the tax slider to see the trade.`,
@@ -1169,7 +1287,7 @@ function flagsHtml(r) {
   if (conditional.size) {
     flags.push({
       cls: 'sov-advice',
-      text: 'cond. bonus',
+      text: 'conditional bonus',
       title: `${[...conditional].map(([b, n]) => `${n}× ${b}`).join(', ')} — these tiles carry a `
         + `terrain bonus that only pays if the city has that building. Not scored either way.`,
     });
@@ -1306,6 +1424,27 @@ function toggleDetail(row, result, settings) {
 }
 
 /**
+ * What preserving cost, and what it could not account for. Uncredited production
+ * understates a settled city rather than overstating it, so the plan errs toward
+ * caution — but the reader still has to be told which way it leans.
+ */
+function keptNote(kept) {
+  if (!kept?.claims?.length && !kept?.unknownLevel) return '';
+  const parts = [];
+  if (kept.claims.length) {
+    parts.push(`Keeping ${kept.claims.length} claim${kept.claims.length === 1 ? '' : 's'} you `
+      + `already hold, costing ${Math.round(kept.rp).toLocaleString('en-GB')} research and `
+      + `${Math.round(kept.rp * 10).toLocaleString('en-GB')} gold an hour. The plan below is `
+      + 'what fits on top of that. Any food or military bonus those claims already produce is '
+      + 'not counted — the map does not say what is built on them.');
+  }
+  if (kept.unknownLevel) {
+    parts.push(`${kept.unknownLevel} more could not be read and are ignored.`);
+  }
+  return parts.join(' ');
+}
+
+/**
  * One focusSite result. The notes come first because the allocation and the
  * radius are inputs a reader would otherwise assume, and both move every figure
  * below them.
@@ -1315,7 +1454,8 @@ function focusResultHtml(r) {
     r.plotNote,
     `Radius ${r.radius}${r.radiusFromConfig ? ', from City Configuration' : ''}. `
       + `${r.claimable} of the ${r.ring} surrounding tiles are claimable.`,
-  ];
+    keptNote(r.kept),
+  ].filter(Boolean);
   // Loud, but still not enforced — the plan below is rendered either way.
   const warnings = [];
   if (!r.centre.settleable) {
@@ -1331,7 +1471,7 @@ function focusResultHtml(r) {
     ? ` The arithmetic reaches ${r.base.tMaxExact.toFixed(2)}%, but tax is whole numbers only.`
     : '';
   const ceiling = `<p class="sov-note">Highest tax this tile holds on food alone: <strong>${
-    r.base.tMax.toFixed(0)}%</strong>, limited by ${escapeHtml(r.base.binding)}.${exact}</p>`;
+    r.base.tMax.toFixed(0)}%</strong>, limited by ${escapeHtml(bindingLabel(r.base.binding).toLowerCase())}.${exact}</p>`;
   const asked = r.aboveCeiling
     ? `<p class="sov-flag">This tile cannot hold ${r.requestedTax.toFixed(0)}% — the plan below `
       + `is at its ceiling of ${r.ceiling.toFixed(0)}%.</p>`
@@ -1438,7 +1578,7 @@ export function resultsHtml(results, summary) {
           <td${Number.isFinite(r.tMaxExact)
     ? ` title="The arithmetic reaches ${r.tMaxExact.toFixed(2)}%, but tax is whole numbers only, so the plan is made at this rate."`
     : ''}>${Number.isFinite(r.tMax) ? r.tMax.toFixed(0) : r.tMax}%</td>
-          <td>${r.binding}</td>
+          <td>${bindingLabel(r.binding)}</td>
           <td>${r.sFood.toFixed(0)}</td>
           <td>${r.uRp.toFixed(0)}</td>
           <td>${Math.round(r.goldNet).toLocaleString()}</td>
@@ -1449,10 +1589,10 @@ export function resultsHtml(results, summary) {
         ${head}
         <table>
           <thead><tr><th>Site</th>
-            <th title="The highest whole-number tax this site can hold on food alone — the game takes no other kind">Tax Max</th>
-            <th title="Which ceiling stops the tax going higher">Limiter</th><th>Food</th>
-            <th>RP</th><th>Net Gold</th>
-            <th title="Free military unit production bonus — costs this site no tax">Mil</th>
+            <th title="The highest whole-number tax this site can hold on food alone — the game takes no other kind">Max Tax</th>
+            <th title="Which ceiling stops the tax going any higher">Limited By</th><th>Food</th>
+            <th title="Research per hour the claims cost">Research</th><th>Net Gold</th>
+            <th title="Free military unit production bonus — costs this site no tax">Military</th>
             <th></th></tr></thead>
           <tbody>${rows}</tbody>
         </table>`;
@@ -1498,6 +1638,7 @@ export function planGridHtml(plan, geom) {
   const cx = geom?.x;
   const cy = geom?.y;
   const excluded = geom?.excluded ?? new Set();
+  const kept = new Map((geom?.kept ?? []).map((k) => [cellKey(k.dx, k.dy), k]));
   const pickable = !!geom?.pickable;
   const absolute = Number.isFinite(cx) && Number.isFinite(cy);
   // Real coordinates where they are known, since those are what the user types
@@ -1561,6 +1702,18 @@ export function planGridHtml(plan, geom) {
     }
     const spec = specs.get(cellKey(dx, dy));
     if (!spec) {
+      // A kept claim is not in the plan — it was never claimable — so it is
+      // drawn from the site's own record rather than from `plan`.
+      const k = kept.get(cellKey(dx, dy));
+      if (k) {
+        return gridCell({
+          cls: 'sov-cell-kept',
+          title: `${name(dx, dy)} — Sov ${roman(k.level)} claim you already hold, distance ${
+            k.d.toFixed(2)}, ${k.rp.toFixed(0)} RP. Kept as it is.`,
+          level: roman(k.level),
+          body: 'kept',
+        });
+      }
       return gridCell({ cls: 'sov-cell-none', title: `${name(dx, dy)} — not claimable`, body: CROSS });
     }
     return gridCell({ ...spec, dx, dy, pick: pickable });
@@ -1577,7 +1730,8 @@ export function planGridHtml(plan, geom) {
     <p class="sov-legend"><b class="sov-key-food">I–V</b> food claim,
       <b class="sov-key-mil">I–V</b> military claim with its building level,
       <b class="sov-key-free">grey</b> claimable but unclaimed,
-      <b class="sov-key-out">✕</b> not available.${
+      <b class="sov-key-out">✕</b> not available${
+  kept.size ? ', <b class="sov-key-kept">I–V</b> already yours and kept' : ''}.${
   pickable ? ' Click a tile to cross it out and re-plan without it.' : ''}
       A tile's third line is its terrain bonus, if it has one.
       Hover for distance, research cost, upkeep and the full descriptor.</p>`;
@@ -1622,28 +1776,20 @@ function detailBodyHtml(plan, base, geom) {
   const balance = rows.length
     ? `<table class="sov-balance"><thead><tr><th>At ${plan.tax.toFixed(0)}% Tax</th>
         <th>Produced</th><th>Spent</th><th>Net</th><th></th></tr></thead><tbody>${
-      rows.map((r) => `<tr><td>${r.label}</td><td class="sov-hint">${num(r.base)}</td>
+      rows.map((r) => `<tr><td>${productionLabel(r.icon)}</td><td class="sov-hint">${num(r.base)}</td>
         <td class="sov-hint">${num(r.spent)}</td><td class="${
         r.value < 0 ? 'sov-bad' : 'sov-ok'}">${num(r.value)}</td>
         <td class="sov-hint">${r.note}</td></tr>`).join('')}</tbody></table>`
     : '';
 
   const milPlan = plan.milsov.length
-    ? `<p class="sov-hint">Military sovereignty: ${escapeHtml(milsovPlanText(plan))}</p>`
+    ? milsovPlanHtml(plan)
     : plan.milsovBlocked
       ? `<p class="sov-flag">No military sovereignty fits at this tax — ${
         escapeHtml(MILSOV_BLOCKED_TEXT[plan.milsovBlocked] ?? 'nothing was left over')}.</p>`
       : '';
 
-  // The tax at which the upkeep stops being affordable, stated whether or not it
-  // bites: how much headroom is left is what the user judges the plan by.
-  const res = plan.resImpossible
-    ? `<p class="sov-hint">Upkeep limit: none — the settle allocation has no ${
-      plan.resBinding} plots, so this upkeep cannot be paid at any tax.</p>`
-    : Number.isFinite(plan.resCeiling)
-      ? `<p class="sov-hint">Upkeep limit: ${plan.resCeiling.toFixed(1)}% tax — above that, ${
-        plan.resBinding} production no longer covers it.</p>`
-      : '';
+  const res = upkeepLimitHtml(plan);
 
   // What this tax cost, against the plan at the top of the slider. What it bought
   // is the military line above, so only the price is stated here. The food claim

@@ -10,6 +10,7 @@ import {
 } from '../src/constants.js';
 import {
   descriptorText, descriptorBadge, resultsHtml,
+  scanSummaryText, bindingLabel,
 } from '../src/panel.js';
 
 // A rung is NOT unique to one terrain. This was asserted as an invariant for
@@ -252,6 +253,32 @@ test('the summary is shown above the table when there are results', () => {
   assert.match(html, /Centre 1\|2\./);
   assert.ok(html.indexOf('Centre 1|2.') < html.indexOf('<table>'));
   assert.doesNotMatch(html, /No sites met/);
+});
+
+// Where the scan looked and what it found. Why the other tiles were dropped is
+// deliberately not here: it is a question about the tool, not about the map.
+test('the scan summary states the area covered and the count found', () => {
+  assert.equal(
+    scanSummaryText({ x: -877, y: -2848, zoom: 2, scanned: 25, candidates: 1 }),
+    'Centred on -877|-2848, 5×5 tiles. Checked 25 tiles and found 1 candidate.',
+  );
+  assert.match(
+    scanSummaryText({ x: 0, y: 0, zoom: 20, scanned: 1681, candidates: 0 }),
+    /41×41 tiles\. Checked 1,681 tiles and found 0 candidates\./,
+  );
+});
+
+test('the Limited By column names the ceiling rather than its code', () => {
+  assert.equal(bindingLabel('rp'), 'Research');
+  assert.equal(bindingLabel('res'), 'Resources');
+  assert.equal(bindingLabel('cap'), 'Tax cap');
+  // Unknown codes pass through: showing one raw beats showing nothing.
+  assert.equal(bindingLabel('mystery'), 'mystery');
+
+  const html = resultsHtml([{
+    x: 1, y: 2, tMax: 62, binding: 'rp', sFood: 10, uRp: 3, goldNet: 400,
+  }], 'Centre 1|2.');
+  assert.match(html, /<td>Research<\/td>/);
 });
 
 // Marsh holds Poleturner +3%, and so does i:55 Wooded Land. One rung, two

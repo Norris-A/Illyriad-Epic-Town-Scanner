@@ -12,13 +12,18 @@ import {
   focusRadius,
   resolvePlots,
   focusSite,
+  claimLevel,
+  keptClaims,
 } from '../src/focus.js';
 import { DEFAULT_SETTINGS, PLOT_TOTAL } from '../src/constants.js';
-import { tileKey } from '../src/payload.js';
-import { scoreSite } from '../src/scoring.js';
+import { tileKey, indexPayload } from '../src/payload.js';
+import { scoreSite, claimUpkeep, distance } from '../src/scoring.js';
 import { focusFormHtml } from '../src/panel.js';
 
 const settings = { ...DEFAULT_SETTINGS, tMin: -1000 };
+
+const close = (a, b, eps = 0.05) =>
+  assert.ok(Math.abs(a - b) < eps, `expected ${a} ≈ ${b}`);
 
 /**
  * A payload covering radius `r` around 100|100, every tile claimable and rated
@@ -60,6 +65,7 @@ test('the markup carries every hook the optimiser reads back out of it', () => {
     'class="sov-focus-status"', 'class="sov-focus-out"',
     'data-focus="x"', 'data-focus="y"', 'data-focus="radius"', 'data-focus="tax"',
     'type="checkbox" data-focus="useConfiguredPlots"',
+    'type="checkbox" data-focus="preserveSovereignty"',
   ];
   for (const hook of hooks) assert.ok(html.includes(hook), `markup is missing ${hook}`);
   assert.ok(!/undefined|null|\[object Object\]/.test(html), 'a field rendered a stray value');
@@ -102,32 +108,110 @@ test('coordinates are the only input that can fail', () => {
 
 // --- which allocation the centre tile is planned on ---
 
-test("by default the centre tile is planned on its own ratings, not the config's", () => {
+test('by default the centre tile is planned on the configured allocation', () => {
   const r = run();
   assert.equal(r.ok, true);
-  assert.equal(r.plotSource, 'tile');
-  assert.deepEqual(r.plots, { wood: 4, clay: 4, iron: 4, stone: 4, food: 9 });
-  assert.notDeepEqual(r.plots, settings.plots);
-});
-
-test('the override plans the same tile on the City Configuration allocation', () => {
-  const r = run({ useConfiguredPlots: true });
   assert.equal(r.plotSource, 'config');
   assert.deepEqual(r.plots, settings.plots);
+});
+
+test("turning it off plans the same tile on its own ratings", () => {
+  const own = run({ useConfiguredPlots: false });
+  assert.equal(own.plotSource, 'tile');
+  assert.deepEqual(own.plots, { wood: 4, clay: 4, iron: 4, stone: 4, food: 9 });
+  assert.notDeepEqual(own.plots, settings.plots);
 
   // 9 food plots against the configured 7 is a materially better tile, so the
-  // override has to move the answer — otherwise it is not being applied.
-  assert.ok(r.base.tMax < run().base.tMax, 'the allocation must change the ceiling');
+  // two must not agree — otherwise the setting is not being applied.
+  assert.ok(run().base.tMax < own.base.tMax, 'the allocation must change the ceiling');
 });
 
 test('ratings that are not a 25-plot allocation fall back rather than mislead', () => {
   // Water and other unsettleable terrain carry ratings that do not add to 25;
   // planning a city on those would report a tax no city could run.
   const water = payloadAround({ centreRs: '0|0|0|0|0' });
-  const r = run({}, settings, water);
+  const r = run({ useConfiguredPlots: false }, settings, water);
   assert.equal(r.plotSource, 'fallback');
   assert.deepEqual(r.plots, settings.plots);
   assert.match(r.plotNote, new RegExp(String(PLOT_TOTAL)));
+});
+
+// --- sovereignty the city already holds -------------------------------------
+
+/** The same payload, with `n` of the nearest ring already claimed by you. */
+function withOwnClaims(n = 3, level = 3) {
+  const payload = payloadAround();
+  const ring = [[1, 0], [0, 1], [-1, 0], [0, -1], [1, 1], [-1, -1]].slice(0, n);
+  payload.s = {};
+  for (const [dx, dy] of ring) {
+    payload.s[tileKey(100 + dy, 100 + dx)] = { rd: 'Yours', s: `${level}|?`, b: 'Unknown' };
+  }
+  return payload;
+}
+
+test("a claim's level comes out of the s block, and a bad one is refused", () => {
+  assert.equal(claimLevel({ s: '3|?' }), 3);
+  assert.equal(claimLevel({ s: '5' }), 5);
+  // Charging a claim the wrong level is worse than not charging it at all.
+  for (const bad of [{ s: '?|?' }, { s: '' }, { s: '0|?' }, { s: '9|?' }, {}, null]) {
+    assert.equal(claimLevel(bad), null, JSON.stringify(bad));
+  }
+});
+
+test('only your own claims inside the radius are kept, and only readable ones', () => {
+  const payload = withOwnClaims(3);
+  // An alliance claim and one with an unreadable level, both of which must not
+  // be billed to you.
+  payload.s[tileKey(102, 100)] = { rd: 'Alliance', s: '5|?' };
+  payload.s[tileKey(100, 102)] = { rd: 'Yours', s: '?|?' };
+  const kept = keptClaims({
+    payload, centre: { x: 100, y: 100 }, radius: 2, idx: indexPayload(payload), chancery: false,
+  });
+  assert.equal(kept.claims.length, 3, 'the alliance claim is not yours to keep');
+  assert.equal(kept.unknownLevel, 1);
+  // Level and distance are the whole of the bill, and both are known.
+  const expected = [[1, 0], [0, 1], [-1, 0]]
+    .reduce((sum, [dx, dy]) => sum + claimUpkeep(distance(dx, dy), 3, false).rp, 0);
+  close(kept.rp, expected, 1e-9);
+});
+
+test('preserving charges the research and gold the kept claims already cost', () => {
+  const payload = withOwnClaims(3);
+  const free = run({ preserveSovereignty: false }, settings, payload);
+  const held = run({ preserveSovereignty: true }, settings, payload);
+
+  assert.ok(held.kept.claims.length === 3 && held.kept.rp > 0, 'precondition: something is kept');
+  // Research already spent is research the plan may not spend, so the ceiling
+  // has to come down — and by no more than the claims actually cost.
+  assert.ok(held.base.tMax < free.base.tMax, 'kept claims must cost the site tax');
+
+  // The gold bill is exact: the plan's own claims at 10:1, plus the kept ones.
+  // goldNet moves by more than that, because a plan with less research to spend
+  // also claims differently and holds a different tax — so the bill is what is
+  // pinned here, and the direction is all that is asserted of the net.
+  close(held.base.uGold, (held.base.uRp + held.kept.rp) * 10, 1e-6);
+  close(free.base.uGold, free.base.uRp * 10, 1e-6);
+  assert.ok(held.base.goldNet < free.base.goldNet, 'and must cost it gold');
+});
+
+// Keeping a claim and treating it as free ground are opposite instructions.
+test('preserving overrides "treat your own claims as available"', () => {
+  const payload = withOwnClaims(3);
+  const s = { ...settings, ownClaimsAvailable: true };
+  const held = run({ preserveSovereignty: true }, s, payload);
+  assert.equal(held.settings.ownClaimsAvailable, false);
+  // The kept tiles are not offered to the planner as ground it can take.
+  for (const k of held.kept.claims) {
+    assert.ok(
+      !held.neighbours.some((n) => n.dx === k.dx && n.dy === k.dy),
+      `${k.dx},${k.dy} is both kept and claimable`,
+    );
+  }
+});
+
+test('nothing is kept when the setting is off, whatever the map holds', () => {
+  const r = run({ preserveSovereignty: false }, settings, withOwnClaims(3));
+  assert.deepEqual(r.kept, { claims: [], rp: 0, unknownLevel: 0 });
 });
 
 // --- the refusals ---

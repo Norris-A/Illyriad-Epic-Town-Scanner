@@ -13,7 +13,6 @@ import {
   parseMilsovStructure,
   parseRpCalibration,
   parseResourceBoosters,
-  parseResourceCalibration,
   parseResourceMinimums,
   parsePrestige,
 } from './panel.js';
@@ -71,15 +70,6 @@ export function sanitizeSettings(raw) {
         break;
       case 'minimums':
         out.resourceMinimums = parseResourceMinimums(v);
-        break;
-      case 'resourceCalibration':
-        out.resourceCalibration = parseResourceCalibration({
-          observed: v?.observedPerHour,
-          atTax: v?.atTax,
-          plots: v?.plots,
-          booster: v?.booster,
-          prestige: v?.prestige,
-        });
         break;
       default:
         out[f.key] = clampNumber(v, { ...f, fallback: f.fallback ?? fallback ?? 0 });

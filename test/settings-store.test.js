@@ -28,7 +28,6 @@ test('a round trip returns exactly what went in', () => {
     milsovMinBonus: 40,
     resourceBoosters: { wood: true, clay: false, iron: true, stone: false },
     rpCalibration: { observedRpPerHour: 820, atTax: 30 },
-    resourceCalibration: { observedPerHour: 15000, atTax: 25, plots: 5, booster: true },
   });
   assert.deepEqual(decodeSettings(encodeSettings(s)).settings, s);
 });
@@ -103,7 +102,6 @@ test('a value that would be refused when typed is refused when restored', () => 
     milsovStructure: 'farmstead',                      // not offered
     resourceBoosters: { wood: 1, nonsense: true },
     rpCalibration: { observedRpPerHour: 0, atTax: 25 },        // zero is "off"
-    resourceCalibration: { observedPerHour: 5000, plots: 0 },  // undividable
   });
 
   assert.equal(s.tMin, 100, 'clamped, not taken as typed');
@@ -116,7 +114,6 @@ test('a value that would be refused when typed is refused when restored', () => 
   assert.equal(s.milsovStructure, null);
   assert.deepEqual(s.resourceBoosters, { wood: true, clay: false, iron: false, stone: false });
   assert.equal(s.rpCalibration, null);
-  assert.equal(s.resourceCalibration, null);
 });
 
 test('a select is checked against the options the build actually offers', () => {

@@ -104,29 +104,12 @@ export function computeRRef(s) {
 /**
  * Y — per-plot yield at level 20, shared by all four basic resources.
  *
- * A reading overrides the default, as it does for R_ref, dividing out the tax
- * multiplier and every additive bonus that was running when it was taken. It is
- * for a city the default does not describe.
- *
- * The booster and prestige are in that divisor because they are points, not
- * factors: divide by the tax alone and 40 or 20 points of bonus are fitted into
- * the yield as a multiplier, which reproduces the reading at its own tax and is
- * wrong at every other.
- *
- * Both paths set `measured`, which is what lets tRes bind. The flag is carried
- * so that a yield the engine cannot stand behind has somewhere to say so; the
- * annotate-but-do-not-rank path it drives is subtle enough to keep wired.
+ * `measured` is what lets tRes bind. Every yield is measured today, so the flag
+ * is always true; it is carried rather than assumed because the
+ * annotate-but-do-not-rank path it drives is subtle enough to keep wired, and a
+ * yield the engine cannot stand behind would need somewhere to say so.
  */
-export function computeBasicYield(s) {
-  const cal = s.resourceCalibration;
-  if (cal && cal.observedPerHour > 0 && cal.plots > 0) {
-    const m = PRODUCTION_BASE - cal.atTax
-      + (cal.booster ? RESOURCE_BOOSTER_BONUS : 0)
-      + (cal.prestige ? PRESTIGE_PRODUCTION_BONUS : 0);
-    if (m > 0) {
-      return { yield: (cal.observedPerHour * 100) / (cal.plots * m), measured: true };
-    }
-  }
+export function computeBasicYield() {
   return { yield: BASIC_YIELD_L20, measured: true };
 }
 
@@ -371,6 +354,15 @@ export function tMax({ food, rp, res }) {
   let best = candidates[0];
   for (const c of candidates) if (c.value < best.value) best = c;
   return { value: best.value, binding: best.name };
+}
+
+/**
+ * Gold tracks RP exactly 10:1 for a claim, so a plan's own bill is a conversion.
+ * `keptClaimRp` — claims the city already holds, see focus.js — is added here and
+ * nowhere else, so the three plan paths cannot disagree about counting it.
+ */
+export function claimGold(uRp, s) {
+  return (uRp + (s?.keptClaimRp ?? 0)) * 10;
 }
 
 export function goldNet({ tax, consumption, uGold }) {
@@ -866,7 +858,7 @@ export function planSiteAt(ctx, tax) {
   const sFood = ctx.dp.best[spend];
   const milsovRp = milsov.reduce((sum, a) => sum + a.rp, 0);
   const uRp = spend + milsovRp;
-  const uGold = uRp * 10;      // gold tracks RP exactly 10:1
+  const uGold = claimGold(uRp, s);
   const resCeiling = tRes({ milsovAssignments: milsov, plots: s.plots, settings: s });
   // An indicative ceiling annotates the plan; it does not constrain it. Nothing
   // marks one today — the yields are measured — but the path stays wired for a
@@ -979,7 +971,9 @@ export function siteCeiling(ctx) {
     });
     // A negative T_max is a real answer — the site cannot feed a city at any
     // tax. Report it and let the caller filter on tMin.
-    const net = goldNet({ tax: t.value, consumption: ctx.consumption, uGold: spend * 10 });
+    const net = goldNet({
+      tax: t.value, consumption: ctx.consumption, uGold: claimGold(spend, ctx.settings),
+    });
     if (!winner || betterPlan({ tMax: t.value, uRp: spend, goldNet: net }, winner)) {
       winner = { tMax: t.value, binding: t.binding, sFood, spend };
     }
@@ -1057,8 +1051,10 @@ function fallbackPlan(ctx, winner) {
     sFood: winner.sFood,
     spend: winner.spend,
     uRp: winner.spend,
-    uGold: winner.spend * 10,
-    goldNet: goldNet({ tax: winner.tMax, consumption: ctx.consumption, uGold: winner.spend * 10 }),
+    uGold: claimGold(winner.spend, ctx.settings),
+    goldNet: goldNet({
+      tax: winner.tMax, consumption: ctx.consumption, uGold: claimGold(winner.spend, ctx.settings),
+    }),
     surplus: null,
     tiles,
     free,

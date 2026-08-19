@@ -90,14 +90,10 @@ function runScan() {
       return;
     }
     lastResults = msg.results;
-    const excluded = Object.entries(msg.excluded)
-      .map(([k, v]) => `${k} ${v}`).join(', ');
-    panel.renderResults(
-      msg.results,
-      `Centre ${payload.x}|${payload.y}, zoom ${payload.zoom}, ` +
-      `${2 * payload.zoom + 1}×${2 * payload.zoom + 1}, ${msg.scanned} tiles, ` +
-      `${msg.results.length} candidates. Excluded: ${excluded || 'none'}.`,
-    );
+    // The facts, not the sentence — the panel does the wording.
+    panel.renderResults(msg.results, {
+      x: payload.x, y: payload.y, zoom: payload.zoom, scanned: msg.scanned,
+    });
     panel.renderIncomplete(msg.incomplete);
     panel.setStatus('');
     worker.terminate();

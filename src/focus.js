@@ -11,7 +11,7 @@ import { PLOT_KEYS, PLOT_TOTAL } from './constants.js';
 import {
   indexPayload, tileKey, parseRs, collectNeighbourhood, isSettleable,
 } from './payload.js';
-import { prepareSite, planSiteAt, scoreSiteFrom } from './scoring.js';
+import { prepareSite, planSiteAt, scoreSiteFrom, claimUpkeep, distance } from './scoring.js';
 
 /** Where the slider starts. Not a game constant — nothing derives from it. */
 export const FOCUS_DEFAULT_TAX = 60;
@@ -24,7 +24,12 @@ export const DEFAULT_FOCUS = {
   y: null,
   radius: null,          // null follows R_claim from the city configuration
   tax: FOCUS_DEFAULT_TAX,
-  useConfiguredPlots: false,
+  // On, because the tile as you intend to terraform it is the usual question
+  // here; its ratings today describe ground nobody is going to leave alone.
+  useConfiguredPlots: true,
+  // Off by default, because it only means anything on a tile that is already
+  // yours, and the common case here is unsettled ground.
+  preserveSovereignty: false,
 };
 
 function toInt(raw, { min = -Infinity, max = Infinity, fallback = null } = {}) {
@@ -55,6 +60,7 @@ export function parseFocus(raw) {
       // request would answer a question the user cannot act on.
       tax: toInt(raw?.tax, { min: FOCUS_TAX_FLOOR, max: 100, fallback: FOCUS_DEFAULT_TAX }),
       useConfiguredPlots: !!raw?.useConfiguredPlots,
+      preserveSovereignty: !!raw?.preserveSovereignty,
     },
     errors,
   };
@@ -115,6 +121,51 @@ export function resolvePlots(focus, settings, rs) {
   };
 }
 
+/**
+ * The `s` block's level field reads "<level>|?". Null where it does not parse:
+ * charging a claim the wrong level is worse than not charging it.
+ */
+export function claimLevel(claim) {
+  const n = Number(String(claim?.s ?? '').split('|')[0]);
+  return Number.isInteger(n) && n >= 1 && n <= 5 ? n : null;
+}
+
+/**
+ * Your own claims inside the radius, which the city pays for whatever the plan
+ * does next.
+ *
+ * Level and distance are the whole of a claim's bill, and both are in the
+ * payload, so what a kept claim COSTS is always knowable. What it PRODUCES is
+ * not: the block's building field is usually "Unknown", so a kept Farmstead's
+ * food cannot be credited. The caller says so rather than guessing.
+ *
+ * @returns {{claims: object[], rp: number, unknownLevel: number}} `rp` is the
+ *   hourly research the kept claims already spend
+ */
+export function keptClaims({ payload, centre, radius, idx, chancery }) {
+  const claims = [];
+  let rp = 0;
+  let unknownLevel = 0;
+  for (let dy = -radius; dy <= radius; dy++) {
+    for (let dx = -radius; dx <= radius; dx++) {
+      if (dx === 0 && dy === 0) continue;
+      const key = tileKey(centre.y + dy, centre.x + dx);
+      const claim = idx.claims.get(key);
+      if (!claim || claim.rd !== 'Yours') continue;
+      const level = claimLevel(claim);
+      if (level === null) {
+        unknownLevel += 1;
+        continue;
+      }
+      const d = distance(dx, dy);
+      const up = claimUpkeep(d, level, chancery);
+      claims.push({ dx, dy, d, level, key, rp: up.rp, gold: up.gold });
+      rp += up.rp;
+    }
+  }
+  return { claims, rp, unknownLevel };
+}
+
 /** Reported, never branched on — the caller only renders these. */
 function centreFacts(tile, key, idx) {
   const claim = idx.claims.get(key);
@@ -164,9 +215,28 @@ export function focusSite({ payload, focus, settings }) {
   const idx = indexPayload(payload);
   const rs = parseRs(centre);
   const { plots, source: plotSource, note: plotNote } = resolvePlots(focus, settings, rs);
-  // The only two keys this pane overrides. Everything else the engine reads it
-  // reads from the saved configuration unchanged.
-  const effective = { ...settings, plots, rClaim: radius };
+  let effective = { ...settings, plots, rClaim: radius };
+
+  // Charged as a research minimum, which is what it is — research the plan may
+  // not spend — so ceiling, knapsack budget and balance all read it off the one
+  // field instead of three that could disagree. `keptClaimRp` is the gold half.
+  //
+  // Keeping a claim and treating it as free ground are opposite instructions, so
+  // preserving overrides ownClaimsAvailable rather than combining with it.
+  const kept = focus.preserveSovereignty
+    ? keptClaims({ payload, centre: focus, radius, idx, chancery: !!settings.chancery })
+    : { claims: [], rp: 0, unknownLevel: 0 };
+  if (focus.preserveSovereignty) {
+    effective = {
+      ...effective,
+      ownClaimsAvailable: false,
+      keptClaimRp: kept.rp,
+      resourceMinimums: {
+        ...effective.resourceMinimums,
+        research: (effective.resourceMinimums?.research ?? 0) + kept.rp,
+      },
+    };
+  }
 
   const { neighbours, missing } = collectNeighbourhood(payload, key, radius, idx, effective);
   if (missing.length) {
@@ -216,6 +286,7 @@ export function focusSite({ payload, focus, settings }) {
     // the settings this plan was made with — the pane overrides two of them.
     neighbours,
     settings: effective,
+    kept,
     claimable: neighbours.length,
     ring: (2 * radius + 1) ** 2 - 1,
     ctx,

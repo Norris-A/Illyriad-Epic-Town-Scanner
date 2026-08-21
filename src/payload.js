@@ -61,7 +61,6 @@ export function indexPayload(payload) {
   return { claims, towns };
 }
 
-/** Is this neighbour available to claim? */
 export function isClaimable(tile, key, idx, settings) {
   if (!tile || tile.sov !== 1) return false;
   if (tile.imp || tile.brg) return false;
@@ -93,7 +92,6 @@ export function isSettleable(tile) {
   return tile.sov === 1 && tile.hos === 1;
 }
 
-/** Does this tile qualify as a candidate settle site? */
 export function isCandidateSite(tile, key, idx, settings, towns) {
   if (!isSettleable(tile)) return { ok: false, reason: 'not-settleable' };
   if (idx.claims.has(key)) return { ok: false, reason: 'already-claimed' };

@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "Userscript ranking Illyriad world-map tiles by sustainable tax rate. See illyriad-sov-scanner-PRD.md.",
+  "description": "Userscript ranking Illyriad world-map tiles by sustainable tax rate.",
   "scripts": {
     "build": "node build.mjs",
     "release": "node build.mjs --release",

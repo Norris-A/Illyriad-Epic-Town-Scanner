@@ -46,7 +46,6 @@ self.onmessage = (e) => {
     }
   }
 
-  // T_max descending, secondary on Gold_net.
   results.sort((a, b) => b.tMax - a.tMax || b.goldNet - a.goldNet);
 
   self.postMessage({

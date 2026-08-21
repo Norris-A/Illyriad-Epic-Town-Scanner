@@ -609,8 +609,7 @@ function descriptorBonus(tile, structure) {
  * as well, and leaves more research for everything else. Hence the bound keeps
  * branches that can only TIE, and a tie is taken on lower RP. Cutting ties
  * instead handed the answer to whichever staircase the descent found first.
- */
-/**
+ *
  * @param {string} [structure] the sovereignty structure key being placed. Tiles
  *   whose descriptor names it run at a higher rate per level — see
  *   descriptorBonus.
@@ -727,24 +726,6 @@ function milsovBlockedBy({ hosts, free, headroom, chancery }) {
   return null;
 }
 
-/**
- * Score one candidate site. `neighbours` are the claimable tiles already
- * filtered for claimability, each { dx, dy, food, key, i, water }.
- *
- * Food is planned first and alone. It is what a city is settled for,
- * it is what pays for a tax rate, and it is the only claim that gives the city
- * anything back — so it gets the whole neighbourhood, the whole research budget
- * and the whole building cap, and the tax it reaches is this site's answer.
- *
- * Military sovereignty is then fitted into what that plan left over, and only
- * into what it left over: the engine chooses the count, the levels and the
- * tiles, and the user chooses only which structure to put there. A plan that
- * would cost a point of tax is not a plan this returns.
- *
- * Returns the winning plan. T_max may be negative — that is a real answer, not
- * an error. Ranking and the tMin filter are the caller's job.
- * Returns null only when there is nothing to evaluate at all.
- */
 /**
  * Everything about a site that does not depend on the tax: the tiles in cost
  * order, the food candidates, and the knapsack over them.
@@ -981,6 +962,24 @@ export function siteCeiling(ctx) {
   return winner;
 }
 
+/**
+ * Score one candidate site. `neighbours` are the claimable tiles already
+ * filtered for claimability, each { dx, dy, food, key, i, water }.
+ *
+ * Food is planned first and alone. It is what a city is settled for,
+ * it is what pays for a tax rate, and it is the only claim that gives the city
+ * anything back — so it gets the whole neighbourhood, the whole research budget
+ * and the whole building cap, and the tax it reaches is this site's answer.
+ *
+ * Military sovereignty is then fitted into what that plan left over, and only
+ * into what it left over: the engine chooses the count, the levels and the
+ * tiles, and the user chooses only which structure to put there. A plan that
+ * would cost a point of tax is not a plan this returns.
+ *
+ * Returns the winning plan. T_max may be negative — that is a real answer, not
+ * an error. Ranking and the tMin filter are the caller's job.
+ * Returns null only when there is nothing to evaluate at all.
+ */
 export function scoreSite({ neighbours, settings }) {
   return scoreSiteFrom(prepareSite({ neighbours, settings }));
 }

@@ -1964,6 +1964,8 @@
   box-shadow:-2px 0 8px rgba(0,0,0,.5)}
 .sov-panel h2{margin:0;padding:8px 10px;font-size:13px;font-weight:600;color:#fff;
   background:#2a2a2a;cursor:pointer}
+.sov-panel h2 .sov-about{float:right;color:#8a8a8a;text-decoration:none}
+.sov-panel h2 .sov-about:hover{color:#fff}
 .sov-body{padding:8px 10px}
 .sov-panel table{width:100%;border-collapse:collapse}
 .sov-panel th,.sov-panel td{padding:2px 4px;border-bottom:1px solid #333;text-align:right}
@@ -2527,7 +2529,11 @@
     root.className = "sov-panel";
     const opening = initialSettings ?? DEFAULT_SETTINGS;
     root.innerHTML = `
-    <h2>Sovereignty Scanner <span class="sov-build"></span></h2>
+    <h2>Sovereignty Scanner <span class="sov-build"></span><a class="sov-about"
+      href="https://github.com/Norris-A/Illyriad-Epic-Town-Scanner/blob/main/LICENSE"
+      target="_blank" rel="noopener" title="Unofficial fan tool. Illyriad, its game data and
+the icon art are the intellectual property of Illyriad Games Limited \u2014 click for the
+licence and full copyright notice.">\u24D8</a></h2>
     <div class="sov-body">
       <nav class="sov-tabs">
         <button type="button" data-tab="scan" class="on">Site Search</button>
@@ -2552,7 +2558,10 @@
     let rendered = [];
     let selected = null;
     let incomplete = [];
-    root.querySelector("h2").addEventListener("click", () => root.classList.toggle("sov-collapsed"));
+    root.querySelector("h2").addEventListener("click", (e) => {
+      if (e.target.closest(".sov-about")) return;
+      root.classList.toggle("sov-collapsed");
+    });
     scanBtn.addEventListener("click", onScan);
     $(".sov-export").addEventListener("click", onExport);
     function showTab(name) {

@@ -217,7 +217,7 @@ Tampermonkey picks it up instead of silently running a stale copy.
 
 | Path | Role |
 |---|---|
-| `src/constants.js` | Game constants, each traced to a mechanics §; confidence markers preserved. Also the terrain name table read from the game client, and the descriptor bonuses read by hand |
+| `src/constants.js` | Game constants, each marked with how well it is known — verified, sourced, derived or assumed. Also the terrain name table read from the game client, and the descriptor bonuses read by hand |
 | `src/scoring.js` | Pure engine — the three ceilings, the food knapsack and frontier walk, then the military plan fitted into what they leave. No DOM. Imported by both the worker and the tests |
 | `src/payload.js` | Payload reading and the candidacy filters |
 | `src/capture.js` | Passive payload observation. Reader only — no requests |
@@ -241,3 +241,13 @@ window.__sovScanner.probeInPageData()
 ```
 
 If that returns hits, `src/capture.js` can drop the XHR/fetch patching entirely.
+
+## License
+
+[PolyForm Noncommercial 1.0.0](LICENSE) — free to use, modify and share for
+any noncommercial purpose, and it covers the code in this repository only. The
+icon art comes from the official Illyriad fansite kit; it, the game data and
+the terrain names remain the intellectual property of Illyriad Games Limited,
+whose [copyright notice](LICENSE#illyriad-content) applies wherever they
+appear. This is an unofficial fan tool, not affiliated with or endorsed by
+Illyriad Games Limited.

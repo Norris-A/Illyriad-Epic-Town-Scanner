@@ -64,6 +64,8 @@ const CSS = `
   box-shadow:-2px 0 8px rgba(0,0,0,.5)}
 .sov-panel h2{margin:0;padding:8px 10px;font-size:13px;font-weight:600;color:#fff;
   background:#2a2a2a;cursor:pointer}
+.sov-panel h2 .sov-about{float:right;color:#8a8a8a;text-decoration:none}
+.sov-panel h2 .sov-about:hover{color:#fff}
 .sov-body{padding:8px 10px}
 .sov-panel table{width:100%;border-collapse:collapse}
 .sov-panel th,.sov-panel td{padding:2px 4px;border-bottom:1px solid #333;text-align:right}
@@ -837,7 +839,11 @@ export function createPanel({ onScan, onExport, initialSettings, onSettingsChang
   root.className = 'sov-panel';
   const opening = initialSettings ?? DEFAULT_SETTINGS;
   root.innerHTML = `
-    <h2>Sovereignty Scanner <span class="sov-build"></span></h2>
+    <h2>Sovereignty Scanner <span class="sov-build"></span><a class="sov-about"
+      href="https://github.com/Norris-A/Illyriad-Epic-Town-Scanner/blob/main/LICENSE"
+      target="_blank" rel="noopener" title="Unofficial fan tool. Illyriad, its game data and
+the icon art are the intellectual property of Illyriad Games Limited — click for the
+licence and full copyright notice.">ⓘ</a></h2>
     <div class="sov-body">
       <nav class="sov-tabs">
         <button type="button" data-tab="scan" class="on">Site Search</button>
@@ -869,7 +875,13 @@ export function createPanel({ onScan, onExport, initialSettings, onSettingsChang
   let selected = null;     // the row Prefill copies `rs` from
   let incomplete = [];     // sites the last scan could not see all of
 
-  root.querySelector('h2').addEventListener('click', () => root.classList.toggle('sov-collapsed'));
+  // The ⓘ is the fansite kit's required link to the copyright notice — the
+  // panel is where the kit's icons render. Following it must not also collapse
+  // the panel, or the page comes back to a bar that looks like it broke.
+  root.querySelector('h2').addEventListener('click', (e) => {
+    if (e.target.closest('.sov-about')) return;
+    root.classList.toggle('sov-collapsed');
+  });
   scanBtn.addEventListener('click', onScan);
   $('.sov-export').addEventListener('click', onExport);
 
@@ -1045,7 +1057,7 @@ export function createPanel({ onScan, onExport, initialSettings, onSettingsChang
 
     // The research the plan will actually spend against, shown as the override is
     // typed — a reading that produces an implausible figure is far easier to spot
-    // here than in a results row.. Stated at 0% tax because that is the figure every
+    // here than in a results row. Stated at 0% tax because that is the figure every
     // claim is bought out of, whatever tax the site ends up holding.
     const rp = Math.round(researchAt({
       rRef: computeRRef(s), rpBonus: prestigeBonus(s, 'research'), tax: 0,
@@ -1572,25 +1584,6 @@ function gridCell({ cls, title, level, body, badge, dx, dy, pick }) {
 }
 
 /**
- * The plan as a map: the town in the middle, every claim on the tile it sits on,
- * x across the top and y down the left, highest y in the top row so the grid sits
- * the way the game map does.
- *
- * Only claimable tiles reach the panel, so water, foreign claims and unsettleable
- * terrain are crossed out too — a tile the plan cannot have looks the same
- * whether the game ruled it out or the user did.
- *
- * A tile in `excluded` is drawn crossed whatever the plan says, so a stale plan
- * cannot show a claim on a square the user has ruled out.
- *
- * @param {object} plan the plan to draw, as planSiteAt returns it
- * @param {{radius: number, x: number, y: number, excluded: Set<string>,
- *   pickable: boolean}} geom the square to draw, the centre's own coordinates,
- *   the tiles crossed out by the user, and whether cells respond to a click.
- *   Non-finite coordinates fall back to offset labels
- * @returns {string} the grid, with its legend under it
- */
-/**
  * A tile's terrain descriptor, as the tail of its hover text.
  *
  * Three outcomes, and they have to read differently. A descriptor that grants
@@ -1693,6 +1686,25 @@ export function descriptorBadge(tile) {
     escapeHtml(d.product)}</span>`;
 }
 
+/**
+ * The plan as a map: the town in the middle, every claim on the tile it sits on,
+ * x across the top and y down the left, highest y in the top row so the grid sits
+ * the way the game map does.
+ *
+ * Only claimable tiles reach the panel, so water, foreign claims and unsettleable
+ * terrain are crossed out too — a tile the plan cannot have looks the same
+ * whether the game ruled it out or the user did.
+ *
+ * A tile in `excluded` is drawn crossed whatever the plan says, so a stale plan
+ * cannot show a claim on a square the user has ruled out.
+ *
+ * @param {object} plan the plan to draw, as planSiteAt returns it
+ * @param {{radius: number, x: number, y: number, excluded: Set<string>,
+ *   pickable: boolean}} geom the square to draw, the centre's own coordinates,
+ *   the tiles crossed out by the user, and whether cells respond to a click.
+ *   Non-finite coordinates fall back to offset labels
+ * @returns {string} the grid, with its legend under it
+ */
 export function planGridHtml(plan, geom) {
   const r = Math.max(1, Math.round(geom?.radius ?? 0) || spanOf(plan));
   const cx = geom?.x;

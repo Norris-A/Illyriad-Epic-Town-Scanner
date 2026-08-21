@@ -107,6 +107,9 @@ function runScan() {
 // runScan reads the form, not this variable.
 window.__sovScanner = {
   get settings() { return panel.getSettings().settings; },
+  // The last payload, for looking at when the tool reads something out of it
+  // wrongly — the block formats are only partly documented.
+  get payload() { return getLatestPayload(); },
   set settings(v) { panel.setSettings({ ...DEFAULT_SETTINGS, ...v }); },
   probeInPageData,
 };

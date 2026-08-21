@@ -112,19 +112,51 @@ export function isCandidateSite(tile, key, idx, settings, towns) {
 }
 
 /**
- * Town positions from the `t` block. The pipe string is
- * "name|townID|x|y|population|playerID|..." — x|y, note the inversion vs keys.
- * Several positions remain unidentified; only read what's known.
+ * The town's pipe string, "name|townID|x|y|population|playerID|...", found by
+ * its shape rather than by a field name.
+ *
+ * The entry is an object carrying the string alongside `r`, `rd` and friends,
+ * and which property holds it is not documented. Guessing at names failed
+ * silently: the position falls back to the tile key, which is right, so a wrong
+ * guess cost only the name and looked like everything working. Matching on
+ * "four or more parts with numbers in the x and y slots" is self-checking, and
+ * no other field on the entry is shaped like that.
+ */
+export function townString(town) {
+  if (typeof town === 'string') return town;
+  if (!town || typeof town !== 'object') return '';
+  for (const v of Object.values(town)) {
+    if (typeof v !== 'string' || !v.includes('|')) continue;
+    const parts = v.split('|');
+    if (parts.length >= 4 && Number.isFinite(Number(parts[2])) && parts[2] !== ''
+      && Number.isFinite(Number(parts[3])) && parts[3] !== '') {
+      return v;
+    }
+  }
+  return '';
+}
+
+/**
+ * Town positions from the `t` block. The pipe string is x|y — note the
+ * inversion vs keys. Several positions remain unidentified; only read what's
+ * known.
  */
 export function extractTowns(payload) {
   const out = [];
   for (const [key, town] of Object.entries(payload.t ?? {})) {
-    const str = typeof town === 'string' ? town : town.s ?? town.n ?? '';
-    const parts = String(str).split('|');
+    const parts = townString(town).split('|');
     const x = Number(parts[2]);
     const y = Number(parts[3]);
     const pos = Number.isNaN(x) || Number.isNaN(y) ? parseKey(key) : { x, y };
-    out.push({ ...pos, own: town && town.rd === 'Yours', rd: town && town.rd, key });
+    out.push({
+      ...pos,
+      // parts[0] is the town's name. Blank where the string is not the pipe
+      // format, which the caller shows as the coordinates instead.
+      name: parts[0] ?? '',
+      own: town && town.rd === 'Yours',
+      rd: town && town.rd,
+      key,
+    });
   }
   return out;
 }

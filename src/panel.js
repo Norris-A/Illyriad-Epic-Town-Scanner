@@ -29,6 +29,7 @@ import {
   descriptorFor,
 } from './constants.js';
 import { ICONS, PRODUCTION_ICONS, STRUCTURE_ICONS, DEFAULT_STRUCTURE_ICON } from './icons.js';
+import { extractTowns } from './payload.js';
 import {
   computeBOther,
   computeK,
@@ -73,6 +74,7 @@ const CSS = `
 .sov-panel button[disabled]{background:#333;color:#888;cursor:not-allowed}
 .sov-row{cursor:pointer}
 .sov-detail{background:#222;font-size:11px}
+.sov-detail-actions{margin:2px 0 6px}
 .sov-flag{color:#e94}
 .sov-collapsed .sov-body{display:none}
 .sov-selected>td{background:#243}
@@ -743,6 +745,11 @@ export function focusFormHtml(focus, settings) {
   const rClaim = Math.round(settings?.rClaim ?? 2);
   return `<form class="sov-focus-form">
       <fieldset><legend>Tile</legend>
+        <label class="sov-f"><span>One of Your Towns</span>
+          <select class="sov-town-pick"><option value="">—</option></select></label>
+        <p class="sov-hint sov-town-note">Fills the coordinates below from a town of yours on
+          the map. For a town you have already built out, tick Preserve Existing Sovereignty
+          so the plan accounts for the claims it is already paying for.</p>
         <label class="sov-f"><span>Coordinates — x | y</span>
           <span class="sov-xy">
             <input type="number" data-focus="x" step="1" placeholder="x"${attr('value', f.x)}>
@@ -770,14 +777,28 @@ export function focusFormHtml(focus, settings) {
           and gold they already cost are taken off the top, so the plan is what you can still
           add. Off, the plan is drawn as though the ground were empty.</p>
       </fieldset>
-      <p><button type="button" class="sov-focus-run">Optimise</button>
-         <button type="button" class="sov-focus-use sec">Use Selected Result</button></p>
+      <p><button type="button" class="sov-focus-run">Optimise</button></p>
       <p class="sov-hint">Everything else — research, city food, chancery, the building cap
         and which military structure to place — comes from City Configuration. Any tile can
         be examined here, including one already settled, claimed, or too near a town.</p>
     </form>
     <div class="sov-focus-status"></div>
     <div class="sov-focus-out"></div>`;
+}
+
+/**
+ * Your own towns in a payload, named and sorted, for the optimiser's picker.
+ * Deduplicated on position: the `t` block is keyed off claiming towns rather
+ * than the viewport, so one town can appear under more than one key.
+ */
+export function ownTowns(payload) {
+  const seen = new Map();
+  for (const t of extractTowns(payload)) {
+    if (!t.own || !Number.isFinite(t.x) || !Number.isFinite(t.y)) continue;
+    const at = `${t.x}|${t.y}`;
+    if (!seen.has(at)) seen.set(at, { x: t.x, y: t.y, label: t.name ? `${t.name} (${at})` : at });
+  }
+  return [...seen.values()].sort((a, b) => a.label.localeCompare(b.label));
 }
 
 /** The two capital bonuses are derived, not stored — show why each is off. */
@@ -854,13 +875,15 @@ export function createPanel({ onScan, onExport, initialSettings, onSettingsChang
 
   // One pane at a time. The radius placeholder was baked in at build time from
   // the settings as they were then, so entering the optimiser re-reads them.
-  root.querySelectorAll('.sov-tabs button').forEach((tab) => {
-    tab.addEventListener('click', () => {
-      const name = tab.dataset.tab;
-      root.querySelectorAll('.sov-tabs button').forEach((t) => t.classList.toggle('on', t === tab));
-      root.querySelectorAll('[data-pane]').forEach((p) => { p.hidden = p.dataset.pane !== name; });
-      if (name === 'focus') syncFocusRadiusHint();
+  function showTab(name) {
+    root.querySelectorAll('.sov-tabs button').forEach((t) => {
+      t.classList.toggle('on', t.dataset.tab === name);
     });
+    root.querySelectorAll('[data-pane]').forEach((p) => { p.hidden = p.dataset.pane !== name; });
+    if (name === 'focus') syncFocusRadiusHint();
+  }
+  root.querySelectorAll('.sov-tabs button').forEach((tab) => {
+    tab.addEventListener('click', () => showTab(tab.dataset.tab));
   });
 
   // --- reading the form ---
@@ -1111,6 +1134,23 @@ export function createPanel({ onScan, onExport, initialSettings, onSettingsChang
   function syncFocusRadiusHint() {
     const { settings: s } = readSettings();
     focusForm.querySelector('[data-focus="radius"]').placeholder = String(Math.round(s.rClaim ?? 2));
+    syncTownPicker();
+  }
+
+  /**
+   * The towns of yours the last payload happens to cover. Rebuilt on entering
+   * the pane rather than held, because panning the map changes the answer and
+   * a stale list would offer a town whose tile is no longer loaded.
+   */
+  function syncTownPicker() {
+    const sel = focusForm.querySelector('.sov-town-pick');
+    const payload = getPayload?.();
+    const towns = payload ? ownTowns(payload) : [];
+    sel.disabled = !towns.length;
+    sel.innerHTML = towns.length
+      ? `<option value="">—</option>${towns.map((t) =>
+        `<option value="${t.x}|${t.y}">${escapeHtml(t.label)}</option>`).join('')}`
+      : `<option value="">${payload ? 'none on the map right now' : 'no map data yet'}</option>`;
   }
 
   function readFocus() {
@@ -1162,22 +1202,33 @@ export function createPanel({ onScan, onExport, initialSettings, onSettingsChang
     });
   }
 
+  /**
+   * Take a scanned site over to the optimiser and plan it there. The scan ranks
+   * on food at each site's own ceiling; this is where the tax comes down and the
+   * trade against military sovereignty becomes visible, so it is the same
+   * question continued rather than a new one.
+   */
+  function optimiseSite(result) {
+    focusForm.querySelector('[data-focus="x"]').value = result.x;
+    focusForm.querySelector('[data-focus="y"]').value = result.y;
+    showTab('focus');
+    runFocus();
+    // The answer is below the form, and the form is what the tab lands on. The
+    // status is the higher of the two, so this lands on a refusal as well as a plan.
+    $('.sov-focus-status').scrollIntoView({ block: 'start' });
+  }
+
+  focusForm.addEventListener('change', (e) => {
+    const sel = e.target.closest('.sov-town-pick');
+    if (!sel || !sel.value) return;
+    const [x, y] = sel.value.split('|');
+    focusForm.querySelector('[data-focus="x"]').value = x;
+    focusForm.querySelector('[data-focus="y"]').value = y;
+  });
+
   focusForm.addEventListener('submit', (e) => e.preventDefault());
   focusForm.addEventListener('click', (e) => {
-    if (e.target.closest('.sov-focus-run')) {
-      runFocus();
-    } else if (e.target.closest('.sov-focus-use')) {
-      // `selected` is the row Prefill copies rs from, set by select().
-      const status = $('.sov-focus-status');
-      if (!selected) {
-        status.textContent = 'Select a result row on the Site Search tab first.';
-        return;
-      }
-      focusForm.querySelector('[data-focus="x"]').value = selected.x;
-      focusForm.querySelector('[data-focus="y"]').value = selected.y;
-      status.textContent = '';
-      runFocus();
-    }
+    if (e.target.closest('.sov-focus-run')) runFocus();
   });
 
   refresh({ save: false });
@@ -1213,7 +1264,7 @@ export function createPanel({ onScan, onExport, initialSettings, onSettingsChang
           // Selecting and expanding are one gesture; Prefill needs a selection
           // the user can see they made.
           select(Number(row.dataset.n));
-          toggleDetail(row, results[Number(row.dataset.n)], readSettings().settings);
+          toggleDetail(row, results[Number(row.dataset.n)], readSettings().settings, optimiseSite);
         });
       });
     },
@@ -1393,7 +1444,7 @@ function mountPlanBlock(scope, state) {
   draw();
 }
 
-function toggleDetail(row, result, settings) {
+function toggleDetail(row, result, settings, onOptimise) {
   const next = row.nextElementSibling;
   if (next && next.classList.contains('sov-detail')) {
     next.remove();
@@ -1410,9 +1461,18 @@ function toggleDetail(row, result, settings) {
 
   const cell = document.createElement('td');
   cell.colSpan = 8;
+  // The button sits outside the plan block, which rewrites its own innerHTML on
+  // every redraw — inside it, the first tax drag would take the button with it.
+  const actions = document.createElement('p');
+  actions.className = 'sov-detail-actions';
+  actions.innerHTML = `<button type="button" class="sov-optimise sec">Optimise ${
+    result.x}|${result.y} →</button>`;
+  actions.querySelector('.sov-optimise').addEventListener('click', () => onOptimise?.(result));
+  const block = document.createElement('div');
+  cell.append(actions, block);
   tr.append(cell);
   row.after(tr);
-  mountPlanBlock(cell, {
+  mountPlanBlock(block, {
     neighbours: result.neighbours ?? null,
     settings,
     ctx,

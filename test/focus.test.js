@@ -16,9 +16,9 @@ import {
   keptClaims,
 } from '../src/focus.js';
 import { DEFAULT_SETTINGS, PLOT_TOTAL } from '../src/constants.js';
-import { tileKey, indexPayload } from '../src/payload.js';
+import { tileKey, indexPayload, townString } from '../src/payload.js';
 import { scoreSite, claimUpkeep, distance } from '../src/scoring.js';
-import { focusFormHtml } from '../src/panel.js';
+import { focusFormHtml, ownTowns } from '../src/panel.js';
 
 const settings = { ...DEFAULT_SETTINGS, tMin: -1000 };
 
@@ -61,7 +61,7 @@ test('the markup carries every hook the optimiser reads back out of it', () => {
   // a null dereference in the game.
   const html = focusFormHtml(DEFAULT_FOCUS, settings);
   const hooks = [
-    'class="sov-focus-form"', 'class="sov-focus-run"', 'sov-focus-use sec',
+    'class="sov-focus-form"', 'class="sov-focus-run"', 'class="sov-town-pick"',
     'class="sov-focus-status"', 'class="sov-focus-out"',
     'data-focus="x"', 'data-focus="y"', 'data-focus="radius"', 'data-focus="tax"',
     'type="checkbox" data-focus="useConfiguredPlots"',
@@ -212,6 +212,61 @@ test('preserving overrides "treat your own claims as available"', () => {
 test('nothing is kept when the setting is off, whatever the map holds', () => {
   const r = run({ preserveSovereignty: false }, settings, withOwnClaims(3));
   assert.deepEqual(r.kept, { claims: [], rp: 0, unknownLevel: 0 });
+});
+
+// --- picking one of your own towns ------------------------------------------
+
+test('the picker lists your own towns, named, and no one else’s', () => {
+  const payload = {
+    data: {},
+    s: {},
+    t: {
+      [tileKey(-3178, 360)]: { s: 'Rivermeet|1|360|-3178|900|7', rd: 'Yours' },
+      [tileKey(-3000, 100)]: { s: 'Ashford|2|100|-3000|400|7', rd: 'Yours' },
+      [tileKey(-3100, 200)]: { s: 'Fort Grey|3|200|-3100|500|9', rd: 'Alliance' },
+      [tileKey(-3200, 400)]: { s: 'Redhold|4|400|-3200|100|11' },
+    },
+  };
+  assert.deepEqual(ownTowns(payload), [
+    { x: 100, y: -3000, label: 'Ashford (100|-3000)' },
+    { x: 360, y: -3178, label: 'Rivermeet (360|-3178)' },
+  ], 'sorted by name, and only the ones that are yours');
+});
+
+// The `t` block is keyed off claiming towns rather than the viewport, so the
+// same town can arrive under more than one key.
+test('a town listed twice is offered once', () => {
+  const town = { s: 'Rivermeet|1|360|-3178|900|7', rd: 'Yours' };
+  const payload = { data: {}, s: {}, t: { 'a|b': town, [tileKey(-3178, 360)]: town } };
+  assert.equal(ownTowns(payload).length, 1);
+});
+
+test('a town whose string is not the pipe format is offered by position', () => {
+  const payload = { data: {}, s: {}, t: { [tileKey(-3178, 360)]: { s: '', rd: 'Yours' } } };
+  assert.deepEqual(ownTowns(payload), [{ x: 360, y: -3178, label: '360|-3178' }]);
+});
+
+test('no payload and no towns are both an empty list, not a throw', () => {
+  assert.deepEqual(ownTowns({ data: {}, s: {}, t: {} }), []);
+  assert.deepEqual(ownTowns({}), []);
+});
+
+// The property holding the pipe string is not documented, and guessing at one
+// failed quietly: position falls back to the tile key, which is right, so the
+// only symptom was an unnamed town in the picker.
+test('the town name is found whatever property carries the pipe string', () => {
+  const pipe = 'Rivermeet|1|360|-3178|900|7|human|?|75|?|Norris|ILL|?|N-human-|?';
+  for (const field of ['s', 'n', 'v', 'ts', 'whatever']) {
+    const payload = { data: {}, s: {}, t: { [tileKey(-3178, 360)]: { [field]: pipe, rd: 'Yours' } } };
+    assert.deepEqual(ownTowns(payload), [
+      { x: 360, y: -3178, label: 'Rivermeet (360|-3178)' },
+    ], `the string was not found under ${field}`);
+  }
+  // A bare string, and an entry with nothing shaped like one, still work.
+  assert.equal(townString(pipe), pipe);
+  assert.equal(townString({ rd: 'Yours', s: '3|?', b: 'Unknown' }), '', 'a claim level is not a town');
+  assert.equal(townString({}), '');
+  assert.equal(townString(null), '');
 });
 
 // --- the refusals ---

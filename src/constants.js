@@ -121,8 +121,9 @@ export const DEFAULT_SOV_STRUCTURE = 'trainingGround';
 export const SOV_LEVEL_ROMAN = ['I', 'II', 'III', 'IV', 'V'];
 
 // [V] What each terrain type `i` grants a claim built on it, from the account
-// owner's own reading of the tiles. Nothing here is scored: the bonus applies to
-// a unit or item the tool does not model, so this is a column and a flag.
+// owner's own reading of the tiles. A `bonus` is scored, but only on a tile
+// hosting the very structure its `building` names — see descriptorBonus. On
+// every other tile it is a column and a flag.
 //
 // `building` is what the bonus scales with, per level of it. Every one of them
 // is a Production Structure, crafting and military alike, so a descriptor names

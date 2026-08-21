@@ -1,6 +1,12 @@
 node_modules/
-dist/
 *.log
+
+# The built userscript is the distribution channel, not a throwaway artifact:
+# Tampermonkey fetches it from main by raw URL, so it has to be a real file in
+# the repo. Only ever rebuild and commit it on main — a generated 200KB bundle
+# tracked on feature branches conflicts on every merge.
+dist/*
+!dist/illyriad-sov-scanner.user.js
 
 # Markdown is maintained outside this repo, README excepted. The spec docs are
 # worth keeping to hand, but the code does not cite them — a comment has to

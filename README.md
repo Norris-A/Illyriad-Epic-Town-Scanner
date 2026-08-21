@@ -7,54 +7,32 @@ engine and one shared configuration:
 - **Optimal Sovereignty** points the same engine at a single tile you name, so you
   can plan one site or examine one you are interested in closely.
 
-Product spec: [illyriad-sov-scanner-PRD.md](illyriad-sov-scanner-PRD.md).
-Game formulas and payload structure: [illyriad-game-mechanics.md](illyriad-game-mechanics.md).
-
 **The script makes zero network requests.** It observes map payloads the game has
-already received and analyses them locally, on an explicit Scan press only. See
-PRD §1.2 — those rules are enforced by design, not convention.
+already received and analyses them locally, on an explicit Scan press only. It
+never talks to the game server, and nothing you enter leaves your machine.
 
-## Setup
+## Install
 
-```bash
-npm install
-```
+1. Install [Tampermonkey](https://www.tampermonkey.net/) for your browser.
+2. Click **[install the script](https://raw.githubusercontent.com/Norris-A/Illyriad-Epic-Town-Scanner/main/dist/illyriad-sov-scanner.user.js)**.
+   Tampermonkey recognises the `.user.js` address and opens its install screen —
+   confirm there.
+3. Load the Illyriad world map. The panel appears down the side.
 
-Requires **Node 18+**; developed and verified on Node 24 LTS. npm 11+ blocks
-install scripts by default, so `package.json` carries an `allowScripts` entry
-for esbuild — without it the platform binary never unpacks and the build fails.
+Updates are automatic: Tampermonkey checks for a new version on its own schedule
+and installs it. You can force a check from its dashboard under *Utilities →
+Check for userscript updates*.
 
-```bash
-npm run build
-```
+## Using it
 
-Produces `dist/illyriad-sov-scanner.user.js`. Install it in Tampermonkey either
-by opening that file's URL in the browser, or by pasting its contents into the
-Tampermonkey editor.
+### Scan
 
-```bash
-npm test
-```
+Pan the map to the region you care about, then press **Scan**. Every visible tile
+that could be claimed is ranked by the highest tax rate a city there could
+sustain. Tiles already settled, already claimed, or too close to an existing town
+are filtered out.
 
-Runs the scoring engine against the PRD §6 worked example, plus the CSV writer,
-the settings-form validators and the terrain descriptor table.
-
-## Layout
-
-| Path | Role |
-|---|---|
-| `src/constants.js` | Game constants, each traced to a mechanics §; confidence markers preserved. Also the terrain name table read from the game client, and the descriptor bonuses read by hand |
-| `src/scoring.js` | Pure engine — the three ceilings, the food knapsack and frontier walk, then the military plan fitted into what they leave. No DOM. Imported by both the worker and the tests |
-| `src/payload.js` | Payload reading and the §3.2/§3.3 filters |
-| `src/capture.js` | Passive payload observation. Reader only — no requests |
-| `src/worker.js` | Web Worker entry; bundled to a string and inlined |
-| `src/focus.js` | The Optimal Sovereignty calculator — one named tile, planned on the shared engine. No DOM |
-| `src/panel.js` | Side panel UI (§5), the §4 City Configuration form, the optimiser form, and the CSV writer |
-| `src/settings-store.js` | Saving and restoring the City Configuration; sanitizes anything it loads |
-| `src/main.js` | Userscript entry; wires the three together |
-| `build.mjs` | Two-pass esbuild: worker → string → main bundle |
-
-## Optimal Sovereignty
+### Optimal Sovereignty
 
 The Scan tab answers "which of these tiles is best". The Optimal Sovereignty tab
 answers "what would I actually build on *this* one" — the same engine, pointed at
@@ -77,10 +55,7 @@ the last observed payload refuses to plan** rather than planning around tiles th
 merely have not arrived — the same rule the scan applies, except it tells you how
 many tiles are missing so you know how far to pan.
 
-The optimiser runs on the main thread rather than in the worker. It is one site,
-and the tax slider already runs the same planner there.
-
-## City Configuration
+### City Configuration
 
 The configuration form saves itself to the browser's `localStorage` as you edit
 it, under the game's own origin, and restores on the next visit. Nothing else is
@@ -92,25 +67,7 @@ form uses: unknown keys are dropped, settings added since take their defaults,
 and anything unusable falls back. So a blob from an older build always loads —
 the panel says when something drifted — and a corrupt one cannot brick the tool.
 
-## How a site is scored
-
-**Food first, alone.** It is the only claim that gives the city anything back,
-and the tax it can sustain is the site's answer (PRD §3.4–§3.5).
-
-**Military sovereignty then takes what is left over** — the research the food
-plan did not spend, the tiles it did not claim, the building slots it did not
-use, and what the city can still afford to run. It never costs the site a point
-of tax, so the military column never moves the ranking. You pick the structure;
-the tool works out how many, at what levels, and on which squares.
-
-That last part is a real trade rather than a rule of thumb. Research cost per
-point of bonus is `2 × distance` at *any* level, so research wants the plan
-concentrated on near tiles — while the hourly upkeep table is convex
-(150/300/600/1,200/2,400), so upkeep wants it spread over many low-level
-buildings. Which wins depends on the site, and each site says what it chose and
-what one more point of tax would have bought (§3.6).
-
-## Terrain descriptors
+### Terrain descriptors
 
 Most tiles grant a small production bonus — 1–3% of one product, per level of a
 named building. It is **not scored**: the products are outside what the tool
@@ -141,24 +98,38 @@ blank would collapse them:
 A `(building, bonus)` rung is **not** unique to one terrain — several terrains
 can hold the same one, and some rungs are held by none. `sharedRungs` lists the
 duplicates and a test pins that list, so a new one shows up when a row is added:
-an unexpected duplicate is what a transcription error looks like. See mechanics
-§2.
+an unexpected duplicate is what a transcription error looks like.
 
 188 of the 229 named terrains have had their bonus read, which is every terrain
 the world data file contains. The 41 left are named by the client but appear
 nowhere in the world, so there is no tile to stand on and read; they are unread,
 not missing. New rows go in by hand as tiles are read.
 
-## Status
+## How a site is scored
 
-The engine implements §3.4–§3.6, and the panel carries the full §4 settings
-form. Capture and the panel have been exercised against the live client — a
-scan returns a ranked table — but only the pure functions have automated tests.
+**Food first, alone.** It is the only claim that gives the city anything back,
+and the tax it can sustain is the site's answer.
 
-Known gaps, all deliberate:
+**Military sovereignty then takes what is left over** — the research the food
+plan did not spend, the tiles it did not claim, the building slots it did not
+use, and what the city can still afford to run. It never costs the site a point
+of tax, so the military column never moves the ranking. You pick the structure;
+the tool works out how many, at what levels, and on which squares.
 
-- **`LIBRARY_BASE_RP_L20` is a placeholder** chosen to reproduce the §6 example
-  (mechanics open item 2). Use the RP calibration override for real figures.
+That last part is a real trade rather than a rule of thumb. Research cost per
+point of bonus is `2 × distance` at *any* level, so research wants the plan
+concentrated on near tiles — while the hourly upkeep table is convex
+(150/300/600/1,200/2,400), so upkeep wants it spread over many low-level
+buildings. Which wins depends on the site, and each site says what it chose and
+what one more point of tax would have bought.
+
+## Known gaps
+
+All deliberate:
+
+- **`LIBRARY_BASE_RP_L20` is a placeholder** chosen to reproduce the worked
+  example from the mechanics notes. Use the RP calibration override for real
+  figures.
 - **Resource sovereignty is not placed.** Logging Camp, Earthworks, Mineshaft
   and Gravel Pit are costed correctly wherever they appear but are absent from
   the picker. They pay their claim's RP and gold like any other claim, exactly as
@@ -171,19 +142,99 @@ Known gaps, all deliberate:
   and a plan carrying one must be billed — but the picker offers the five
   military structures, since the question it asks is which unit the city is
   being built to make, and eighteen entries made it a catalogue.
+- **The optimiser's own four inputs are not persisted.** City Configuration is;
+  the tile, radius, tax and plot override reset to their defaults each visit,
+  since they describe one question rather than a standing setup.
 - **The panel has no automated test of its DOM.** `createPanel` cannot run under
   Node, so the field specs, the validators and both markup contracts are tested
   but the event wiring, the tabs, gating and Prefill are not. Adding jsdom would
   close it.
 
-- **The optimiser's own four inputs are not persisted.** City Configuration is;
-  the tile, radius, tax and plot override reset to their defaults each visit,
-  since they describe one question rather than a standing setup.
+---
 
-## First task
+# Development
 
-PRD §1.2 asks whether the client already exposes parsed map data before any
-interceptor is written. Load a map, open the console, and run:
+## Setup
+
+```bash
+npm install
+```
+
+Requires **Node 18+**; developed and verified on Node 24 LTS. npm 11+ blocks
+install scripts by default, so `package.json` carries an `allowScripts` entry
+for esbuild — without it the platform binary never unpacks and the build fails.
+
+```bash
+npm run build
+```
+
+Produces `dist/dev/illyriad-sov-scanner.user.js` at a `-dev` version stamped to
+the minute. Install it in Tampermonkey by opening that file's URL in the browser,
+or by pasting its contents into the Tampermonkey editor.
+
+Dev builds write to `dist/dev/`, which is untracked; only `npm run release` writes
+`dist/illyriad-sov-scanner.user.js`, the file users are served. So rebuilding
+while you work can never overwrite the bundle waiting to ship.
+
+```bash
+npm test
+```
+
+Runs the scoring engine against the mechanics worked example, plus the CSV
+writer, the settings-form validators and the terrain descriptor table.
+
+## Releasing
+
+`main` is what users run. Tampermonkey polls the built file on `main` by raw URL,
+so pushing to `main` is the deploy.
+
+1. Branch, work, `npm run build`, test against the live client.
+2. Merge to `main`.
+3. Bump `version` in `package.json`.
+4. `npm run release` — the same bundle, versioned from `package.json` with no
+   `-dev` suffix, written to `dist/illyriad-sov-scanner.user.js`.
+5. Commit that file along with the bump, and push.
+
+Two rules keep this from going wrong. **Only ever commit the bundle on `main`** —
+a generated 200KB file tracked on feature branches conflicts on every merge; the
+`.gitignore` tracks exactly that one path and nothing else under `dist/`. And
+**never change `@name` or `@namespace`** — Tampermonkey identifies an installed
+script by that pair, so changing either makes every existing install a different
+script that silently stops updating.
+
+Users do not update instantly. `raw.githubusercontent.com` caches for a few
+minutes, and Tampermonkey's own update check runs roughly daily.
+
+## Version scheme
+
+`npm run build` produces `1.0.0-dev.202608202336` in `dist/dev/`; `npm run
+release` produces `1.0.0` in `dist/`. Tampermonkey compares versions semver-style, so a `-dev` build sorts
+*below* the released number — a local build never shadows the shipped one on a
+machine that has both, while every rebuild still looks distinct enough that
+Tampermonkey picks it up instead of silently running a stale copy.
+
+## Layout
+
+| Path | Role |
+|---|---|
+| `src/constants.js` | Game constants, each traced to a mechanics §; confidence markers preserved. Also the terrain name table read from the game client, and the descriptor bonuses read by hand |
+| `src/scoring.js` | Pure engine — the three ceilings, the food knapsack and frontier walk, then the military plan fitted into what they leave. No DOM. Imported by both the worker and the tests |
+| `src/payload.js` | Payload reading and the candidacy filters |
+| `src/capture.js` | Passive payload observation. Reader only — no requests |
+| `src/worker.js` | Web Worker entry; bundled to a string and inlined |
+| `src/focus.js` | The Optimal Sovereignty calculator — one named tile, planned on the shared engine. No DOM |
+| `src/panel.js` | Side panel UI, the City Configuration form, the optimiser form, and the CSV writer |
+| `src/settings-store.js` | Saving and restoring the City Configuration; sanitizes anything it loads |
+| `src/main.js` | Userscript entry; wires the three together |
+| `build.mjs` | Two-pass esbuild: worker → string → main bundle |
+
+The product spec and the game-mechanics notes are maintained outside this repo
+and are not tracked here.
+
+## Open question
+
+Whether the client already exposes parsed map data before any interceptor is
+needed. Load a map, open the console, and run:
 
 ```js
 window.__sovScanner.probeInPageData()

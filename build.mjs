@@ -2,29 +2,52 @@
 // bundle via `define`. Tampermonkey delivers one file and a Worker needs a URL,
 // so the worker source has to travel inside the script as a string literal.
 //
-// Bundled, never minified — Greasy Fork and readers both want source legible.
+// Bundled, never minified — the shipped file is the one anyone auditing this
+// reads, and a userscript asking for map access should be legible.
 
 import { build, context } from 'esbuild';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync } from 'node:fs';
+import { dirname } from 'node:path';
 
-const OUT = 'dist/illyriad-sov-scanner.user.js';
+// Two version shapes, because two audiences read them. A release build carries
+// the plain package.json number and is what users see in Tampermonkey. A dev
+// build appends a minute-resolution stamp as a prerelease, so every rebuild
+// looks different to Tampermonkey — which otherwise keeps its installed copy
+// and silently runs stale code — and so a `-dev` build always sorts BELOW the
+// released number rather than shadowing it on a machine that has both.
+const RELEASE = process.argv.includes('--release');
+const { version: PKG_VERSION } = JSON.parse(readFileSync('package.json', 'utf8'));
 
-// A build stamp, not a release number. Tampermonkey keeps its own copy of an
-// installed script and only notices a new one when the version changes, so a
-// hardcoded version means every rebuild looks identical to it and the old code
-// keeps running — silently, and with no way to tell from inside the game which
-// build is live. Minute resolution is enough to tell two builds apart.
 const d = new Date();
 const p = (n) => String(n).padStart(2, '0');
-export const VERSION = `0.1.${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}`
+const STAMP = `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}`
   + `${p(d.getHours())}${p(d.getMinutes())}`;
+
+export const VERSION = RELEASE ? PKG_VERSION : `${PKG_VERSION}-dev.${STAMP}`;
+
+// Dev and release builds never share a file. Only the release path is tracked
+// by git and served to users, so rebuilding while you work cannot overwrite the
+// bundle waiting to ship — the two are only ever brought together by choosing
+// to run `--release`.
+const OUT = RELEASE
+  ? 'dist/illyriad-sov-scanner.user.js'
+  : 'dist/dev/illyriad-sov-scanner.user.js';
+
+// Where Tampermonkey looks for updates. It polls @updateURL on its own schedule,
+// compares @version, and pulls @downloadURL when the number went up — so merging
+// to main and committing the rebuilt file is the whole release mechanism.
+const RAW = 'https://raw.githubusercontent.com/Norris-A/Illyriad-Epic-Town-Scanner/main'
+  + '/dist/illyriad-sov-scanner.user.js';
 
 const BANNER = `// ==UserScript==
 // @name         Illyriad Sovereignty Site Scanner
-// @namespace    https://github.com/illyriad-sov-scanner
+// @namespace    https://github.com/Norris-A
 // @version      ${VERSION}
 // @description  Ranks visible world-map tiles by the maximum sustainable tax rate.
-// @author       Norris Alrichani
+// @author       Norris A. (Firebolty)
+// @downloadURL  ${RAW}
+// @updateURL    ${RAW}
+// @supportURL   https://github.com/Norris-A/Illyriad-Epic-Town-Scanner/issues
 // @match        https://elgea.illyriad.co.uk/*
 // @match        https://illyriad.co.uk/*
 // @run-at       document-idle
@@ -65,7 +88,7 @@ async function makeConfig() {
   };
 }
 
-mkdirSync('dist', { recursive: true });
+mkdirSync(dirname(OUT), { recursive: true });
 
 if (process.argv.includes('--watch')) {
   // The worker is re-bundled on each rebuild by re-entering makeConfig, so watch
@@ -76,5 +99,8 @@ if (process.argv.includes('--watch')) {
   console.log('note: edits to src/worker.js or its imports need a restart of watch');
 } else {
   await build(await makeConfig());
-  console.log(`built -> ${OUT}  (version ${VERSION} — reinstall in Tampermonkey to pick it up)`);
+  console.log(`built -> ${OUT}  (version ${VERSION})`);
+  console.log(RELEASE
+    ? 'release build — commit it on main and push to ship it'
+    : 'dev build — reinstall in Tampermonkey to pick it up; the release bundle is untouched');
 }

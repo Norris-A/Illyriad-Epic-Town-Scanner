@@ -1,11 +1,12 @@
 {
   "name": "illyriad-sov-scanner",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
   "type": "module",
   "description": "Userscript ranking Illyriad world-map tiles by sustainable tax rate. See illyriad-sov-scanner-PRD.md.",
   "scripts": {
     "build": "node build.mjs",
+    "release": "node build.mjs --release",
     "watch": "node build.mjs --watch",
     "test": "node --test"
   },

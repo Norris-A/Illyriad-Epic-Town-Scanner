@@ -383,7 +383,7 @@ test('a blank calibration is null, so R_ref falls back to the library table', ()
   assert.equal(parseRpCalibration('', ''), null);
   assert.equal(parseRpCalibration('0', '25'), null);
   assert.equal(parseRpCalibration('nonsense', '25'), null);
-  close(computeRRef({ ...DEFAULT_SETTINGS, rpCalibration: parseRpCalibration('', '') }), 1600);
+  close(computeRRef({ ...DEFAULT_SETTINGS, rpCalibration: parseRpCalibration('', '') }), 1113);
 });
 
 test('a calibration reading back-solves R_ref', () => {

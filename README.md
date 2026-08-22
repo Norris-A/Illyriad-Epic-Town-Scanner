@@ -8,8 +8,8 @@ engine and one shared configuration:
   can plan one site or examine one you are interested in closely.
 
 **The script makes zero network requests.** It observes map payloads the game has
-already received and analyses them locally, on an explicit Scan press only. It
-never talks to the game server, and nothing you enter leaves your machine.
+already received and analyses them locally, only when you press Scan or Optimise.
+It never talks to the game server, and nothing you enter leaves your machine.
 
 ## Install
 
@@ -36,14 +36,15 @@ are filtered out.
 
 The Scan tab answers "which of these tiles is best". The Optimal Sovereignty tab
 answers "what would I actually build on *this* one" — the same engine, pointed at
-a tile you name. It takes four inputs and nothing else:
+a tile you name. Its inputs:
 
 | Input | Default |
 |---|---|
 | Coordinates, `x` and `y` | — |
 | Sovereignty radius | blank, which follows `R_claim` from City Configuration |
 | Starting tax | 60%, then dragged on the same slider the results rows carry |
-| Use City Configuration plots | off — the centre tile is planned on its **own** resource ratings |
+| Use City Configuration plots | on — the centre tile is planned on the configured allocation, the tile as you mean to terraform it, rather than its **current** ratings |
+| Preserve existing sovereignty | off — only meaningful on a tile already yours, where it keeps the claims already there and charges them as research the plan may not spend |
 
 Everything else comes from City Configuration, so there is never a second place
 to set one thing.
@@ -125,30 +126,11 @@ what one more point of tax would have bought.
 
 ## Known gaps
 
-All deliberate:
-
-- **`LIBRARY_BASE_RP_L20` is a placeholder** chosen to reproduce the worked
-  example from the mechanics notes. Use the RP calibration override for real
-  figures.
-- **Resource sovereignty is not placed.** Logging Camp, Earthworks, Mineshaft
-  and Gravel Pit are costed correctly wherever they appear but are absent from
-  the picker. They pay their claim's RP and gold like any other claim, exactly as
-  a Farmstead or Fishery does — what they do not pay is the hourly
-  wood/clay/iron/stone bill a military structure carries. With no hourly bill to
-  limit it, nothing would stop the planner claiming every spare tile with one,
-  and the host tile's resource rating that would justify doing so is not scored.
 - **The crafting Production Structures are not offered.** All thirteen are in
   `SOV_STRUCTURES` and cost correctly, because the terrain descriptors name them
   and a plan carrying one must be billed — but the picker offers the five
   military structures, since the question it asks is which unit the city is
   being built to make, and eighteen entries made it a catalogue.
-- **The optimiser's own four inputs are not persisted.** City Configuration is;
-  the tile, radius, tax and plot override reset to their defaults each visit,
-  since they describe one question rather than a standing setup.
-- **The panel has no automated test of its DOM.** `createPanel` cannot run under
-  Node, so the field specs, the validators and both markup contracts are tested
-  but the event wiring, the tabs, gating and Prefill are not. Adding jsdom would
-  close it.
 
 ---
 

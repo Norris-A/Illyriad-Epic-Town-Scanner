@@ -23,12 +23,14 @@ const close = (a, b, eps = 0.05) =>
 
 // The worked example's settings: 7-food site, a city eating 32,200/hr, Flour
 // Mill on, Nature's Bounty at 2 retreats, no other bonus, Library 20 with
-// Allembine, no Insight, no Chancery, no military sovereignty.
+// Allembine, no Chancery, no military sovereignty. The city runs the Overflowing
+// Insight totem (+50%), so R_ref is 1,113 x 1.5 = 1,669.5 — enough research that
+// this site is bound by its food, not its RP.
 //
 // The consumption is stated here rather than taken from DEFAULT_SETTINGS: it is
 // part of the oracle, so changing the default must not move every expectation
 // below with it.
-const worked = { ...DEFAULT_SETTINGS, cityConsumption: 32200 };
+const worked = { ...DEFAULT_SETTINGS, cityConsumption: 32200, overflowingInsight: true };
 
 /** The same settings with a military structure asked for. */
 const withMil = (extra = {}) => ({ ...worked, milsovStructure: 'trainingGround', ...extra });
@@ -66,8 +68,10 @@ test('C / K = 32,200 / 140.98 = 228.4', () => {
   close(computeConsumption(worked) / computeK(7), 228.4, 0.1);
 });
 
-test('R_ref = 1,600 at Library 20 with Allembine', () => {
-  close(computeRRef(worked), 1600);
+test('R_ref: 1,113 from the library table, 1,669.5 with Overflowing Insight', () => {
+  // 1,013 base + 5/level Allembine at L20 is the table figure; the totem is x1.5.
+  close(computeRRef({ ...worked, overflowingInsight: false }), 1113);
+  close(computeRRef(worked), 1669.5);
 });
 
 test('R_ref calibration back-solves from an observed reading', () => {
@@ -84,7 +88,7 @@ test('S_food 100 at 1,000 RP is food-bound at 56.6%', () => {
   const food = tFood({ bOther, sFood: 100, consumption, k });
   const rp = tRp({ uRp: 1000, rRef });
   close(food, 56.6, 0.05);
-  close(rp, 62.5);
+  close(rp, 65.1);  // 125 - 100 x 1000 / 1669.5
 
   const t = tMax({ food, rp, res: Infinity });
   close(t.value, 56.6, 0.05);
@@ -760,8 +764,8 @@ test('surplusAt is callable on its own, at any tax the user asks about', () => {
   // The engine reports at the plan's tax; the function itself is not tied to it.
   const at = (tax) => surplusAt({ tax, settings: worked, sFood: 0, uRp: 0, milsovAssignments: [] });
   assert.ok(at(0).food > at(50).food, 'less tax must leave more food');
-  close(at(25).rp, 1600, 1e-6);              // R_ref x (125-25)/100
-  close(at(0).rp - at(100).rp, 1600, 1e-6);  // 100 points of production
+  close(at(25).rp, 1669.5, 1e-6);              // R_ref x (125-25)/100
+  close(at(0).rp - at(100).rp, 1669.5, 1e-6);  // 100 points of production
   // Food at 25% tax: K x (100 + 60) - 32,200.
   close(at(25).food, computeK(7) * 160 - 32200, 1e-6);
 });
@@ -792,7 +796,14 @@ test('the integer plan spends the rounding, and never buys less military', () =>
   // the settable rate can, so it is never worse and is usually better.
   const settings = withMil({ tMin: -1000 });
   let better = 0;
-  for (const neighbours of [spare, ring8, ring(() => 9), ring((dx) => (dx > 0 ? 7 : 0))]) {
+  // The last fixture — rich inner food, poor outer — is the one whose rounding
+  // headroom actually reaches another Training Ground; the rest exercise only the
+  // never-worse half.
+  const fixtures = [
+    spare, ring8, ring(() => 9), ring((dx) => (dx > 0 ? 7 : 0)),
+    ring((dx, dy) => (Math.abs(dx) <= 1 && Math.abs(dy) <= 1 ? 9 : 3)),
+  ];
+  for (const neighbours of fixtures) {
     const ctx = prepareSite({ neighbours, settings });
     const plan = scoreSite({ neighbours, settings });
     const atExact = planSiteAt(ctx, plan.tMaxExact);

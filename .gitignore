@@ -1,6 +1,9 @@
 node_modules/
 *.log
 
+# Scratch harness pages and rendered screenshots for the how-to-use images.
+.teaching/
+
 # The built userscript is the distribution channel, not a throwaway artifact:
 # Tampermonkey fetches it from main by raw URL, so it has to be a real file in
 # the repo. Only ever rebuild and commit it on main — a generated 200KB bundle

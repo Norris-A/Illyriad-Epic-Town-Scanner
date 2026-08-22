@@ -39,12 +39,18 @@ const OUT = RELEASE
 const RAW = 'https://raw.githubusercontent.com/Norris-A/Illyriad-Epic-Town-Scanner/main'
   + '/dist/illyriad-sov-scanner.user.js';
 
+// Inlined as a data URI so the icon travels inside the one shipped file and
+// needs no hosting to render in Tampermonkey's dashboard and install screen.
+const ICON = 'data:image/png;base64,'
+  + readFileSync('src/assets/sovereignty.png').toString('base64');
+
 const BANNER = `// ==UserScript==
 // @name         Illyriad Sovereignty Site Scanner
 // @namespace    https://github.com/Norris-A
 // @version      ${VERSION}
 // @description  Ranks visible world-map tiles by the maximum sustainable tax rate.
 // @author       Norris A. (Firebolty)
+// @icon         ${ICON}
 // @downloadURL  ${RAW}
 // @updateURL    ${RAW}
 // @supportURL   https://github.com/Norris-A/Illyriad-Epic-Town-Scanner/issues

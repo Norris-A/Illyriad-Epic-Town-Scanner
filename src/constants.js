@@ -104,12 +104,12 @@ export const SOV_STRUCTURE_BY_KEY = Object.fromEntries(SOV_STRUCTURES.map((s) =>
 // maximising production bonus against the hourly upkeep they cost.
 //
 // A Resource Structure pays its claim's RP and gold like every other claim — it
-// is not a free tile — but it pays no hourly wood/clay/iron/stone bill. With no
-// hourly bill, the search has nothing to stop it claiming every spare tile at
-// level 5, while the thing that would justify doing so, the host tile's resource
-// rating, is not scored at all. So resource sovereignty is costed correctly
-// wherever it appears and never placed automatically. The Farmstead and Fishery
-// are out for a second reason: the food plan is what places those.
+// is not a free tile — but it pays no hourly wood/clay/iron/stone bill. It is
+// costed correctly wherever it appears and never placed automatically: the host
+// tile's resource rating, which is what would make one worth claiming, is not
+// scored, so the planner has no basis to tell a good tile from a bad one. The
+// Farmstead and Fishery are out for a second reason: the food plan is what
+// places those.
 export const MILSOV_STRUCTURES = SOV_STRUCTURES.filter((s) => s.military);
 
 // A plan that names no structure, or names one this table does not know, is
@@ -852,12 +852,11 @@ export const SOIL_ENRICHMENT = 15;    // capital, >=30 cities
 export const ALLEMBINE_RP_PER_LIBRARY_LEVEL = 5; // [F]
 export const OVERFLOWING_INSIGHT_FACTOR = 1.5;   // [?] unconfirmed
 
-// [?] Library base RP/hr at L20 is NOT recorded anywhere. This placeholder is
-// chosen to make R_ref come out at 1,600 with Allembine at Library 20 and no
-// Insight, which is the figure the rest of the model was worked against. The
-// rpCalibration override is the reliable path; treat this as a default to be
-// replaced, not a fact.
-export const LIBRARY_BASE_RP_L20 = 1500;
+// [V] Library RP/hr at L20 with no Allembine, read in game at 25% tax. At 25%
+// production is 100%, so the reading is R_ref directly with no multiplier to
+// divide out. computeRRef adds Allembine on top of it, and the rpCalibration
+// override supersedes it for a city whose own figure is known.
+export const LIBRARY_BASE_RP_L20 = 1013;
 
 /** Plot order matches the payload's `rs` string: "wood|clay|iron|stone|food". */
 export const PLOT_KEYS = ['wood', 'clay', 'iron', 'stone', 'food'];

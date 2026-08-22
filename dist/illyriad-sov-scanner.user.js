@@ -19,24 +19,36 @@
 
 (() => {
   // src/capture.js
-  var latestPayload = null;
-  function getLatestPayload() {
-    return latestPayload;
-  }
+  var IN_PAGE_NAMES = ["mapData", "MapData", "gameMap", "Map", "worldMap", "lastMapResponse", "tiles"];
   function looksLikeMapPayload(obj) {
     return obj && typeof obj === "object" && typeof obj.zoom === "number" && obj.data && typeof obj.data === "object" && Object.keys(obj.data).some((k) => k.includes("|"));
   }
-  function accept(obj) {
-    if (looksLikeMapPayload(obj)) {
-      latestPayload = obj;
-      return true;
+  function readInPageData() {
+    if (typeof window !== "undefined") {
+      for (const n of IN_PAGE_NAMES) {
+        try {
+          if (looksLikeMapPayload(window[n])) return window[n];
+        } catch (_) {
+        }
+      }
     }
-    return false;
+    const svg = typeof document !== "undefined" ? document.getElementById("mapSVG") : null;
+    if (svg) {
+      for (const prop of Object.keys(svg)) {
+        try {
+          if (looksLikeMapPayload(svg[prop])) return svg[prop];
+        } catch (_) {
+        }
+      }
+    }
+    return null;
+  }
+  function getLatestPayload() {
+    return readInPageData();
   }
   function probeInPageData() {
     const hits2 = [];
-    const names = ["mapData", "MapData", "gameMap", "Map", "worldMap", "lastMapResponse", "tiles"];
-    for (const n of names) {
+    for (const n of IN_PAGE_NAMES) {
       try {
         if (looksLikeMapPayload(window[n])) hits2.push({ source: `window.${n}`, value: window[n] });
       } catch (_) {
@@ -51,43 +63,7 @@
         }
       }
     }
-    if (hits2.length) accept(hits2[0].value);
     return hits2;
-  }
-  function installInterceptor() {
-    const origOpen = XMLHttpRequest.prototype.open;
-    const origSend = XMLHttpRequest.prototype.send;
-    XMLHttpRequest.prototype.open = function(method, url, ...rest) {
-      this.__sovUrl = url;
-      return origOpen.call(this, method, url, ...rest);
-    };
-    XMLHttpRequest.prototype.send = function(...args) {
-      this.addEventListener("load", () => {
-        try {
-          const text = this.responseType === "" || this.responseType === "text" ? this.responseText : null;
-          if (text && text.includes('"zoom"')) accept(JSON.parse(text));
-          else if (this.responseType === "json") accept(this.response);
-        } catch (_) {
-        }
-      });
-      return origSend.apply(this, args);
-    };
-    const origFetch = window.fetch;
-    if (typeof origFetch === "function") {
-      window.fetch = function(...args) {
-        return origFetch.apply(this, args).then((res) => {
-          try {
-            const ct = res.headers.get("content-type") ?? "";
-            if (ct.includes("json")) {
-              res.clone().json().then(accept).catch(() => {
-              });
-            }
-          } catch (_) {
-          }
-          return res;
-        });
-      };
-    }
   }
 
   // src/constants.js
@@ -3420,9 +3396,7 @@ licence and full copyright notice.">\u24D8</a></h2>
   var restored = store.load();
   var hits = probeInPageData();
   if (hits.length) {
-    console.info("[sov-scanner] in-page map data found at:", hits.map((h) => h.source).join(", "));
-  } else {
-    installInterceptor();
+    console.info("[sov-scanner] reading in-page map data live from:", hits.map((h) => h.source).join(", "));
   }
   var saveTimer = null;
   function saveSoon(s) {

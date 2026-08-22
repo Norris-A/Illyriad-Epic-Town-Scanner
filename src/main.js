@@ -2,7 +2,7 @@
 // __WORKER_SOURCE__ is replaced at build time by build.mjs with the bundled
 // worker code as a string literal.
 
-import { probeInPageData, installInterceptor, getLatestPayload } from './capture.js';
+import { probeInPageData, getLatestPayload } from './capture.js';
 import { createPanel, csvFile, csvFilename } from './panel.js';
 import { createSettingsStore } from './settings-store.js';
 import { DEFAULT_SETTINGS } from './constants.js';
@@ -23,9 +23,7 @@ const restored = store.load();
 
 const hits = probeInPageData();
 if (hits.length) {
-  console.info('[sov-scanner] in-page map data found at:', hits.map((h) => h.source).join(', '));
-} else {
-  installInterceptor();
+  console.info('[sov-scanner] reading in-page map data live from:', hits.map((h) => h.source).join(', '));
 }
 
 // Every keystroke fires a change; one write per burst of typing is enough.

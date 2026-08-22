@@ -220,7 +220,7 @@ Tampermonkey picks it up instead of silently running a stale copy.
 | `src/constants.js` | Game constants, each marked with how well it is known — verified, sourced, derived or assumed. Also the terrain name table read from the game client, and the descriptor bonuses read by hand |
 | `src/scoring.js` | Pure engine — the three ceilings, the food knapsack and frontier walk, then the military plan fitted into what they leave. No DOM. Imported by both the worker and the tests |
 | `src/payload.js` | Payload reading and the candidacy filters |
-| `src/capture.js` | Passive payload observation. Reader only — no requests |
+| `src/capture.js` | Reads the client's live `window.mapData`. Reader only — no requests |
 | `src/worker.js` | Web Worker entry; bundled to a string and inlined |
 | `src/focus.js` | The Optimal Sovereignty calculator — one named tile, planned on the shared engine. No DOM |
 | `src/panel.js` | Side panel UI, the City Configuration form, the optimiser form, and the CSV writer |
@@ -231,16 +231,23 @@ Tampermonkey picks it up instead of silently running a stale copy.
 The product spec and the game-mechanics notes are maintained outside this repo
 and are not tracked here.
 
-## Open question
+## Payload source
 
-Whether the client already exposes parsed map data before any interceptor is
-needed. Load a map, open the console, and run:
+The client parks its current map view in `window.mapData`, replacing it whole on
+every pan or zoom. `getLatestPayload` reads that global **live** on each Scan and
+Optimise press, so a scan always sees what is on screen. This is a plain memory
+read of data the client already fetched to draw the tiles — zero network, no side
+effects. It is the tool's only source: nothing patches or wraps the network.
+
+To confirm the global on a live map, open the console and run:
 
 ```js
 window.__sovScanner.probeInPageData()
 ```
 
-If that returns hits, `src/capture.js` can drop the XHR/fetch patching entirely.
+It reports which globals hold a payload. If a client update ever hides
+`window.mapData`, a Scan reports no payload rather than reading a stale one, and
+`IN_PAGE_NAMES` in `src/capture.js` is where a renamed global would be added.
 
 ## License
 

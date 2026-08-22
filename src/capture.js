@@ -1,20 +1,14 @@
-// Passive observation of map payloads the game has ALREADY requested.
-// This module is a reader, never a requester. It must contain no
-// fetch/XHR/WebSocket construction of its own — only wrappers that observe.
+// Reading the map view the game has ALREADY loaded.
+// This module reads, it never requests: no fetch, XHR or WebSocket of any kind.
 //
-// Before relying on the interceptor, probeInPageData() checks whether the client
-// already exposes parsed map data somewhere reachable. If it does, prefer that:
-// strictly less invasive than patching network primitives.
+// The client parks its current map view in a page global (window.mapData),
+// replacing it whole on every pan/zoom. Reading that global is a plain memory read
+// of data already on screen — no network, no side effects.
 
-// The last map view the game fetched, replaced whole on every new map response
-// and never persisted. It is held for as long as the tab is open because a scan,
-// a second scan and every Optimise press all read it, and none of them has any
-// other source for the tiles.
-let latestPayload = null;
-
-export function getLatestPayload() {
-  return latestPayload;
-}
+// The globals the client is known or plausible to keep its parsed map view in.
+// window.mapData is the one this client uses; the rest are guesses in case a client
+// update renames it.
+const IN_PAGE_NAMES = ['mapData', 'MapData', 'gameMap', 'Map', 'worldMap', 'lastMapResponse', 'tiles'];
 
 function looksLikeMapPayload(obj) {
   return (
@@ -27,25 +21,43 @@ function looksLikeMapPayload(obj) {
   );
 }
 
-function accept(obj) {
-  if (looksLikeMapPayload(obj)) {
-    latestPayload = obj;
-    return true;
+/**
+ * The client's own parsed map view, read from the page fresh each call so a Scan
+ * sees the current viewport, or null if no known global (nor the mapSVG element)
+ * holds one.
+ */
+function readInPageData() {
+  if (typeof window !== 'undefined') {
+    for (const n of IN_PAGE_NAMES) {
+      try {
+        if (looksLikeMapPayload(window[n])) return window[n];
+      } catch (_) { /* cross-origin or getter throw — ignore */ }
+    }
   }
-  return false;
+  const svg = typeof document !== 'undefined' ? document.getElementById('mapSVG') : null;
+  if (svg) {
+    for (const prop of Object.keys(svg)) {
+      try {
+        if (looksLikeMapPayload(svg[prop])) return svg[prop];
+      } catch (_) { /* ignore */ }
+    }
+  }
+  return null;
+}
+
+/** The payload every Scan and Optimise press reads: the client's current map view. */
+export function getLatestPayload() {
+  return readInPageData();
 }
 
 /**
- * Walks a shortlist of plausible in-page globals and the
- * mapSVG element for already-parsed map data.
- *
- * The candidate names are guesses — run this in the console on a live map and
- * report what it finds before writing any more of the interceptor.
+ * Which reachable globals currently hold a map payload. Backs the console probe
+ * window.__sovScanner.probeInPageData(), for checking where the client keeps its
+ * map data.
  */
 export function probeInPageData() {
   const hits = [];
-  const names = ['mapData', 'MapData', 'gameMap', 'Map', 'worldMap', 'lastMapResponse', 'tiles'];
-  for (const n of names) {
+  for (const n of IN_PAGE_NAMES) {
     try {
       if (looksLikeMapPayload(window[n])) hits.push({ source: `window.${n}`, value: window[n] });
     } catch (_) { /* cross-origin or getter throw — ignore */ }
@@ -58,47 +70,5 @@ export function probeInPageData() {
       } catch (_) { /* ignore */ }
     }
   }
-  if (hits.length) accept(hits[0].value);
   return hits;
-}
-
-/** Fallback: observe responses to requests the game made on the user's behalf. */
-export function installInterceptor() {
-  const origOpen = XMLHttpRequest.prototype.open;
-  const origSend = XMLHttpRequest.prototype.send;
-
-  XMLHttpRequest.prototype.open = function (method, url, ...rest) {
-    this.__sovUrl = url;
-    return origOpen.call(this, method, url, ...rest);
-  };
-
-  XMLHttpRequest.prototype.send = function (...args) {
-    this.addEventListener('load', () => {
-      try {
-        const text = this.responseType === '' || this.responseType === 'text'
-          ? this.responseText
-          : null;
-        if (text && text.includes('"zoom"')) accept(JSON.parse(text));
-        else if (this.responseType === 'json') accept(this.response);
-      } catch (_) { /* not our payload */ }
-    });
-    return origSend.apply(this, args);
-  };
-
-  const origFetch = window.fetch;
-  if (typeof origFetch === 'function') {
-    window.fetch = function (...args) {
-      // Pass through untouched; only the response is observed, and via a clone
-      // so the game's own consumer is unaffected.
-      return origFetch.apply(this, args).then((res) => {
-        try {
-          const ct = res.headers.get('content-type') ?? '';
-          if (ct.includes('json')) {
-            res.clone().json().then(accept).catch(() => {});
-          }
-        } catch (_) { /* ignore */ }
-        return res;
-      });
-    };
-  }
 }

@@ -21,6 +21,7 @@ import {
   surplusRows,
   productionLabel,
   settingsFormHtml,
+  clampPanelPosition,
 } from '../src/panel.js';
 import { PRODUCTION_ICONS } from '../src/icons.js';
 import {
@@ -41,6 +42,12 @@ import { computeK, computeRRef, milsovUpkeep, computeBasicYield } from '../src/s
 
 const close = (a, b, eps = 0.05) =>
   assert.ok(Math.abs(a - b) < eps, `expected ${a} ≈ ${b}`);
+
+test('panel positions stay inside the viewport', () => {
+  assert.deepEqual(clampPanelPosition(700, -20, 300, 200, 800, 600), { x: 500, y: 0 });
+  assert.deepEqual(clampPanelPosition(-10, 500, 300, 200, 800, 600), { x: 0, y: 400 });
+  assert.deepEqual(clampPanelPosition(NaN, Infinity, 900, 700, 800, 600), { x: 0, y: 0 });
+});
 
 // --- the spec is driven by DEFAULT_SETTINGS, not a second copy of the table ---
 

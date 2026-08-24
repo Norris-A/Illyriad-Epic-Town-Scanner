@@ -63,7 +63,9 @@ const CSS = `
   z-index:99999;background:#1b1b1b;border-left:1px solid #444;
   box-shadow:-2px 0 8px rgba(0,0,0,.5)}
 .sov-panel h2{margin:0;padding:8px 10px;font-size:13px;font-weight:600;color:#fff;
-  background:#2a2a2a;cursor:pointer}
+  background:#2a2a2a;cursor:move;user-select:none}
+.sov-panel.sov-dragging{cursor:grabbing}
+.sov-panel.sov-dragging h2{cursor:grabbing}
 .sov-panel h2 .sov-about{float:right;color:#8a8a8a;text-decoration:none}
 .sov-panel h2 .sov-about:hover{color:#fff}
 .sov-body{padding:8px 10px}
@@ -178,6 +180,37 @@ const CSS = `
    anything this panel hides needs a rule of its own, last so it wins on order. */
 .sov-panel [hidden]{display:none}
 `;
+
+export const PANEL_POSITION_KEY = 'illyriad-sov-scanner.panel-position';
+
+/** Keep the panel's top-left corner reachable after a drag or viewport resize. */
+export function clampPanelPosition(x, y, panelWidth, panelHeight, viewportWidth, viewportHeight) {
+  const maxX = Math.max(0, viewportWidth - panelWidth);
+  const maxY = Math.max(0, viewportHeight - panelHeight);
+  return {
+    x: Math.min(maxX, Math.max(0, Number.isFinite(x) ? x : 0)),
+    y: Math.min(maxY, Math.max(0, Number.isFinite(y) ? y : 0)),
+  };
+}
+
+function loadPanelPosition() {
+  try {
+    const raw = globalThis.localStorage?.getItem(PANEL_POSITION_KEY);
+    if (!raw) return null;
+    const position = JSON.parse(raw);
+    return Number.isFinite(position?.x) && Number.isFinite(position?.y) ? position : null;
+  } catch {
+    return null;
+  }
+}
+
+function savePanelPosition(position) {
+  try {
+    globalThis.localStorage?.setItem(PANEL_POSITION_KEY, JSON.stringify(position));
+  } catch {
+    // Storage can be unavailable on restricted or private pages; dragging still works.
+  }
+}
 
 // --- Settings model ---------------------------------------------------------
 
@@ -868,6 +901,66 @@ licence and full copyright notice.">ⓘ</a></h2>
     typeof __BUILD_VERSION__ === 'undefined' ? 'dev' : __BUILD_VERSION__;
   document.body.appendChild(root);
 
+  // The title bar remains the collapse control, but also acts as a compact
+  // drag handle. Position is stored separately from settings so resetting the
+  // scanner configuration never moves the panel unexpectedly.
+  const savedPosition = loadPanelPosition();
+  let dragged = false;
+  let dragPointerId = null;
+  let dragOffsetX = 0;
+  let dragOffsetY = 0;
+  const header = root.querySelector('h2');
+
+  function positionPanel(x, y, persist = false) {
+    const position = clampPanelPosition(
+      x, y, root.offsetWidth, root.offsetHeight, window.innerWidth, window.innerHeight,
+    );
+    root.style.left = `${position.x}px`;
+    root.style.top = `${position.y}px`;
+    root.style.right = 'auto';
+    if (persist) savePanelPosition(position);
+  }
+
+  if (savedPosition) positionPanel(savedPosition.x, savedPosition.y);
+
+  header.addEventListener('pointerdown', (e) => {
+    if (e.target.closest('.sov-about') || e.button !== 0) return;
+    const rect = root.getBoundingClientRect();
+    dragPointerId = e.pointerId;
+    dragOffsetX = e.clientX - rect.left;
+    dragOffsetY = e.clientY - rect.top;
+    dragged = false;
+    header.setPointerCapture?.(e.pointerId);
+  });
+
+  header.addEventListener('pointermove', (e) => {
+    if (e.pointerId !== dragPointerId) return;
+    const rect = root.getBoundingClientRect();
+    if (!dragged && Math.hypot(e.clientX - (rect.left + dragOffsetX),
+      e.clientY - (rect.top + dragOffsetY)) < 3) return;
+    dragged = true;
+    root.classList.add('sov-dragging');
+    e.preventDefault();
+    positionPanel(e.clientX - dragOffsetX, e.clientY - dragOffsetY);
+  });
+
+  function finishDrag(e) {
+    if (e.pointerId !== dragPointerId) return;
+    if (dragged) {
+      const rect = root.getBoundingClientRect();
+      savePanelPosition({ x: rect.left, y: rect.top });
+    }
+    root.classList.remove('sov-dragging');
+    dragPointerId = null;
+  }
+
+  header.addEventListener('pointerup', finishDrag);
+  header.addEventListener('pointercancel', finishDrag);
+  window.addEventListener('resize', () => {
+    const rect = root.getBoundingClientRect();
+    positionPanel(rect.left, rect.top, true);
+  });
+
   const $ = (sel) => root.querySelector(sel);
   const form = $('.sov-form');
   const scanBtn = $('.sov-scan');
@@ -878,8 +971,12 @@ licence and full copyright notice.">ⓘ</a></h2>
   // The ⓘ is the fansite kit's required link to the copyright notice — the
   // panel is where the kit's icons render. Following it must not also collapse
   // the panel, or the page comes back to a bar that looks like it broke.
-  root.querySelector('h2').addEventListener('click', (e) => {
+  header.addEventListener('click', (e) => {
     if (e.target.closest('.sov-about')) return;
+    if (dragged) {
+      dragged = false;
+      return;
+    }
     root.classList.toggle('sov-collapsed');
   });
   scanBtn.addEventListener('click', onScan);

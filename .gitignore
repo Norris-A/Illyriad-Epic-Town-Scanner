@@ -16,3 +16,4 @@ dist/*
 # explain the code on its own, since the section it would point at is not here.
 *.md
 !README.md
+.vscode/settings.json

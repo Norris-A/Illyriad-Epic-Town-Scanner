@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Illyriad Sovereignty Site Scanner
 // @namespace    https://github.com/Norris-A
-// @version      1.0.0
+// @version      1.0.1
 // @description  Ranks visible world-map tiles by the maximum sustainable tax rate.
 // @author       Norris A. (Firebolty)
 // @icon         data:image/png;base64,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
@@ -1940,7 +1940,9 @@
   z-index:99999;background:#1b1b1b;border-left:1px solid #444;
   box-shadow:-2px 0 8px rgba(0,0,0,.5)}
 .sov-panel h2{margin:0;padding:8px 10px;font-size:13px;font-weight:600;color:#fff;
-  background:#2a2a2a;cursor:pointer}
+  background:#2a2a2a;cursor:move;user-select:none}
+.sov-panel.sov-dragging{cursor:grabbing}
+.sov-panel.sov-dragging h2{cursor:grabbing}
 .sov-panel h2 .sov-about{float:right;color:#8a8a8a;text-decoration:none}
 .sov-panel h2 .sov-about:hover{color:#fff}
 .sov-body{padding:8px 10px}
@@ -2055,6 +2057,31 @@
    anything this panel hides needs a rule of its own, last so it wins on order. */
 .sov-panel [hidden]{display:none}
 `;
+  var PANEL_POSITION_KEY = "illyriad-sov-scanner.panel-position";
+  function clampPanelPosition(x, y, panelWidth, panelHeight, viewportWidth, viewportHeight) {
+    const maxX = Math.max(0, viewportWidth - panelWidth);
+    const maxY = Math.max(0, viewportHeight - panelHeight);
+    return {
+      x: Math.min(maxX, Math.max(0, Number.isFinite(x) ? x : 0)),
+      y: Math.min(maxY, Math.max(0, Number.isFinite(y) ? y : 0))
+    };
+  }
+  function loadPanelPosition() {
+    try {
+      const raw = globalThis.localStorage?.getItem(PANEL_POSITION_KEY);
+      if (!raw) return null;
+      const position = JSON.parse(raw);
+      return Number.isFinite(position?.x) && Number.isFinite(position?.y) ? position : null;
+    } catch {
+      return null;
+    }
+  }
+  function savePanelPosition(position) {
+    try {
+      globalThis.localStorage?.setItem(PANEL_POSITION_KEY, JSON.stringify(position));
+    } catch {
+    }
+  }
   function productionLabel(key) {
     const icon = PRODUCTION_ICONS[key];
     return `${icon ? `<img class="sov-ico" src="${icon}" alt="">` : ""}${PRODUCTION_LABEL[key] ?? key}`;
@@ -2527,16 +2554,77 @@ licence and full copyright notice.">\u24D8</a></h2>
       <section data-pane="focus" hidden>${focusFormHtml(DEFAULT_FOCUS, opening)}</section>
       <section data-pane="config" hidden>${settingsFormHtml(opening)}</section>
     </div>`;
-    root.querySelector(".sov-build").textContent = false ? "dev" : "1.0.0";
+    root.querySelector(".sov-build").textContent = false ? "dev" : "1.0.1";
     document.body.appendChild(root);
+    const savedPosition = loadPanelPosition();
+    let dragged = false;
+    let dragPointerId = null;
+    let dragOffsetX = 0;
+    let dragOffsetY = 0;
+    const header = root.querySelector("h2");
+    function positionPanel(x, y, persist = false) {
+      const position = clampPanelPosition(
+        x,
+        y,
+        root.offsetWidth,
+        root.offsetHeight,
+        window.innerWidth,
+        window.innerHeight
+      );
+      root.style.left = `${position.x}px`;
+      root.style.top = `${position.y}px`;
+      root.style.right = "auto";
+      if (persist) savePanelPosition(position);
+    }
+    if (savedPosition) positionPanel(savedPosition.x, savedPosition.y);
+    header.addEventListener("pointerdown", (e) => {
+      if (e.target.closest(".sov-about") || e.button !== 0) return;
+      const rect = root.getBoundingClientRect();
+      dragPointerId = e.pointerId;
+      dragOffsetX = e.clientX - rect.left;
+      dragOffsetY = e.clientY - rect.top;
+      dragged = false;
+      header.setPointerCapture?.(e.pointerId);
+    });
+    header.addEventListener("pointermove", (e) => {
+      if (e.pointerId !== dragPointerId) return;
+      const rect = root.getBoundingClientRect();
+      if (!dragged && Math.hypot(
+        e.clientX - (rect.left + dragOffsetX),
+        e.clientY - (rect.top + dragOffsetY)
+      ) < 3) return;
+      dragged = true;
+      root.classList.add("sov-dragging");
+      e.preventDefault();
+      positionPanel(e.clientX - dragOffsetX, e.clientY - dragOffsetY);
+    });
+    function finishDrag(e) {
+      if (e.pointerId !== dragPointerId) return;
+      if (dragged) {
+        const rect = root.getBoundingClientRect();
+        savePanelPosition({ x: rect.left, y: rect.top });
+      }
+      root.classList.remove("sov-dragging");
+      dragPointerId = null;
+    }
+    header.addEventListener("pointerup", finishDrag);
+    header.addEventListener("pointercancel", finishDrag);
+    window.addEventListener("resize", () => {
+      const rect = root.getBoundingClientRect();
+      positionPanel(rect.left, rect.top, true);
+    });
     const $ = (sel) => root.querySelector(sel);
     const form = $(".sov-form");
     const scanBtn = $(".sov-scan");
     let rendered = [];
     let selected = null;
     let incomplete = [];
-    root.querySelector("h2").addEventListener("click", (e) => {
+    header.addEventListener("click", (e) => {
       if (e.target.closest(".sov-about")) return;
+      if (dragged) {
+        dragged = false;
+        return;
+      }
       root.classList.toggle("sov-collapsed");
     });
     scanBtn.addEventListener("click", onScan);

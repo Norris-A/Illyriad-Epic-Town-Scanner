@@ -8,6 +8,7 @@
 import { build, context } from 'esbuild';
 import { mkdirSync, readFileSync } from 'node:fs';
 import { dirname } from 'node:path';
+import { APP_ICON_SVG } from './src/icons.js';
 
 // Two version shapes, because two audiences read them. A release build carries
 // the plain package.json number and is what users see in Tampermonkey. A dev
@@ -39,10 +40,11 @@ const OUT = RELEASE
 const RAW = 'https://raw.githubusercontent.com/Norris-A/Illyriad-Epic-Town-Scanner/main'
   + '/dist/illyriad-sov-scanner.user.js';
 
-// Inlined as a data URI so the icon travels inside the one shipped file and
-// needs no hosting to render in Tampermonkey's dashboard and install screen.
-const ICON = 'data:image/png;base64,'
-  + readFileSync('src/assets/sovereignty.png').toString('base64');
+// The panel's crown, reused for Tampermonkey's dashboard and install icon so the
+// two are the same mark. A data URI carries it inside the one shipped file;
+// base64 so no character in the SVG needs escaping in the banner comment.
+const ICON = 'data:image/svg+xml;base64,'
+  + Buffer.from(APP_ICON_SVG).toString('base64');
 
 const BANNER = `// ==UserScript==
 // @name         Illyriad Sovereignty Site Scanner

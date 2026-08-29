@@ -23,6 +23,19 @@ export const ICONS = {
   plate: PNG + 'iVBORw0KGgoAAAANSUhEUgAAABQAAAAUCAYAAACNiR0NAAAB+UlEQVR4XpXTv2tTURjG8ZMOXSyIuCimLa0/EAoOlkYRwYg6iOLQyxVRUeQOgpOxChpTIw7VqHRyilIJDUjiFjA45Q9QyC5xioOZdbqoHJ/z0AfO5V6tDl/eM5x8eO9NYqy1qVZvnx5funJ0zJ3f1M5zNlfC3OtHizl3bj+7MFaOjvGsVAo7cWivjeOYNZtNNjU1maherzPcUdmgu3zq8Q0bRZEdDAbCMvPBlVuLhUwQEIG7a6tEh8Mh0dFoJIhnYV4/X9w7e01gYjuhr961ieIyAUBKIPFKpWLz+bwy3mYEmXCgrLCwIJQTuTtEwzC0nU6H59bzy/cFCmK1Wi0FVqsPCCk9BbZyIOfNqyctQW0mVJVKJR9kQRAkQGH9fp8JZD42iUsTE1uICcRMgMYYOz9/0AeND7Lq9eNC7VLAKZCY3l2v1yPaaDSUEagMEPcvIKTK5bJttVqZYLFYVCYTVHcuzfF9AuTsdrsCGUD25P26D9L4JxAf3BSEsTnIL2fndoFC9ch/B19Wz+XQLEqAM9O7tOV/g2fQL/TUQV4CiSFiiBhQ44PCtm1gMRqiTwfm9vigthPCgJo/gVvRWw/9jj7s3zdjd89OEwHmfo/cWBgSlgJd42gH+og+ox8b+JcjhwvEfBAZJCgTdLjgi+gh+oa+omUHeQlL9Rtnl6VdvZBRqgAAAABJRU5ErkJggg==',
 };
 
+// The app's crown mark, vector so it stays sharp at any size, and reused for the
+// Tampermonkey @icon. The same-colour stroke rounds the point tips.
+export const APP_ICON_SVG = '<svg class="sov-app-icon" viewBox="0 0 64 64" '
+  + 'xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Sovereignty Scanner">'
+  + '<path d="M12 43 L9 25 L24 33 L32 21 L40 33 L55 25 L52 43 Z" '
+  + 'fill="#3ba55d" stroke="#3ba55d" stroke-width="4" stroke-linejoin="round"/>'
+  + '<rect x="11" y="41" width="42" height="13" rx="3" fill="#2f8a4c"/>'
+  + '<rect x="11" y="41" width="42" height="3" rx="1.5" fill="#57c483"/>'
+  + '<circle cx="9" cy="24" r="5" fill="#bfeecd"/>'
+  + '<circle cx="32" cy="20" r="5.6" fill="#bfeecd"/>'
+  + '<circle cx="55" cy="24" r="5" fill="#bfeecd"/>'
+  + '</svg>';
+
 /** Keyed as the settings objects are. Every production the tool names has art. */
 export const PRODUCTION_ICONS = {
   wood: ICONS.wood,

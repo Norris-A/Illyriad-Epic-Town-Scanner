@@ -21,7 +21,9 @@ import {
   surplusRows,
   productionLabel,
   settingsFormHtml,
+  settingsMenuHtml,
   clampPanelPosition,
+  isWorldMapHash,
 } from '../src/panel.js';
 import { PRODUCTION_ICONS } from '../src/icons.js';
 import {
@@ -49,6 +51,17 @@ test('panel positions stay inside the viewport', () => {
   assert.deepEqual(clampPanelPosition(NaN, Infinity, 900, 700, 800, 600), { x: 0, y: 0 });
 });
 
+test('auto-minimise reads the World Map route, sub-paths included', () => {
+  // Prefix-matched so a tile deep-link still counts as the map; everything else
+  // is where the scanner has no data and folds itself away.
+  assert.equal(isWorldMapHash('#/World/Map'), true);
+  assert.equal(isWorldMapHash('#/World/Map/500/500'), true);
+  assert.equal(isWorldMapHash('#/Town/1/Overview'), false);
+  assert.equal(isWorldMapHash(''), false);
+  assert.equal(isWorldMapHash(undefined), false);
+  assert.equal(DEFAULT_SETTINGS.autoMinimizeOffMap, true, 'the folding is on by default');
+});
+
 // --- the spec is driven by DEFAULT_SETTINGS, not a second copy of the table ---
 
 test('every setting has exactly one control, and every control a setting', () => {
@@ -63,11 +76,20 @@ test('every setting has exactly one control, and every control a setting', () =>
 
 test('the defaults render into the form without throwing', () => {
   const html = settingsFormHtml(DEFAULT_SETTINGS);
+  const menuHtml = settingsMenuHtml(DEFAULT_SETTINGS);
+  const menuKeys = new Set(SETTINGS_FIELDS.filter((f) => f.menu).map((f) => f.key));
+  // Every setting has a control somewhere: form settings in the form, menu
+  // settings behind the gear — and neither leaks into the other's markup.
   for (const key of Object.keys(DEFAULT_SETTINGS)) {
-    assert.ok(html.includes(`data-key="${key}"`), `${key} has no control in the markup`);
+    const where = menuKeys.has(key) ? menuHtml : html;
+    const other = menuKeys.has(key) ? html : menuHtml;
+    assert.ok(where.includes(`data-key="${key}"`), `${key} has no control in its markup`);
+    assert.ok(!other.includes(`data-key="${key}"`), `${key} rendered into the wrong markup`);
   }
+  assert.ok(menuKeys.size, 'no setting is behind the gear');
   assert.ok(html.includes('Prefill from Selected Tile'), 'the prefill button is missing');
   assert.ok(!/undefined|\[object Object\]/.test(html), 'a field rendered a stray value');
+  assert.ok(!/undefined|\[object Object\]/.test(menuHtml), 'a menu field rendered a stray value');
 });
 
 // The red frame is the whole point of the block: it warns that what is typed in
@@ -101,14 +123,17 @@ test('the markup carries every hook createPanel reads back out of it', () => {
 
   // readSettings/writeSettings qualify by tag name, so the tag has to match the
   // declared type: a checkbox read as `input[data-key]`, a select as `select[…]`.
+  // A menu field is read the same way, just out of the gear's markup instead.
+  const menuHtml = settingsMenuHtml(DEFAULT_SETTINGS);
   for (const f of SETTINGS_FIELDS) {
+    const where = f.menu ? menuHtml : html;
     if (f.type === 'checkbox') {
-      assert.ok(html.includes(`<input type="checkbox" data-key="${f.key}"`), `${f.key} is not a checkbox input`);
+      assert.ok(where.includes(`<input type="checkbox" data-key="${f.key}"`), `${f.key} is not a checkbox input`);
     } else if (f.type === 'select') {
-      assert.ok(html.includes(`<select data-key="${f.key}"`), `${f.key} is not a select`);
+      assert.ok(where.includes(`<select data-key="${f.key}"`), `${f.key} is not a select`);
     } else if (!['plots', 'milsov', 'calibration', 'boosters', 'prestige',
       'minimums'].includes(f.type)) {
-      assert.ok(html.includes(`<input type="number" data-key="${f.key}"`), `${f.key} is not a number input`);
+      assert.ok(where.includes(`<input type="number" data-key="${f.key}"`), `${f.key} is not a number input`);
     }
   }
 });

@@ -915,4 +915,7 @@ export const DEFAULT_SETTINGS = {
   milsovMinBonus: 0,
   ownClaimsAvailable: false,
   allianceClaimsAvailable: false,
+  // Fold the panel to its icon off the World Map: the scanner reads
+  // window.mapData, which exists only there.
+  autoMinimizeOffMap: true,
 };

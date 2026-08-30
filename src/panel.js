@@ -28,7 +28,7 @@ import {
   PRODUCTION_LABEL,
   descriptorFor,
 } from './constants.js';
-import { ICONS, PRODUCTION_ICONS, STRUCTURE_ICONS, DEFAULT_STRUCTURE_ICON } from './icons.js';
+import { ICONS, APP_ICON_SVG, PRODUCTION_ICONS, STRUCTURE_ICONS, DEFAULT_STRUCTURE_ICON } from './icons.js';
 import { extractTowns } from './payload.js';
 import {
   computeBOther,
@@ -59,16 +59,46 @@ const CSS = `
    this block is first so the specific rules below still win. */
 .sov-panel,.sov-panel *{color:#e6e6e6;background:transparent;text-shadow:none;
   text-transform:none;letter-spacing:normal;font:12px/1.4 system-ui,sans-serif}
-.sov-panel{position:fixed;top:0;right:0;width:420px;max-height:100vh;overflow:auto;
-  z-index:99999;background:#1b1b1b;border-left:1px solid #444;
-  box-shadow:-2px 0 8px rgba(0,0,0,.5)}
-.sov-panel h2{margin:0;padding:8px 10px;font-size:13px;font-weight:600;color:#fff;
-  background:#2a2a2a;cursor:move;user-select:none}
+/* A flex column: the header and the tab bar hold their height while only the
+   body scrolls, so both stay put and reachable however long the open pane is. */
+.sov-panel{position:fixed;top:0;right:0;width:420px;max-height:100vh;overflow:hidden;
+  display:flex;flex-direction:column;z-index:99999;background:#1b1b1b;
+  border-left:1px solid #444;box-shadow:-2px 0 8px rgba(0,0,0,.5)}
+.sov-panel h2{flex:none;margin:0;padding:8px 10px;font-size:13px;font-weight:600;
+  color:#fff;background:#2a2a2a;cursor:move;user-select:none}
+/* The flex row lives on an inner element the host page has no rules for: the host
+   restyles h2 itself (it forces the heading's own display), so laying the header
+   out on the h2 loses — laying it out one level in wins outright. */
+.sov-panel h2 .sov-h2-inner{display:flex;align-items:center;gap:8px}
+.sov-panel h2 .sov-title{min-width:0}
+/* The two icons ride together at the far right, pushed there by the auto margin. */
+.sov-panel h2 .sov-h2-actions{margin-left:auto;flex:none;display:flex;align-items:center;gap:12px}
 .sov-panel.sov-dragging{cursor:grabbing}
 .sov-panel.sov-dragging h2{cursor:grabbing}
-.sov-panel h2 .sov-about{float:right;color:#8a8a8a;text-decoration:none}
+.sov-panel h2 .sov-about{color:#8a8a8a;text-decoration:none;font-size:20px;line-height:1}
 .sov-panel h2 .sov-about:hover{color:#fff}
-.sov-body{padding:8px 10px}
+/* Not a <button>: the host page's own button rules give one padding and width the
+   header cannot spare, which the ⓘ (an <a>) sidesteps. This matches it — a bare
+   glyph, sized to itself. */
+.sov-panel h2 .sov-gear{color:#8a8a8a;font-size:20px;line-height:1;cursor:pointer}
+.sov-panel h2 .sov-gear:hover{color:#fff}
+.sov-panel h2 .sov-gear:focus-visible{outline:1px solid #6bf}
+/* Its own floating card, positioned in script and appended to the body so the
+   panel's overflow:hidden cannot clip it. Self-contained styling because it
+   lives outside .sov-panel, beyond that reset's reach. The reset comes first so
+   the card's own background below wins over the transparent it sets on itself. */
+.sov-menu,.sov-menu *{color:#e6e6e6;background:transparent;text-shadow:none;
+  text-transform:none;letter-spacing:normal;font:12px/1.4 system-ui,sans-serif}
+.sov-menu{position:fixed;z-index:100000;width:250px;box-sizing:border-box;
+  background:#1b1b1b;border:1px solid #444;border-radius:6px;padding:8px 10px;
+  box-shadow:0 4px 12px rgba(0,0,0,.5)}
+.sov-menu h3{margin:0 0 6px;font-size:13px;font-weight:600;color:#fff}
+.sov-menu[hidden]{display:none}
+/* pointer-events off so the icon never hijacks the header's drag. */
+.sov-panel h2 .sov-app-icon{flex:none;width:18px;height:18px;pointer-events:none}
+/* The only scrolling region; min-height:0 lets it shrink inside the capped
+   column instead of forcing the header and tabs off the top. */
+.sov-body{flex:1 1 auto;min-height:0;overflow:auto;padding:8px 10px}
 .sov-panel table{width:100%;border-collapse:collapse}
 .sov-panel th,.sov-panel td{padding:2px 4px;border-bottom:1px solid #333;text-align:right}
 .sov-panel th{font-weight:600;color:#b9c4b9}
@@ -80,7 +110,13 @@ const CSS = `
 .sov-detail{background:#222;font-size:11px}
 .sov-detail-actions{margin:2px 0 6px}
 .sov-flag{color:#e94}
-.sov-collapsed .sov-body{display:none}
+/* Collapsed, the chip carries the background and shadow the root drops here. */
+.sov-collapsed{width:auto;max-height:none;overflow:visible;border-left:0;
+  background:transparent;box-shadow:none}
+.sov-collapsed .sov-body,.sov-collapsed .sov-tabs{display:none}
+.sov-collapsed h2{padding:8px;border-radius:6px;box-shadow:-2px 0 8px rgba(0,0,0,.5)}
+.sov-collapsed h2 .sov-title,.sov-collapsed h2 .sov-h2-actions{display:none}
+.sov-collapsed h2 .sov-app-icon{width:48px;height:48px;margin:0;vertical-align:middle}
 .sov-selected>td{background:#243}
 .sov-form fieldset{border:1px solid #333;margin:0 0 8px;padding:4px 8px 6px}
 .sov-form legend{color:#9c9;padding:0 4px}
@@ -113,7 +149,11 @@ const CSS = `
 .sov-panel img.sov-ico{width:12px;height:12px;vertical-align:-2px;margin-right:4px;
   image-rendering:pixelated}
 .sov-plot-fields label .sov-ico{display:block;margin:0 auto 1px}
-.sov-tabs{display:flex;gap:2px;margin:0 0 8px;border-bottom:1px solid #444}
+/* Outside the scrolling body and non-shrinking, so the tabs stay switchable
+   while a long pane scrolls beneath them. The side padding aligns them with the
+   header and the body, whose padding they no longer sit inside. */
+.sov-tabs{flex:none;display:flex;gap:2px;margin:0;padding:8px 10px 0;
+  border-bottom:1px solid #444}
 .sov-tabs button{background:#2a2a2a;color:#b5b5b5;padding:5px 9px;border-bottom:2px solid transparent}
 .sov-tabs button.on{background:#333;color:#fff;border-bottom-color:#3a5}
 .sov-xy{display:flex;gap:4px}
@@ -182,6 +222,17 @@ const CSS = `
 `;
 
 export const PANEL_POSITION_KEY = 'illyriad-sov-scanner.panel-position';
+export const PANEL_COLLAPSED_KEY = 'illyriad-sov-scanner.panel-collapsed';
+
+export const WORLD_MAP_HASH = '#/World/Map';
+
+/**
+ * Whether a location hash is the World Map, where window.mapData lives.
+ * Prefix-matched so a tile deep-link like #/World/Map/500/500 still counts.
+ */
+export function isWorldMapHash(hash) {
+  return String(hash ?? '').startsWith(WORLD_MAP_HASH);
+}
 
 /** Keep the panel's top-left corner reachable after a drag or viewport resize. */
 export function clampPanelPosition(x, y, panelWidth, panelHeight, viewportWidth, viewportHeight) {
@@ -209,6 +260,22 @@ function savePanelPosition(position) {
     globalThis.localStorage?.setItem(PANEL_POSITION_KEY, JSON.stringify(position));
   } catch {
     // Storage can be unavailable on restricted or private pages; dragging still works.
+  }
+}
+
+function loadPanelCollapsed() {
+  try {
+    return globalThis.localStorage?.getItem(PANEL_COLLAPSED_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function savePanelCollapsed(collapsed) {
+  try {
+    globalThis.localStorage?.setItem(PANEL_COLLAPSED_KEY, collapsed ? '1' : '0');
+  } catch {
+    // Restricted pages have no storage; the collapse still toggles for the session.
   }
 }
 
@@ -590,6 +657,16 @@ export const SETTINGS_FIELDS = [
   { key: 'dOwn', group: 'Neighbours', label: 'Minimum Distance to Your Cities', type: 'number', min: 0, max: 100 },
   { key: 'ownClaimsAvailable', group: 'Neighbours', label: 'Treat Your Own Claims as Available', type: 'checkbox' },
   { key: 'allianceClaimsAvailable', group: 'Neighbours', label: 'Treat Alliance Claims as Available', type: 'checkbox' },
+
+  {
+    key: 'autoMinimizeOffMap',
+    group: 'Display',
+    label: 'Minimise when off the World Map',
+    type: 'checkbox',
+    menu: true,
+    hint: 'Folds the panel down to its icon on any page other than the World Map — the '
+      + 'only page where the scanner has map data to read.',
+  },
 ];
 
 // --- Form markup (strings only — no DOM until createPanel) ------------------
@@ -771,6 +848,19 @@ export function settingsFormHtml(settings) {
 }
 
 /**
+ * The gear menu: the settings that belong to the panel itself rather than to a
+ * city's configuration, so they live behind the header's gear instead of in the
+ * form. Each is an ordinary field with `menu: true`, read and written the same
+ * way — this only lays them out somewhere else.
+ */
+export function settingsMenuHtml(settings) {
+  const fields = SETTINGS_FIELDS.filter((f) => f.menu);
+  const rows = fields.map((f) =>
+    `${fieldHtml(f, settings)}${f.hint ? `<p class="sov-hint">${escapeHtml(f.hint)}</p>` : ''}`).join('');
+  return `<h3>Settings</h3><form class="sov-menu-form">${rows}</form>`;
+}
+
+/**
  * The optimiser's own form — the four values focusSite takes beyond the saved
  * configuration. Anything added here has to be added to readFocus and parseFocus
  * too; there is no field spec driving this one.
@@ -872,17 +962,21 @@ export function createPanel({ onScan, onExport, initialSettings, onSettingsChang
   root.className = 'sov-panel';
   const opening = initialSettings ?? DEFAULT_SETTINGS;
   root.innerHTML = `
-    <h2>Sovereignty Scanner <span class="sov-build"></span><a class="sov-about"
+    <h2 title="Sovereignty Scanner — drag to move, click to collapse"><span
+        class="sov-h2-inner">${APP_ICON_SVG}<span
+        class="sov-title">Sovereignty Scanner <span class="sov-build"></span></span><span
+      class="sov-h2-actions"><span class="sov-gear" role="button" tabindex="0"
+      title="Settings" aria-label="Settings" aria-expanded="false">⚙</span><a class="sov-about"
       href="https://github.com/Norris-A/Illyriad-Epic-Town-Scanner/blob/main/LICENSE"
       target="_blank" rel="noopener" title="Unofficial fan tool. Illyriad, its game data and
 the icon art are the intellectual property of Illyriad Games Limited — click for the
-licence and full copyright notice.">ⓘ</a></h2>
+licence and full copyright notice.">ⓘ</a></span></span></h2>
+    <nav class="sov-tabs">
+      <button type="button" data-tab="scan" class="on">Site Search</button>
+      <button type="button" data-tab="focus">Optimal Sovereignty</button>
+      <button type="button" data-tab="config">City Configuration</button>
+    </nav>
     <div class="sov-body">
-      <nav class="sov-tabs">
-        <button type="button" data-tab="scan" class="on">Site Search</button>
-        <button type="button" data-tab="focus">Optimal Sovereignty</button>
-        <button type="button" data-tab="config">City Configuration</button>
-      </nav>
       <section data-pane="scan">
         <p><button class="sov-scan">Scan</button>
            <button class="sov-export sec">Export CSV</button></p>
@@ -912,8 +1006,23 @@ licence and full copyright notice.">ⓘ</a></h2>
   const header = root.querySelector('h2');
 
   function positionPanel(x, y, persist = false) {
+    const viewportHeight = window.innerHeight;
+    if (root.classList.contains('sov-collapsed')) {
+      // The chip sizes itself; the stylesheet's max-height:none has to win.
+      root.style.maxHeight = '';
+    } else {
+      // Cap the panel to the room below its top so a long tab scrolls inside it
+      // instead of trailing past the viewport bottom. This also bounds the
+      // measured height, so the clamp below can place the panel anywhere down
+      // the page — left uncapped a tall tab measures at 100vh and pins it to 0.
+      const minVisible = header.offsetHeight || 34;
+      const top = Math.min(
+        Math.max(0, Number.isFinite(y) ? y : 0), Math.max(0, viewportHeight - minVisible),
+      );
+      root.style.maxHeight = `${viewportHeight - top}px`;
+    }
     const position = clampPanelPosition(
-      x, y, root.offsetWidth, root.offsetHeight, window.innerWidth, window.innerHeight,
+      x, y, root.offsetWidth, root.offsetHeight, window.innerWidth, viewportHeight,
     );
     root.style.left = `${position.x}px`;
     root.style.top = `${position.y}px`;
@@ -924,7 +1033,7 @@ licence and full copyright notice.">ⓘ</a></h2>
   if (savedPosition) positionPanel(savedPosition.x, savedPosition.y);
 
   header.addEventListener('pointerdown', (e) => {
-    if (e.target.closest('.sov-about') || e.button !== 0) return;
+    if (e.target.closest('.sov-about') || e.target.closest('.sov-gear') || e.button !== 0) return;
     const rect = root.getBoundingClientRect();
     dragPointerId = e.pointerId;
     dragOffsetX = e.clientX - rect.left;
@@ -961,9 +1070,64 @@ licence and full copyright notice.">ⓘ</a></h2>
     positionPanel(rect.left, rect.top, true);
   });
 
+  // --- collapse / auto-minimise ---
+
+  // The persisted preference, shown while on the map.
+  let manualCollapsed = loadPanelCollapsed();
+  // A hand-expand riding over the off-map force-collapse; cleared on route change.
+  let offMapExpandOverride = false;
+
+  const autoMinimizeOn = () => !!readSettings().settings.autoMinimizeOffMap;
+  const currentlyOnMap = () => isWorldMapHash(globalThis.location?.hash);
+
+  function shouldCollapse() {
+    if (autoMinimizeOn() && !currentlyOnMap()) return !offMapExpandOverride;
+    return manualCollapsed;
+  }
+
+  function applyCollapsed() {
+    const collapsed = shouldCollapse();
+    root.classList.toggle('sov-collapsed', collapsed);
+    // Collapsed, the gear that opens the menu is hidden, so its card cannot stay up.
+    if (collapsed) setMenuOpen?.(false);
+    // Width changes with the state, so re-clamp a dragged panel; a docked one keeps right:0.
+    if (root.style.left) {
+      const rect = root.getBoundingClientRect();
+      positionPanel(rect.left, rect.top);
+    }
+  }
+
+  function toggleCollapsed() {
+    const next = !root.classList.contains('sov-collapsed');
+    if (autoMinimizeOn() && !currentlyOnMap()) {
+      offMapExpandOverride = !next;
+    } else {
+      manualCollapsed = next;
+      savePanelCollapsed(next);
+    }
+    applyCollapsed();
+  }
+
+  window.addEventListener('hashchange', () => {
+    offMapExpandOverride = false;
+    applyCollapsed();
+  });
+
   const $ = (sel) => root.querySelector(sel);
   const form = $('.sov-form');
   const scanBtn = $('.sov-scan');
+
+  // Menu settings live in their own floating card behind the header's gear, but
+  // are otherwise ordinary fields: read and written the same way, just out of a
+  // different container. Appended to the body so the panel's overflow cannot clip
+  // it. Anything driving both form and menu resolves the container through here.
+  const gear = $('.sov-gear');
+  const menu = document.createElement('div');
+  menu.className = 'sov-menu';
+  menu.hidden = true;
+  menu.innerHTML = settingsMenuHtml(opening);
+  document.body.appendChild(menu);
+  const containerFor = (f) => (f.menu ? menu : form);
   let rendered = [];       // the results currently in the table
   let selected = null;     // the row Prefill copies `rs` from
   let incomplete = [];     // sites the last scan could not see all of
@@ -977,7 +1141,7 @@ licence and full copyright notice.">ⓘ</a></h2>
       dragged = false;
       return;
     }
-    root.classList.toggle('sov-collapsed');
+    toggleCollapsed();
   });
   scanBtn.addEventListener('click', onScan);
   $('.sov-export').addEventListener('click', onExport);
@@ -1009,10 +1173,10 @@ licence and full copyright notice.">ⓘ</a></h2>
     for (const f of SETTINGS_FIELDS) {
       switch (f.type) {
         case 'checkbox':
-          out[f.key] = form.querySelector(`input[data-key="${f.key}"]`).checked;
+          out[f.key] = containerFor(f).querySelector(`input[data-key="${f.key}"]`).checked;
           break;
         case 'select': {
-          const v = form.querySelector(`select[data-key="${f.key}"]`).value;
+          const v = containerFor(f).querySelector(`select[data-key="${f.key}"]`).value;
           out[f.key] = f.parse === 'number' ? Number(v) : v;
           break;
         }
@@ -1059,7 +1223,7 @@ licence and full copyright notice.">ⓘ</a></h2>
           break;
         }
         default:
-          out[f.key] = clampNumber(form.querySelector(`input[data-key="${f.key}"]`).value, f);
+          out[f.key] = clampNumber(containerFor(f).querySelector(`input[data-key="${f.key}"]`).value, f);
       }
     }
     return { settings: out, errors };
@@ -1072,10 +1236,10 @@ licence and full copyright notice.">ⓘ</a></h2>
       const v = s[f.key];
       switch (f.type) {
         case 'checkbox':
-          form.querySelector(`input[data-key="${f.key}"]`).checked = !!v;
+          containerFor(f).querySelector(`input[data-key="${f.key}"]`).checked = !!v;
           break;
         case 'select':
-          form.querySelector(`select[data-key="${f.key}"]`).value = String(v);
+          containerFor(f).querySelector(`select[data-key="${f.key}"]`).value = String(v);
           break;
         case 'plots':
           writePlots(v);
@@ -1104,10 +1268,11 @@ licence and full copyright notice.">ⓘ</a></h2>
           }
           break;
         default:
-          form.querySelector(`input[data-key="${f.key}"]`).value = v ?? f.fallback ?? '';
+          containerFor(f).querySelector(`input[data-key="${f.key}"]`).value = v ?? f.fallback ?? '';
       }
     }
     refresh();
+    applyCollapsed();
   }
 
   function writePlots(plots) {
@@ -1189,6 +1354,55 @@ licence and full copyright notice.">ⓘ</a></h2>
     } else if (e.target.closest('.sov-prefill')) {
       prefill();
     }
+  });
+
+  // --- settings menu (the gear) ---
+
+  // Committing a menu edit re-reads and saves the whole set, menu fields included.
+  // Turning auto-minimise on off the map must not fold the panel out from under
+  // the user mid-edit: the setting governs the next navigation, not this view. So
+  // the current state is pinned as an off-map hand-expand, which the next route
+  // change clears — leaving the new setting to take effect then.
+  menu.addEventListener('change', () => {
+    const wasCollapsed = root.classList.contains('sov-collapsed');
+    refresh();
+    if (!currentlyOnMap()) offMapExpandOverride = !wasCollapsed;
+    applyCollapsed();
+  });
+
+  function setMenuOpen(open) {
+    if (open) {
+      // Placed each time it opens: the panel drags, and the header moves with it.
+      const g = gear.getBoundingClientRect();
+      const p = root.getBoundingClientRect();
+      menu.hidden = false;
+      menu.style.top = `${g.bottom + 4}px`;
+      menu.style.left = `${Math.max(4, p.right - menu.offsetWidth)}px`;
+    } else {
+      menu.hidden = true;
+    }
+    gear.setAttribute('aria-expanded', String(open));
+  }
+
+  gear.addEventListener('click', (e) => {
+    e.stopPropagation();   // the header click below would toggle the collapse
+    setMenuOpen(menu.hidden);
+  });
+  // A span with role=button is not activated by the keyboard on its own.
+  gear.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    e.preventDefault();
+    e.stopPropagation();
+    setMenuOpen(menu.hidden);
+  });
+
+  // A click anywhere off the menu and its gear closes it; Escape does too.
+  document.addEventListener('pointerdown', (e) => {
+    if (menu.hidden || e.target.closest('.sov-menu') || e.target.closest('.sov-gear')) return;
+    setMenuOpen(false);
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !menu.hidden) setMenuOpen(false);
   });
 
   /**
@@ -1342,6 +1556,7 @@ licence and full copyright notice.">ⓘ</a></h2>
 
   refresh({ save: false });
   syncFocusRadiusHint();
+  applyCollapsed();
 
   return {
     root,

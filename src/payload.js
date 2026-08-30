@@ -110,15 +110,29 @@ export function isCandidateSite(tile, key, idx, settings, towns) {
 }
 
 /**
- * The town's pipe string, "name|townID|x|y|population|playerID|...", found by
- * its shape rather than by a field name.
+ * The town record on the entry: an object carrying TownName beside a numeric X
+ * and Y. Located by those keys rather than by where it sits, since the property
+ * holding it is not documented.
+ */
+export function townRecord(town) {
+  if (!town || typeof town !== 'object') return null;
+  const isRecord = (o) => !!o && typeof o === 'object'
+    && typeof o.TownName === 'string'
+    && o.X !== '' && Number.isFinite(Number(o.X))
+    && o.Y !== '' && Number.isFinite(Number(o.Y));
+  if (isRecord(town)) return town;
+  for (const v of Object.values(town)) if (isRecord(v)) return v;
+  return null;
+}
+
+/**
+ * The pipe string "name|townID|x|y|population|playerID|...", the older shape of
+ * a town entry, for entries carrying no record.
  *
- * The entry is an object carrying the string alongside `r`, `rd` and friends,
- * and which property holds it is not documented. Guessing at names failed
- * silently: the position falls back to the tile key, which is right, so a wrong
- * guess cost only the name and looked like everything working. Matching on
- * "four or more parts with numbers in the x and y slots" is self-checking, and
- * no other field on the entry is shaped like that.
+ * Found by its shape — four or more parts with numbers in the x and y slots,
+ * which nothing else on an entry has — because the property holding it is not
+ * documented. Reading the wrong field here is silent rather than loud: position
+ * falls back to the tile key, which is right, so a miss costs only the name.
  */
 export function townString(town) {
   if (typeof town === 'string') return town;
@@ -135,22 +149,22 @@ export function townString(town) {
 }
 
 /**
- * Town positions from the `t` block. The pipe string is x|y — note the
- * inversion vs keys. Several positions remain unidentified; only read what's
- * known.
+ * Town names and positions from the `t` block. Both shapes of entry are read:
+ * the record, and the pipe string where an entry carries no record. Both state
+ * position as x then y, the inverse of the key. The name is blank where neither
+ * shape is present, which the caller shows as the coordinates instead.
  */
 export function extractTowns(payload) {
   const out = [];
   for (const [key, town] of Object.entries(payload.t ?? {})) {
-    const parts = townString(town).split('|');
-    const x = Number(parts[2]);
-    const y = Number(parts[3]);
+    const rec = townRecord(town);
+    const parts = rec ? null : townString(town).split('|');
+    const x = Number(rec ? rec.X : parts[2]);
+    const y = Number(rec ? rec.Y : parts[3]);
     const pos = Number.isNaN(x) || Number.isNaN(y) ? parseKey(key) : { x, y };
     out.push({
       ...pos,
-      // parts[0] is the town's name. Blank where the string is not the pipe
-      // format, which the caller shows as the coordinates instead.
-      name: parts[0] ?? '',
+      name: (rec ? rec.TownName : parts[0]) ?? '',
       own: town && town.rd === 'Yours',
       rd: town && town.rd,
       key,

@@ -1,9 +1,12 @@
 // Reading the map view the game has ALREADY loaded.
 // This module reads, it never requests: no fetch, XHR or WebSocket of any kind.
 //
-// The client parks its current map view in a page global (window.mapData),
-// replacing it whole on every pan/zoom. Reading that global is a plain memory read
-// of data already on screen — no network, no side effects.
+// The client parks its map view in a page global (window.mapData) and merges each
+// pan and zoom into it: what it holds is the union of every view loaded since the
+// World Map was last entered, not the one on screen. Its `data` keys therefore
+// outrun the viewport, and the tiles behind them age — bounded by leaving the map,
+// which starts the accumulation over. Reading that global is a plain memory read of
+// data already delivered to the page — no network, no side effects.
 
 // The globals the client is known or plausible to keep its parsed map view in.
 // window.mapData is the one this client uses; the rest are guesses in case a client
@@ -22,9 +25,8 @@ function looksLikeMapPayload(obj) {
 }
 
 /**
- * The client's own parsed map view, read from the page fresh each call so a Scan
- * sees the current viewport, or null if no known global (nor the mapSVG element)
- * holds one.
+ * The client's own parsed map data, read from the page fresh each call, or null if
+ * no known global (nor the mapSVG element) holds any.
  */
 function readInPageData() {
   if (typeof window !== 'undefined') {
@@ -45,7 +47,7 @@ function readInPageData() {
   return null;
 }
 
-/** The payload every Scan and Optimise press reads: the client's current map view. */
+/** The payload every Scan and Optimise press reads: every view of the current map visit. */
 export function getLatestPayload() {
   return readInPageData();
 }

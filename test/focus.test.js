@@ -16,7 +16,7 @@ import {
   keptClaims,
 } from '../src/focus.js';
 import { DEFAULT_SETTINGS, PLOT_TOTAL } from '../src/constants.js';
-import { tileKey, indexPayload, townString } from '../src/payload.js';
+import { tileKey, indexPayload, townString, townRecord } from '../src/payload.js';
 import { scoreSite, claimUpkeep, distance } from '../src/scoring.js';
 import { focusFormHtml, ownTowns } from '../src/panel.js';
 
@@ -216,9 +216,13 @@ test('nothing is kept when the setting is off, whatever the map holds', () => {
 
 // --- picking one of your own towns ------------------------------------------
 
+// A town is only offered where the payload carries its tile as well as its `t`
+// entry, so a fixture has to supply both.
+const tiles = (...at) => Object.fromEntries(at.map(([y, x]) => [tileKey(y, x), { sov: 1 }]));
+
 test('the picker lists your own towns, named, and no one else’s', () => {
   const payload = {
-    data: {},
+    data: tiles([-3178, 360], [-3000, 100], [-3100, 200], [-3200, 400]),
     s: {},
     t: {
       [tileKey(-3178, 360)]: { s: 'Rivermeet|1|360|-3178|900|7', rd: 'Yours' },
@@ -237,13 +241,26 @@ test('the picker lists your own towns, named, and no one else’s', () => {
 // same town can arrive under more than one key.
 test('a town listed twice is offered once', () => {
   const town = { s: 'Rivermeet|1|360|-3178|900|7', rd: 'Yours' };
-  const payload = { data: {}, s: {}, t: { 'a|b': town, [tileKey(-3178, 360)]: town } };
+  const payload = {
+    data: tiles([-3178, 360]), s: {}, t: { 'a|b': town, [tileKey(-3178, 360)]: town },
+  };
   assert.equal(ownTowns(payload).length, 1);
 });
 
 test('a town whose string is not the pipe format is offered by position', () => {
-  const payload = { data: {}, s: {}, t: { [tileKey(-3178, 360)]: { s: '', rd: 'Yours' } } };
+  const payload = {
+    data: tiles([-3178, 360]), s: {}, t: { [tileKey(-3178, 360)]: { s: '', rd: 'Yours' } },
+  };
   assert.deepEqual(ownTowns(payload), [{ x: 360, y: -3178, label: '360|-3178' }]);
+});
+
+// The `t` block reaches past the tiles the payload carries, so a town can be
+// named by it long after its ground has been panned away. Offering one leads
+// straight to the optimiser refusing the centre it was just handed.
+test('a town the payload has no tile for is not offered', () => {
+  const t = { [tileKey(-3178, 360)]: { s: 'Rivermeet|1|360|-3178|900|7', rd: 'Yours' } };
+  assert.deepEqual(ownTowns({ data: {}, s: {}, t }), []);
+  assert.equal(ownTowns({ data: tiles([-3178, 360]), s: {}, t }).length, 1);
 });
 
 test('no payload and no towns are both an empty list, not a throw', () => {
@@ -251,13 +268,15 @@ test('no payload and no towns are both an empty list, not a throw', () => {
   assert.deepEqual(ownTowns({}), []);
 });
 
-// The property holding the pipe string is not documented, and guessing at one
-// failed quietly: position falls back to the tile key, which is right, so the
-// only symptom was an unnamed town in the picker.
+// Which property carries the string is undocumented, so it is found by shape.
+// A miss is silent — position still resolves off the tile key — and shows only
+// as a town listed under bare coordinates.
 test('the town name is found whatever property carries the pipe string', () => {
   const pipe = 'Rivermeet|1|360|-3178|900|7|human|?|75|?|Norris|ILL|?|N-human-|?';
   for (const field of ['s', 'n', 'v', 'ts', 'whatever']) {
-    const payload = { data: {}, s: {}, t: { [tileKey(-3178, 360)]: { [field]: pipe, rd: 'Yours' } } };
+    const payload = {
+      data: tiles([-3178, 360]), s: {}, t: { [tileKey(-3178, 360)]: { [field]: pipe, rd: 'Yours' } },
+    };
     assert.deepEqual(ownTowns(payload), [
       { x: 360, y: -3178, label: 'Rivermeet (360|-3178)' },
     ], `the string was not found under ${field}`);
@@ -266,6 +285,23 @@ test('the town name is found whatever property carries the pipe string', () => {
   assert.equal(townString(pipe), pipe);
   assert.equal(townString({ rd: 'Yours', s: '3|?', b: 'Unknown' }), '', 'a claim level is not a town');
   assert.equal(townString({}), '');
+});
+
+// The shape the live client sends: a record nested on the entry, not a string.
+test('a town record is read for its name and position, whatever carries it', () => {
+  const rec = {
+    TownName: 'Eruyt', TownId: 602050, X: '360', Y: '-3178', Population: '6720', Cap: 1,
+  };
+  const payload = {
+    data: tiles([-3178, 360]), s: {}, t: { [tileKey(-3178, 360)]: { t: rec, rd: 'Yours', v: 9 } },
+  };
+  assert.deepEqual(ownTowns(payload), [{ x: 360, y: -3178, label: 'Eruyt (360|-3178)' }]);
+
+  assert.equal(townRecord({ t: rec }), rec, 'a nested record was not found');
+  assert.equal(townRecord(rec), rec, 'a bare record was not found');
+  assert.equal(townRecord({ rd: 'Yours', v: 9 }), null);
+  assert.equal(townRecord({ t: { TownName: 'Eruyt', X: '', Y: '' } }), null,
+    'a record without a position is not a position');
   assert.equal(townString(null), '');
 });
 

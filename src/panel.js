@@ -29,7 +29,7 @@ import {
   descriptorFor,
 } from './constants.js';
 import { ICONS, APP_ICON_SVG, PRODUCTION_ICONS, STRUCTURE_ICONS, DEFAULT_STRUCTURE_ICON } from './icons.js';
-import { extractTowns } from './payload.js';
+import { extractTowns, tileKey } from './payload.js';
 import {
   computeBOther,
   computeK,
@@ -883,8 +883,8 @@ export function focusFormHtml(focus, settings) {
         <label class="sov-f"><span>Sovereignty Radius</span>
           <input type="number" data-focus="radius" min="1" max="6" step="1"
             placeholder="${rClaim}"${attr('value', f.radius)}></label>
-        <p class="sov-hint">How far out sovereignty may be placed. Blank follows the claim
-          radius in City Configuration, currently ${rClaim}.</p>
+        <p class="sov-hint sov-radius-hint">How far out sovereignty may be placed. Blank
+          follows the claim radius in City Configuration, currently ${rClaim}.</p>
       </fieldset>
       <fieldset><legend>Plan</legend>
         <label class="sov-f"><span>Starting Tax (%)</span>
@@ -913,13 +913,18 @@ export function focusFormHtml(focus, settings) {
 
 /**
  * Your own towns in a payload, named and sorted, for the optimiser's picker.
+ *
  * Deduplicated on position: the `t` block is keyed off claiming towns rather
- * than the viewport, so one town can appear under more than one key.
+ * than the viewport, so one town can appear under more than one key. A town is
+ * offered only where the payload also carries its tile, since the optimiser
+ * refuses a centre it has no tile for — the `t` block reaches further than the
+ * tile data, so the two do not agree on their own.
  */
 export function ownTowns(payload) {
   const seen = new Map();
   for (const t of extractTowns(payload)) {
     if (!t.own || !Number.isFinite(t.x) || !Number.isFinite(t.y)) continue;
+    if (!payload.data?.[tileKey(t.y, t.x)]) continue;
     const at = `${t.x}|${t.y}`;
     if (!seen.has(at)) seen.set(at, { x: t.x, y: t.y, label: t.name ? `${t.name} (${at})` : at });
   }
@@ -1456,24 +1461,33 @@ licence and full copyright notice.">ⓘ</a></span></span></h2>
 
   function syncFocusRadiusHint() {
     const { settings: s } = readSettings();
-    focusForm.querySelector('[data-focus="radius"]').placeholder = String(Math.round(s.rClaim ?? 2));
+    const rClaim = Math.round(s.rClaim ?? 2);
+    focusForm.querySelector('[data-focus="radius"]').placeholder = String(rClaim);
+    focusForm.querySelector('.sov-radius-hint').textContent =
+      'How far out sovereignty may be placed. Blank follows the claim radius in '
+      + `City Configuration, currently ${rClaim}.`;
     syncTownPicker();
   }
 
   /**
-   * The towns of yours the last payload happens to cover. Rebuilt on entering
-   * the pane rather than held, because panning the map changes the answer and
-   * a stale list would offer a town whose tile is no longer loaded.
+   * The towns of yours the map currently covers. Rebuilt immediately before the
+   * list can be read rather than held, because panning the map changes the
+   * answer and a stale list would offer a town whose tile is no longer loaded.
+   * The control stays enabled even with nothing to offer, so opening it is what
+   * asks the map again.
    */
   function syncTownPicker() {
     const sel = focusForm.querySelector('.sov-town-pick');
+    const was = sel.value;
     const payload = getPayload?.();
     const towns = payload ? ownTowns(payload) : [];
-    sel.disabled = !towns.length;
     sel.innerHTML = towns.length
       ? `<option value="">—</option>${towns.map((t) =>
         `<option value="${t.x}|${t.y}">${escapeHtml(t.label)}</option>`).join('')}`
       : `<option value="">${payload ? 'none on the map right now' : 'no map data yet'}</option>`;
+    // A town the map still carries keeps the selection; one panned away drops it
+    // rather than leaving a label the list no longer holds.
+    if (was && towns.some((t) => `${t.x}|${t.y}` === was)) sel.value = was;
   }
 
   function readFocus() {
@@ -1535,16 +1549,31 @@ licence and full copyright notice.">ⓘ</a></span></span></h2>
     focusForm.querySelector('[data-focus="x"]').value = result.x;
     focusForm.querySelector('[data-focus="y"]').value = result.y;
     showTab('focus');
+    // showTab has rebuilt the list; the coordinates above are a scanned site,
+    // not whichever town the picker was left on.
+    focusForm.querySelector('.sov-town-pick').value = '';
     runFocus();
     // The answer is below the form, and the form is what the tab lands on. The
     // status is the higher of the two, so this lands on a refusal as well as a plan.
     $('.sov-focus-status').scrollIntoView({ block: 'start' });
   }
 
+  const townPick = focusForm.querySelector('.sov-town-pick');
+  // The map moves under an open panel, so the list is rebuilt as it is reached
+  // for. Both events cover it: pointerdown fires before the popup opens, focus
+  // before any keyboard selection.
+  townPick.addEventListener('pointerdown', syncTownPicker);
+  townPick.addEventListener('focus', syncTownPicker);
+
   focusForm.addEventListener('change', (e) => {
-    const sel = e.target.closest('.sov-town-pick');
-    if (!sel || !sel.value) return;
-    const [x, y] = sel.value.split('|');
+    const el = e.target;
+    if (el.dataset.focus === 'x' || el.dataset.focus === 'y') {
+      // Coordinates typed by hand are no longer the town the picker names.
+      townPick.value = '';
+      return;
+    }
+    if (!el.closest('.sov-town-pick') || !el.value) return;
+    const [x, y] = el.value.split('|');
     focusForm.querySelector('[data-focus="x"]').value = x;
     focusForm.querySelector('[data-focus="y"]').value = y;
   });

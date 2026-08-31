@@ -7,9 +7,22 @@ export const PRODUCTION_BASE = 125;        // [V] production% = 125 - tax
 export const FARM_YIELD_L20 = 2014;        // [V] food/hr per farm plot at L20
 export const GOLD_PER_TAX_POP = 0.04;      // [F] Gold_income = 0.04 * T * Pop
 
-export const CLAIM_RP_PER_LEVEL_DISTANCE = 10;    // [F] RP/hr = 10 * L * d
-export const CLAIM_GOLD_PER_LEVEL_DISTANCE = 100; // [F] gold is exactly 10x RP
-export const CHANCERY_FACTOR = 0.6;               // [F] -40% at level 20
+export const CLAIM_RP_PER_LEVEL_DISTANCE = 10;    // [V] RP/hr = 10 * L * d
+export const CLAIM_GOLD_PER_LEVEL_DISTANCE = 100; // [V] gold is exactly 10x RP
+
+// [V] The game quantises the claim distance to two decimals before multiplying,
+// so a diagonal is charged at 1.41 rather than 1.414214 and a (2,1) tile at 2.24.
+// Rounding is half-up, and it lands on the distance rather than on the finished
+// cost: a (2,1) claim at level 2 costs 448 gold, where rounding the product would
+// give 447. Level then multiplies exactly, with no further rounding — a level 5
+// diagonal costs five times the level 1 figure.
+export const CLAIM_DISTANCE_DECIMALS = 2;
+
+// [F] -40% at Chancery level 20.
+// [?] Whether the discount lands before or after the distance quantisation above
+// is unmeasured, as is whether it reaches claims above level 1 — sources describe
+// it through a level 1 example. Applied here to the finished cost.
+export const CHANCERY_FACTOR = 0.6;
 
 // [F] Food sovereignty requires a level 5 claim carrying a level 5 building.
 export const FOOD_CLAIM_LEVEL = 5;
@@ -849,14 +862,25 @@ export const NATURES_BOUNTY_BY_RETREATS = [8, 16, 20, 22, 23];
 export const FAMINE_MANAGEMENT = 10;  // capital, >=10 cities
 export const SOIL_ENRICHMENT = 15;    // capital, >=30 cities
 
-export const ALLEMBINE_RP_PER_LIBRARY_LEVEL = 5; // [F]
-export const OVERFLOWING_INSIGHT_FACTOR = 1.5;   // [?] unconfirmed
-
-// [V] Library RP/hr at L20 with no Allembine, read in game at 25% tax. At 25%
-// production is 100%, so the reading is R_ref directly with no multiplier to
-// divide out. computeRRef adds Allembine on top of it, and the rpCalibration
-// override supersedes it for a city whose own figure is known.
+// [V] Library RP/hr at level 20 with no Allembine, read in game at 25% tax. At
+// 25% production is 100%, so the reading is the base directly with no multiplier
+// to divide out; readings at 50% and 100% tax confirm it scales with (125 - T).
+// Only level 20 is modelled — no reading exists for any other level and no curve
+// is assumed, so LIBRARY_LEVEL is fixed rather than configurable.
 export const LIBRARY_BASE_RP_L20 = 1013;
+export const LIBRARY_LEVEL = 20;
+
+// [V] Both research bonuses are flat additions AFTER the tax multiplier, not
+// terms inside it: each contributes the same RP/hr at 25%, 50% and 100% tax.
+//
+// Allembine is +5 RP/hr per library level, so +100 at level 20. Overflowing
+// Insight contributes half the library's base output, which is 506.5 — it is not
+// the x1.5 multiplier it resembles at 25% tax, where the multiplier is 1 and the
+// two models coincide.
+export const ALLEMBINE_RP_PER_LIBRARY_LEVEL = 5;
+export const ALLEMBINE_RP = ALLEMBINE_RP_PER_LIBRARY_LEVEL * LIBRARY_LEVEL;
+export const OVERFLOWING_INSIGHT_FRACTION = 0.5;
+export const OVERFLOWING_INSIGHT_RP = LIBRARY_BASE_RP_L20 * OVERFLOWING_INSIGHT_FRACTION;
 
 /** Plot order matches the payload's `rs` string: "wood|clay|iron|stone|food". */
 export const PLOT_KEYS = ['wood', 'clay', 'iron', 'stone', 'food'];
@@ -878,12 +902,13 @@ export const DEFAULT_SETTINGS = {
   geomancerRetreats: 2,
   cityCount: 1,
   isCapital: false,
-  libraryLevel: 20,
   allembine: true,
   overflowingInsight: false,
-  // { observedRpPerHour, atTax, prestige } back-solves R_ref. The prestige flag
-  // describes the reading rather than the city: what is divided out has to be the
-  // multiplier that was running when the figure was read.
+  // { observedRpPerHour, atTax, prestige } back-solves the library base. The
+  // prestige flag describes the reading rather than the city: what is divided out
+  // has to be the multiplier that was running when the figure was read. The flat
+  // bonuses come off before the division, or a bonus that does not scale is
+  // fitted as one that does.
   rpCalibration: null,
   // Which of the four booster buildings the city has at level 20. Each is worth
   // RESOURCE_BOOSTER_BONUS points against that resource's ceiling.

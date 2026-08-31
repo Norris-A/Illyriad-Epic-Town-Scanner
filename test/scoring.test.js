@@ -6,7 +6,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  computeK, computeBOther, computeConsumption, computeRRef,
+  computeK, computeBOther, computeConsumption, computeResearch, researchAt,
   tFood, tRp, tMax, goldNet, claimUpkeep, distance, knapsack, recoverSet, scoreSite,
   milsovHeadroom, planMilsov, tRes, surplusAt, computeBasicYield,
   prepareSite, planSiteAt, settableTax,
@@ -24,8 +24,8 @@ const close = (a, b, eps = 0.05) =>
 // The worked example's settings: 7-food site, a city eating 32,200/hr, Flour
 // Mill on, Nature's Bounty at 2 retreats, no other bonus, Library 20 with
 // Allembine, no Chancery, no military sovereignty. The city runs the Overflowing
-// Insight totem (+50%), so R_ref is 1,113 x 1.5 = 1,669.5 — enough research that
-// this site is bound by its food, not its RP.
+// Insight totem, so its research is a 1,013 base with 606.5 added flat — enough
+// that this site is bound by its food, not its RP.
 //
 // The consumption is stated here rather than taken from DEFAULT_SETTINGS: it is
 // part of the oracle, so changing the default must not move every expectation
@@ -68,27 +68,71 @@ test('C / K = 32,200 / 140.98 = 228.4', () => {
   close(computeConsumption(worked) / computeK(7), 228.4, 0.1);
 });
 
-test('R_ref: 1,113 from the library table, 1,669.5 with Overflowing Insight', () => {
-  // 1,013 base + 5/level Allembine at L20 is the table figure; the totem is x1.5.
-  close(computeRRef({ ...worked, overflowingInsight: false }), 1113);
-  close(computeRRef(worked), 1669.5);
+test('research splits into a scaled base and flat bonuses', () => {
+  const noBonus = computeResearch({ ...worked, allembine: false, overflowingInsight: false });
+  close(noBonus.base, 1013);
+  close(noBonus.flat, 0);
+
+  const allembine = computeResearch({ ...worked, overflowingInsight: false });
+  close(allembine.base, 1013);
+  close(allembine.flat, 100);
+
+  const both = computeResearch(worked);
+  close(both.base, 1013);
+  close(both.flat, 606.5);
 });
 
-test('R_ref calibration back-solves from an observed reading', () => {
-  // 800 RP/hr observed at 25% tax -> 800 * 100/100 = 800
-  close(computeRRef({ ...worked, rpCalibration: { observedRpPerHour: 800, atTax: 25 } }), 800);
+test('the readings the research model was measured from reproduce exactly', () => {
+  // Twelve in-game readings: four bonus combinations at 25%, 50% and 100% tax.
+  // The display rounds half-up, which is the only slack in the comparison.
+  const table = [
+    [25, 1013, 1113, 1520, 1620],
+    [50, 760, 860, 1266, 1366],
+    [100, 253, 353, 760, 860],
+  ];
+  for (const [tax, plain, allembine, insight, both] of table) {
+    const at = (s) => Math.round(researchAt({ research: computeResearch(s), tax }));
+    assert.equal(at({ ...worked, allembine: false, overflowingInsight: false }), plain);
+    assert.equal(at({ ...worked, allembine: true, overflowingInsight: false }), allembine);
+    assert.equal(at({ ...worked, allembine: false, overflowingInsight: true }), insight);
+    assert.equal(at({ ...worked, allembine: true, overflowingInsight: true }), both);
+  }
+});
+
+test('a flat bonus is worth the same RP at every tax rate', () => {
+  // The property the whole split exists for: fold either bonus into the base and
+  // it shrinks with tax, which is what the readings above rule out.
+  const off = { ...worked, allembine: false, overflowingInsight: false };
+  const on = { ...worked, allembine: true, overflowingInsight: false };
+  for (const tax of [0, 25, 60, 100]) {
+    close(researchAt({ research: computeResearch(on), tax })
+      - researchAt({ research: computeResearch(off), tax }), 100, 1e-9);
+  }
+});
+
+test('calibration back-solves the base after removing the flat bonuses', () => {
+  // 1,620 observed at 25% tax with both bonuses running: the multiplier is 1, so
+  // the base is the reading less the 606.5 the bonuses contributed.
+  const cal = { observedRpPerHour: 1620, atTax: 25 };
+  close(computeResearch({ ...worked, rpCalibration: cal }).base, 1013.5);
+
+  // Subtracting first is what makes the fit hold away from the tax it was read
+  // at. Dividing the whole reading would fit 1,620 as the base and overstate
+  // every other tax.
+  const fitted = computeResearch({ ...worked, rpCalibration: { observedRpPerHour: 1366, atTax: 50 } });
+  close(fitted.base, 1013, 0.5);
 });
 
 test('S_food 100 at 1,000 RP is food-bound at 56.6%', () => {
   const k = computeK(7);
   const bOther = computeBOther(worked);
   const consumption = computeConsumption(worked);
-  const rRef = computeRRef(worked);
+  const research = computeResearch(worked);
 
   const food = tFood({ bOther, sFood: 100, consumption, k });
-  const rp = tRp({ uRp: 1000, rRef });
+  const rp = tRp({ uRp: 1000, research });
   close(food, 56.6, 0.05);
-  close(rp, 65.1);  // 125 - 100 x 1000 / 1669.5
+  close(rp, 86.15, 0.01);  // 125 - 100 x (1000 - 606.5) / 1013
 
   const t = tMax({ food, rp, res: Infinity });
   close(t.value, 56.6, 0.05);
@@ -97,25 +141,54 @@ test('S_food 100 at 1,000 RP is food-bound at 56.6%', () => {
   close(goldNet({ tax: t.value, consumption, uGold: 10000 }), 62901, 5);
 });
 
+test('the distance the claim is charged on is quantised to two decimals', () => {
+  close(distance(1, 0), 1.00, 1e-9);
+  close(distance(1, 1), 1.41, 1e-9);
+  close(distance(2, 0), 2.00, 1e-9);
+  close(distance(2, 1), 2.24, 1e-9);
+  close(distance(2, 2), 2.83, 1e-9);
+});
+
 test('claim upkeep matches the reference table', () => {
-  close(claimUpkeep(distance(1, 0), 5, false).rp, 50.0);
-  close(claimUpkeep(distance(1, 1), 5, false).rp, 70.7);
-  close(claimUpkeep(distance(2, 0), 5, false).rp, 100.0);
-  close(claimUpkeep(distance(2, 1), 5, false).rp, 111.8);
-  close(claimUpkeep(distance(2, 2), 5, false).rp, 141.4);
+  close(claimUpkeep(distance(1, 0), 5, false).rp, 50.0, 1e-9);
+  close(claimUpkeep(distance(1, 1), 5, false).rp, 70.5, 1e-9);
+  close(claimUpkeep(distance(2, 0), 5, false).rp, 100.0, 1e-9);
+  close(claimUpkeep(distance(2, 1), 5, false).rp, 112.0, 1e-9);
+  close(claimUpkeep(distance(2, 2), 5, false).rp, 141.5, 1e-9);
   // gold is exactly 10x RP
-  close(claimUpkeep(distance(1, 0), 5, false).gold, 500.0);
+  close(claimUpkeep(distance(1, 0), 5, false).gold, 500.0, 1e-9);
   // Chancery of Estates: -40%
   close(claimUpkeep(1, 1, true).rp, 6);
   close(claimUpkeep(1, 1, true).gold, 60);
 });
 
-test('the full inner ring of 8 at L5 costs 482.8 RP/hr', () => {
+test('the readings the claim cost was measured from reproduce exactly', () => {
+  // A diagonal at levels 1 and 5, read in game; and a (2,1) tile at level 2 from
+  // the community guide, which is the reading that separates rounding the
+  // distance from truncating it — 2.23 would charge 446.
+  close(claimUpkeep(distance(1, 1), 1, false).gold, 141, 1e-9);
+  close(claimUpkeep(distance(1, 1), 1, false).rp, 14.1, 1e-9);
+  close(claimUpkeep(distance(1, 1), 5, false).gold, 705, 1e-9);
+  close(claimUpkeep(distance(1, 1), 5, false).rp, 70.5, 1e-9);
+  close(claimUpkeep(distance(2, 1), 2, false).gold, 448, 1e-9);
+  close(claimUpkeep(distance(1, 0), 3, false).gold, 300, 1e-9);
+});
+
+test('level multiplies the claim cost exactly, with no rounding of its own', () => {
+  for (const [dx, dy] of [[1, 0], [1, 1], [2, 1], [2, 2]]) {
+    const one = claimUpkeep(distance(dx, dy), 1, false);
+    for (let level = 2; level <= 5; level += 1) {
+      close(claimUpkeep(distance(dx, dy), level, false).gold, one.gold * level, 1e-9);
+    }
+  }
+});
+
+test('the full inner ring of 8 at L5 costs 482 RP/hr', () => {
   let total = 0;
   for (const [dx, dy] of [[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]]) {
     total += claimUpkeep(distance(dx, dy), 5, false).rp;
   }
-  close(total, 482.8, 0.1);
+  close(total, 482.0, 1e-9);
 });
 
 test('knapsack maximises food per RP and the set is recoverable', () => {
@@ -470,10 +543,12 @@ test('a minimum with no structure asked for falls short rather than passing', ()
 // --- The headroom, and why a site sometimes has none ------------------------
 
 test('a research-bound site has no free research, and says so', () => {
-  // Sixteen-food water everywhere: the food plan can raise T_food further than
-  // the library can pay for, so T_rp is what sets the tax and there is nothing
-  // left over by construction.
-  const settings = withMil({ tMin: -1000 });
+  // Sixteen-food water everywhere against a bare Library: the food plan can raise
+  // T_food further than the library can pay for, so T_rp is what sets the tax and
+  // there is nothing left over by construction. Both research bonuses are off
+  // because either one is enough to buy the whole ring and hand the binding
+  // ceiling to food.
+  const settings = withMil({ tMin: -1000, allembine: false, overflowingInsight: false });
   const plan = scoreSite({ neighbours: ring(() => 16), settings });
   assert.equal(plan.binding, 'rp');
   assert.equal(plan.milsov.length, 0);
@@ -490,7 +565,8 @@ test('a research-bound site has no free research, and says so', () => {
     tax: plan.tMax, settings, uRp: plan.spend, buildingsUsed: plan.tiles.length,
   }).rp;
   assert.ok(free > 0, 'flooring the ceiling has to leave something');
-  assert.ok(free <= computeRRef(settings) / 100 + 1e-6, 'but no more than one point produces');
+  assert.ok(free <= computeResearch(settings).base / 100 + 1e-6,
+    'but no more than one point produces');
 });
 
 test('a city with no plots of a resource cannot run a structure at all', () => {
@@ -562,7 +638,7 @@ test('a Production Structure is never planned on water', () => {
   assert.ok(plan.milsov.length > 0, 'the land tile should still host something');
   for (const m of plan.milsov) assert.equal(m.water, false, 'a structure was put on water');
   // The nearer free tile is water, so the plan takes the further land one.
-  close(plan.milsov[0].d, Math.SQRT2 * 2, 1e-9);
+  close(plan.milsov[0].d, distance(2, 2), 1e-9);
 });
 
 test('a site whose spare tiles are all water says which of the two it is', () => {
@@ -582,7 +658,8 @@ test('milsovHeadroom prices the scarcest resource, not the average', () => {
   const { yield: y } = computeBasicYield(settings);
   const h = milsovHeadroom({ tax: 50, settings, uRp: 0, buildingsUsed: 0 });
   close(h.upkeep, (1 * y * (125 - 50)) / 100, 1e-6);
-  close(h.rp, (computeRRef(settings) * (125 - 50)) / 100, 1e-6);
+  const r = computeResearch(settings);
+  close(h.rp, (r.base * (125 - 50)) / 100 + r.flat, 1e-6);
   assert.equal(h.slots, settings.maxBuildings);
 
   // A booster is worth its face value here exactly as it is against T_res.
@@ -764,8 +841,10 @@ test('surplusAt is callable on its own, at any tax the user asks about', () => {
   // The engine reports at the plan's tax; the function itself is not tied to it.
   const at = (tax) => surplusAt({ tax, settings: worked, sFood: 0, uRp: 0, milsovAssignments: [] });
   assert.ok(at(0).food > at(50).food, 'less tax must leave more food');
-  close(at(25).rp, 1669.5, 1e-6);              // R_ref x (125-25)/100
-  close(at(0).rp - at(100).rp, 1669.5, 1e-6);  // 100 points of production
+  close(at(25).rp, 1619.5, 1e-6);              // 1,013 x (125-25)/100 + 606.5
+  // The flat bonuses cancel out of a difference, so the span across the whole
+  // tax range is the base alone.
+  close(at(0).rp - at(100).rp, 1013, 1e-6);
   // Food at 25% tax: K x (100 + 60) - 32,200.
   close(at(25).food, computeK(7) * 160 - 32200, 1e-6);
 });
@@ -801,7 +880,7 @@ test('the integer plan spends the rounding, and never buys less military', () =>
   // never-worse half.
   const fixtures = [
     spare, ring8, ring(() => 9), ring((dx) => (dx > 0 ? 7 : 0)),
-    ring((dx, dy) => (Math.abs(dx) <= 1 && Math.abs(dy) <= 1 ? 9 : 3)),
+    ring((dx, dy) => (Math.abs(dx) <= 1 && Math.abs(dy) <= 1 ? 9 : 2)),
   ];
   for (const neighbours of fixtures) {
     const ctx = prepareSite({ neighbours, settings });
@@ -939,9 +1018,9 @@ test('a food floor is consumption the city does not have', () => {
 });
 
 test('a research floor is charged like a claim, and buys no military', () => {
-  const rRef = computeRRef(worked);
+  const research = computeResearch(worked);
   const minimum = 300;
-  close(tRp({ uRp: 1000, rRef, minimum }), tRp({ uRp: 1300, rRef }), 1e-9);
+  close(tRp({ uRp: 1000, research, minimum }), tRp({ uRp: 1300, research }), 1e-9);
 
   // The headroom is the same subtraction: research the plan may not spend.
   const settings = {
@@ -1021,17 +1100,19 @@ test('prestige is worth exactly its points of tax headroom on a resource', () =>
 
 test('prestige on research is points on the multiplier, not a bigger library', () => {
   const settings = { ...worked, prestige: prestigeOn('research') };
-  // R_ref is the library's own figure and does not move; what moves is the
-  // percentage it is produced at, so the gap is a flat R_ref x 25/100.
-  close(computeRRef(settings), computeRRef(worked), 1e-9);
-  const gap = (computeRRef(worked) * PRESTIGE_PRODUCTION_BONUS) / 100;
+  // The library's own output does not move; what moves is the percentage it is
+  // produced at, so the gap is a flat base x 25/100. The flat bonuses sit
+  // outside the multiplier and so contribute nothing to the gap.
+  close(computeResearch(settings).base, computeResearch(worked).base, 1e-9);
+  const gap = (computeResearch(worked).base * PRESTIGE_PRODUCTION_BONUS) / 100;
   for (const tax of [0, 25, 60, 100]) {
     close(surplusAt({ tax, settings, sFood: 0, uRp: 0, milsovAssignments: [] }).rp,
       surplusAt({ tax, settings: worked, sFood: 0, uRp: 0, milsovAssignments: [] }).rp + gap, 1e-6);
   }
   // Which is worth its face value in headroom against T_rp, like everything else.
-  close(tRp({ uRp: 1000, rRef: 1600, rpBonus: PRESTIGE_PRODUCTION_BONUS }),
-    tRp({ uRp: 1000, rRef: 1600 }) + PRESTIGE_PRODUCTION_BONUS, 1e-9);
+  const flatless = { base: 1600, flat: 0 };
+  close(tRp({ uRp: 1000, research: flatless, rpBonus: PRESTIGE_PRODUCTION_BONUS }),
+    tRp({ uRp: 1000, research: flatless }) + PRESTIGE_PRODUCTION_BONUS, 1e-9);
 });
 
 test('prestige raises the tax a research-bound site holds', () => {
@@ -1041,7 +1122,7 @@ test('prestige raises the tax a research-bound site holds', () => {
   // one line slides the crossing point along the other. The face value is
   // headroom against T_rp at a fixed food plan, which the test above states.
   const neighbours = ring(() => 16);
-  const settings = { ...worked, cityConsumption: 45000, tMin: -1000 };
+  const settings = { ...worked, cityConsumption: 50000, tMin: -1000 };
   const bare = scoreSite({ neighbours, settings });
   const boosted = scoreSite({
     neighbours, settings: { ...settings, prestige: prestigeOn('research') },
@@ -1054,17 +1135,19 @@ test('prestige raises the tax a research-bound site holds', () => {
 });
 
 // The divisor has to carry the prestige bonus. Left out, its points are fitted
-// into R_ref as a multiplier and every other tax comes out wrong.
-test('a research reading taken with prestige running round-trips to the same R_ref', () => {
-  const rRef = 1280;
+// into the base as a multiplier and every other tax comes out wrong.
+test('a research reading taken with prestige running round-trips to the same base', () => {
+  const base = 1280;
   const atTax = 25;
-  const rpObserved = (rRef * (125 - atTax + PRESTIGE_PRODUCTION_BONUS)) / 100;
-  close(computeRRef({ rpCalibration: { observedRpPerHour: rpObserved, atTax, prestige: true } }),
-    rRef, 1e-9);
-  // Declared wrongly, the same reading inflates R_ref by the ratio of the two
+  const bare = { allembine: false, overflowingInsight: false };
+  const rpObserved = (base * (125 - atTax + PRESTIGE_PRODUCTION_BONUS)) / 100;
+  close(computeResearch({ ...bare,
+    rpCalibration: { observedRpPerHour: rpObserved, atTax, prestige: true } }).base, base, 1e-9);
+  // Declared wrongly, the same reading inflates the base by the ratio of the two
   // multipliers — the mis-extrapolation the flag exists to stop.
-  close(computeRRef({ rpCalibration: { observedRpPerHour: rpObserved, atTax, prestige: false } }),
-    (rRef * (100 + PRESTIGE_PRODUCTION_BONUS)) / 100, 1e-9);
+  close(computeResearch({ ...bare,
+    rpCalibration: { observedRpPerHour: rpObserved, atTax, prestige: false } }).base,
+  (base * (100 + PRESTIGE_PRODUCTION_BONUS)) / 100, 1e-9);
 });
 
 // --- Equal bonuses are broken on research -----------------------------------

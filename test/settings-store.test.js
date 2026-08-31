@@ -76,7 +76,7 @@ test('settings added since the blob was written take their defaults', () => {
 
   assert.equal(settings.tMin, 55, 'what was stored is kept');
   assert.equal(settings.cityConsumption, 27500);
-  assert.equal(settings.libraryLevel, DEFAULT_SETTINGS.libraryLevel, 'the rest defaults');
+  assert.equal(settings.maxBuildings, DEFAULT_SETTINGS.maxBuildings, 'the rest defaults');
   assert.deepEqual(settings.plots, DEFAULT_SETTINGS.plots);
   assert.deepEqual(Object.keys(settings).sort(), Object.keys(DEFAULT_SETTINGS).sort(),
     'the output is built from the spec, so it is always complete');
@@ -93,7 +93,7 @@ test('a blob written by this exact build says nothing', () => {
 test('a value that would be refused when typed is refused when restored', () => {
   const s = sanitizeSettings({
     tMin: 5000,                                        // out of range
-    libraryLevel: 'twenty',                            // not a number
+    maxBuildings: 'twenty',                            // not a number
     cityCount: 2.6,                                    // not an integer
     flourMill: 'no',                                   // a truthy string
     cityConsumption: 'lots',                           // not a number
@@ -105,7 +105,7 @@ test('a value that would be refused when typed is refused when restored', () => 
   });
 
   assert.equal(s.tMin, 100, 'clamped, not taken as typed');
-  assert.equal(s.libraryLevel, 20, 'unparseable falls back');
+  assert.equal(s.maxBuildings, 20, 'unparseable falls back');
   assert.equal(s.cityCount, 3);
   assert.equal(s.flourMill, true);
   assert.equal(s.cityConsumption, DEFAULT_SETTINGS.cityConsumption, 'unparseable falls back');

@@ -33,7 +33,7 @@ import { extractTowns, tileKey } from './payload.js';
 import {
   computeBOther,
   computeK,
-  computeRRef,
+  computeResearch,
   prestigeBonus,
   researchAt,
   computeBasicYield,
@@ -485,12 +485,18 @@ export function resFlag(r) {
 
 /**
  * Read the RP calibration override. A blank or zero reading means "not
- * calibrated" and returns null, leaving computeRRef on its library estimate.
- * The tax is clamped to 0..100 because R_ref divides by (125 - atTax).
+ * calibrated" and returns null, leaving the library base on its measured
+ * figure. The tax is clamped to 0..100 because the back-solve divides by
+ * (125 - atTax).
  *
  * `prestige` describes the READING, not the city: the back-solve divides out
  * whatever multiplier produced the figure, so a boost that was running when it
- * was taken has to be declared here or it is fitted into R_ref instead.
+ * was taken has to be declared here or it is fitted into the base instead.
+ *
+ * The reading is the city's whole research output. Allembine and Overflowing
+ * Insight stay live alongside it rather than being overridden, because the
+ * back-solve has to subtract the flat bonuses that were running when the figure
+ * was read before it can divide out the multiplier.
  */
 export function parseRpCalibration(observed, atTax, prestige) {
   const rp = clampNumber(observed, { min: 0, fallback: 0 });
@@ -580,30 +586,20 @@ export const SETTINGS_FIELDS = [
   { key: 'cityCount', group: 'City Food', label: 'Number of Cities', type: 'number', min: 1, max: 999, integer: true, fallback: 1 },
   { key: 'isCapital', group: 'City Food', label: 'This City is the Capital', type: 'checkbox' },
 
-  {
-    key: 'libraryLevel',
-    group: 'Research',
-    label: 'Library Level',
-    type: 'number',
-    min: 0,
-    max: 20,
-    integer: true,
-    fallback: 20,
-    overriddenWhen: (s) => !!s.rpCalibration,
-  },
+  // Only a level 20 Library is modelled, so there is no level to set. Both
+  // bonuses are flat additions the calibration reading contains rather than
+  // replaces, so neither is overridden by it.
   {
     key: 'allembine',
     group: 'Research',
-    label: 'Allembine Research',
+    label: 'Allembine Research (+100/hr)',
     type: 'checkbox',
-    overriddenWhen: (s) => !!s.rpCalibration,
   },
   {
     key: 'overflowingInsight',
     group: 'Research',
-    label: 'Overflowing Insight (×1.5)',
+    label: 'Overflowing Insight (+506.5/hr)',
     type: 'checkbox',
-    overriddenWhen: (s) => !!s.rpCalibration,
   },
   {
     key: 'rpCalibration',
@@ -713,8 +709,9 @@ function calibrationFieldHtml(f, cal) {
   return `<fieldset class="sov-f-block sov-override" data-key="${f.key}">
       <legend>Override — ${escapeHtml(f.label)}</legend>
       <p class="sov-hint">Read your city's actual research output off the game and enter it
-        here. While a figure is set it replaces the Library Level, Allembine Research and
-        Overflowing Insight settings above, which grey out to show they no longer apply.</p>
+        here, with the tax rate it was read at. It replaces the Library's own output.
+        Leave the two tick-boxes above set as your city has them: those bonuses are part of
+        the figure you read, and are subtracted from it rather than replaced by it.</p>
       <div class="sov-f"><span>Observed research per hour</span>
         <input type="number" data-cal="observedRpPerHour" min="0" step="any"
           placeholder="blank = off"${attr('value', cal?.observedRpPerHour)}></div>
@@ -1327,7 +1324,7 @@ licence and full copyright notice.">ⓘ</a></span></span></h2>
     // here than in a results row. Stated at 0% tax because that is the figure every
     // claim is bought out of, whatever tax the site ends up holding.
     const rp = Math.round(researchAt({
-      rRef: computeRRef(s), rpBonus: prestigeBonus(s, 'research'), tax: 0,
+      research: computeResearch(s), rpBonus: prestigeBonus(s, 'research'), tax: 0,
     })).toLocaleString('en-GB');
     form.querySelector('.sov-rp-read').textContent = s.rpCalibration
       ? `In use: ${rp} research per hour at 0% tax, from your reading.`
@@ -1808,7 +1805,7 @@ function toggleDetail(row, result, settings, onOptimise) {
 
   // The food knapsack is built ONCE here and reused for every tax the slider
   // visits. Rebuilding it per drag event is what made this crawl: at a real
-  // R_ref the DP is some 3,000 spend levels against 24 tiles, and the building
+  // research budget the DP is some 3,000 spend levels against 24 tiles, and the building
   // cap puts it on the count-limited path, which is another factor of twenty.
   const ctx = result.neighbours ? prepareSite({ neighbours: result.neighbours, settings }) : null;
 

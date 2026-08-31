@@ -22,9 +22,10 @@ import {
   NATURES_BOUNTY_BY_RETREATS,
   FAMINE_MANAGEMENT,
   SOIL_ENRICHMENT,
-  ALLEMBINE_RP_PER_LIBRARY_LEVEL,
-  OVERFLOWING_INSIGHT_FACTOR,
+  ALLEMBINE_RP,
+  OVERFLOWING_INSIGHT_RP,
   LIBRARY_BASE_RP_L20,
+  CLAIM_DISTANCE_DECIMALS,
   BASIC_RESOURCES,
   RESOURCE_BOOSTER_BONUS,
   PRESTIGE_PRODUCTION_BONUS,
@@ -79,24 +80,29 @@ export function computeConsumption(s) {
 }
 
 /**
- * R_ref — research points per hour before the production multiplier.
- * Calibration beats the table: R_ref = observed * 100/(125-T+prestige).
+ * The city's research output split into the two parts that behave differently
+ * under tax: `base`, the library output the (125-T) multiplier scales, and
+ * `flat`, the bonuses added after it.
  *
- * The reading's own prestige state divides out with the tax, and has to: the
- * bonus is additive points, so leaving it in the observation would fit it into
- * R_ref as a multiplier and extrapolate wrongly at every other tax.
+ * The split is what makes research a straight line in T rather than a ray
+ * through the origin, and collapsing it loses the intercept: a city with both
+ * bonuses keeps 606.5 RP/hr at 100% tax, where one scaled reference predicts
+ * proportionally less and understates T_rp by around twenty points.
+ *
+ * Calibration replaces the base only. The flat bonuses come off the reading
+ * first, and the reading's own prestige state divides out with the tax — both
+ * for the same reason: a bonus that does not scale, left inside the division,
+ * is fitted as one that does and then extrapolates wrongly at every other tax.
  */
-export function computeRRef(s) {
+export function computeResearch(s) {
+  const flat = (s.allembine ? ALLEMBINE_RP : 0)
+    + (s.overflowingInsight ? OVERFLOWING_INSIGHT_RP : 0);
   const cal = s.rpCalibration;
   if (cal && cal.observedRpPerHour > 0) {
     const m = PRODUCTION_BASE - cal.atTax + (cal.prestige ? PRESTIGE_PRODUCTION_BONUS : 0);
-    return (cal.observedRpPerHour * 100) / m;
+    return { base: Math.max(0, ((cal.observedRpPerHour - flat) * 100) / m), flat };
   }
-  let base = LIBRARY_BASE_RP_L20;
-  // [?] Whether Allembine scales with (125-T) is unconfirmed. Folding it into
-  // R_ref, as here, is the assumption that it does.
-  if (s.allembine) base += ALLEMBINE_RP_PER_LIBRARY_LEVEL * (s.libraryLevel ?? 20);
-  return s.overflowingInsight ? base * OVERFLOWING_INSIGHT_FACTOR : base;
+  return { base: LIBRARY_BASE_RP_L20, flat };
 }
 
 // --- Basic resource production ---------------------------------------------
@@ -151,8 +157,8 @@ export function resourceMinimum(s, resource) {
  * percentage as every other production, so it is worth its face value in tax
  * headroom just as a booster is against a resource.
  */
-export function researchAt({ rRef, rpBonus = 0, tax }) {
-  return (rRef * (PRODUCTION_BASE - tax + rpBonus)) / 100;
+export function researchAt({ research, rpBonus = 0, tax }) {
+  return (research.base * (PRODUCTION_BASE - tax + rpBonus)) / 100 + research.flat;
 }
 
 /**
@@ -166,15 +172,24 @@ export function basicProduction({ plots, yield: y, bonus, tax }) {
 
 // --- Claim costs -----------------------------------------------------------
 
+/**
+ * Claim distance as the game charges it, quantised to CLAIM_DISTANCE_DECIMALS.
+ * A diagonal is 1.41, not 1.414214, and the difference is not a rounding
+ * courtesy: the exact float overcharges the diagonal and undercharges the (2,1)
+ * tile, which moves knapsack decisions near the budget in both directions.
+ */
 export function distance(dx, dy) {
-  return Math.sqrt(dx * dx + dy * dy);
+  const q = 10 ** CLAIM_DISTANCE_DECIMALS;
+  return Math.round(Math.sqrt(dx * dx + dy * dy) * q) / q;
 }
 
 /**
  * Upkeep for one claim. Gold is exactly 10x RP.
- * [?] Where the game rounds is unconfirmed. Exact float is kept here and
- * rounded only at the knapsack weight, which is the one place it has to be an
- * integer.
+ *
+ * `d` arrives already quantised from distance(), and level multiplies it
+ * exactly: the game rounds the distance, not the finished cost. What is left
+ * here is exact float, rounded only at the knapsack weight, which is the one
+ * place it has to be an integer.
  */
 export function claimUpkeep(d, level, chancery) {
   const f = chancery ? CHANCERY_FACTOR : 1;
@@ -228,11 +243,17 @@ export function tFood({ bOther, sFood, consumption, k, minimum = 0 }) {
 }
 
 /**
- * T_rp = 125 + prestige - 100 * (U_RP + M_rp) / R_ref. A minimum adds to the
- * claims' bill, being research they may not have.
+ * T_rp = 125 + prestige - 100 * (U_RP + M_rp - flat) / base. A minimum adds to
+ * the claims' bill, being research they may not have.
+ *
+ * The flat bonuses are a bill the tax never touches, so they come off the spend
+ * before it is charged against the part of production that does scale. A city
+ * whose claims cost less than its flat research has no research ceiling at all,
+ * and the subtraction is what lets the figure run past 125 to say so.
  */
-export function tRp({ uRp, rRef, rpBonus = 0, minimum = 0 }) {
-  return PRODUCTION_BASE + rpBonus - (100 * (uRp + minimum)) / rRef;
+export function tRp({ uRp, research, rpBonus = 0, minimum = 0 }) {
+  return PRODUCTION_BASE + rpBonus
+    - (100 * (uRp + minimum - research.flat)) / research.base;
 }
 
 /**
@@ -322,7 +343,7 @@ export function surplusAt({ tax, settings, sFood, uRp, uGold, milsovAssignments 
 
   const base = {
     food: k * (PRODUCTION_BASE - tax + computeBOther(s) + (sFood ?? 0)),
-    rp: researchAt({ rRef: computeRRef(s), rpBonus: prestigeBonus(s, 'research'), tax }),
+    rp: researchAt({ research: computeResearch(s), rpBonus: prestigeBonus(s, 'research'), tax }),
     gold: GOLD_PER_TAX_POP * tax * consumption,
   };
   const out = {
@@ -524,7 +545,7 @@ export function milsovHeadroom({ tax, settings, uRp = 0, buildingsUsed = 0 }) {
   }
   return {
     rp: Math.max(0, researchAt({
-      rRef: computeRRef(s), rpBonus: prestigeBonus(s, 'research'), tax,
+      research: computeResearch(s), rpBonus: prestigeBonus(s, 'research'), tax,
     }) - uRp - resourceMinimum(s, 'research')),
     // A minimum bigger than the production it protects leaves nothing to spend
     // rather than a negative budget.
@@ -760,7 +781,7 @@ export function prepareSite({ neighbours, settings }) {
   // The most research the city can produce, which is at 0 tax. The budget has to
   // cover it or the knapsack truncates the frontier silently.
   const rpBonus = prestigeBonus(s, 'research');
-  const budget = Math.max(0, Math.round(researchAt({ rRef: computeRRef(s), rpBonus, tax: 0 })));
+  const budget = Math.max(0, Math.round(researchAt({ research: computeResearch(s), rpBonus, tax: 0 })));
   return {
     settings: s,
     chancery,
@@ -768,7 +789,7 @@ export function prepareSite({ neighbours, settings }) {
     k: computeK(s.plots.food),
     bOther: computeBOther(s),
     consumption: computeConsumption(s),
-    rRef: computeRRef(s),
+    research: computeResearch(s),
     rpBonus,
     minFood: resourceMinimum(s, 'food'),
     minRp: resourceMinimum(s, 'research'),
@@ -800,7 +821,7 @@ function foodSpendFor(ctx, tax) {
   }
   // The food claims alone must not outspend the research produced at this tax,
   // nor eat into any research the user asked to keep free of sovereignty.
-  const produced = researchAt({ rRef: ctx.rRef, rpBonus: ctx.rpBonus, tax });
+  const produced = researchAt({ research: ctx.research, rpBonus: ctx.rpBonus, tax });
   return produced - lo - ctx.minRp < -EPS ? null : lo;
 }
 
@@ -848,7 +869,7 @@ export function planSiteAt(ctx, tax) {
     food: tFood({
       bOther: ctx.bOther, sFood, consumption: ctx.consumption, k: ctx.k, minimum: ctx.minFood,
     }),
-    rp: tRp({ uRp, rRef: ctx.rRef, rpBonus: ctx.rpBonus, minimum: ctx.minRp }),
+    rp: tRp({ uRp, research: ctx.research, rpBonus: ctx.rpBonus, minimum: ctx.minRp }),
     res: resCeiling.indicative ? Infinity : resCeiling.ceiling,
   });
 
@@ -947,7 +968,7 @@ export function siteCeiling(ctx) {
       food: tFood({
         bOther: ctx.bOther, sFood, consumption: ctx.consumption, k: ctx.k, minimum: ctx.minFood,
       }),
-      rp: tRp({ uRp: spend, rRef: ctx.rRef, rpBonus: ctx.rpBonus, minimum: ctx.minRp }),
+      rp: tRp({ uRp: spend, research: ctx.research, rpBonus: ctx.rpBonus, minimum: ctx.minRp }),
       res,
     });
     // A negative T_max is a real answer — the site cannot feed a city at any

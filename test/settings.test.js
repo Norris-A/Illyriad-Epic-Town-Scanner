@@ -40,7 +40,7 @@ import {
   SOV_STRUCTURE_BY_KEY,
   DEFAULT_SOV_STRUCTURE,
 } from '../src/constants.js';
-import { computeK, computeRRef, milsovUpkeep, computeBasicYield } from '../src/scoring.js';
+import { computeK, computeResearch, milsovUpkeep, computeBasicYield } from '../src/scoring.js';
 
 const close = (a, b, eps = 0.05) =>
   assert.ok(Math.abs(a - b) < eps, `expected ${a} ≈ ${b}`);
@@ -411,25 +411,33 @@ test('the default yield is the measured 2,538, not the farm figure', () => {
 
 // --- RP calibration override ---
 
-test('a blank calibration is null, so R_ref falls back to the library table', () => {
+test('a blank calibration is null, so the base falls back to the measured figure', () => {
   assert.equal(parseRpCalibration('', ''), null);
   assert.equal(parseRpCalibration('0', '25'), null);
   assert.equal(parseRpCalibration('nonsense', '25'), null);
-  close(computeRRef({ ...DEFAULT_SETTINGS, rpCalibration: parseRpCalibration('', '') }), 1113);
+  const r = computeResearch({ ...DEFAULT_SETTINGS, rpCalibration: parseRpCalibration('', '') });
+  close(r.base, 1013);
+  close(r.flat, 100);  // Allembine defaults on
 });
 
-test('a calibration reading back-solves R_ref', () => {
+test('a calibration reading back-solves the base, net of the flat bonuses', () => {
   const cal = parseRpCalibration('800', '25');
   assert.deepEqual(cal, { observedRpPerHour: 800, atTax: 25, prestige: false });
-  close(computeRRef({ ...DEFAULT_SETTINGS, rpCalibration: cal }), 800);
+  // 800 read at 25% tax with Allembine running: 100 of it was never scaled.
+  close(computeResearch({ ...DEFAULT_SETTINGS, rpCalibration: cal }).base, 700);
 });
 
-test('the calibration tax is clamped, since R_ref divides by (125 - tax)', () => {
+test('a reading smaller than the flat bonuses floors at zero rather than going negative', () => {
+  const cal = parseRpCalibration('50', '25');
+  close(computeResearch({ ...DEFAULT_SETTINGS, rpCalibration: cal }).base, 0);
+});
+
+test('the calibration tax is clamped, since the back-solve divides by (125 - tax)', () => {
   assert.equal(parseRpCalibration('800', '900').atTax, 100);
   assert.equal(parseRpCalibration('800', '-5').atTax, 0);
-  assert.ok(Number.isFinite(computeRRef({
+  assert.ok(Number.isFinite(computeResearch({
     ...DEFAULT_SETTINGS, rpCalibration: parseRpCalibration('800', '900'),
-  })));
+  }).base));
 });
 
 // --- the shared number reader ---

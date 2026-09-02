@@ -16,8 +16,8 @@ import { prepareSite, planSiteAt, scoreSiteFrom, claimUpkeep, distance } from '.
 /** Where the slider starts. Not a game constant — nothing derives from it. */
 export const FOCUS_DEFAULT_TAX = 60;
 
-/** The lowest tax the input accepts, matching the T_min field's range. */
-export const FOCUS_TAX_FLOOR = -100;
+/** The lowest tax the input accepts. The game sets tax from 0 to 100. */
+export const FOCUS_TAX_FLOOR = 0;
 
 export const DEFAULT_FOCUS = {
   x: null,
@@ -263,11 +263,16 @@ export function focusSite({ payload, focus, settings }) {
 
   // Clamped, not rejected: planSiteAt returns null above the ceiling, so an
   // out-of-range request would otherwise lose the plan that answers it.
+  //
+  // 0 is the floor because it is the lowest rate the game's own field takes. A
+  // ceiling below it is a site that holds no tax at all, and the plan is then
+  // the arithmetic at 0% — production's maximum, and the smallest shortfall
+  // there is — rather than a plan at a rate nobody can enter.
   const ceiling = base.tMax;
-  const floor = Math.min(settings.tMin ?? 0, ceiling);
+  const floor = Math.max(0, Math.min(settings.tMin ?? 0, ceiling));
   const requested = focus.tax;
-  const tax = Math.min(ceiling, Math.max(floor, requested));
-  const plan = planSiteAt(ctx, tax) ?? base;
+  const tax = Math.max(0, Math.min(ceiling, Math.max(floor, requested)));
+  const plan = planSiteAt(ctx, tax, { bestEffort: true }) ?? base;
 
   return {
     ok: true,
@@ -295,6 +300,9 @@ export function focusSite({ payload, focus, settings }) {
     requestedTax: requested,
     // Set when the clamp above moved the tax; `plan` is then at `ceiling`.
     aboveCeiling: requested > ceiling + 1e-9,
+    // The ceiling is below the game's own floor: no tax runs this site, and the
+    // plan is at 0% with a deficit rather than at the ceiling.
+    holdsNoTax: ceiling < 0,
     ceiling,
     floor,
   };

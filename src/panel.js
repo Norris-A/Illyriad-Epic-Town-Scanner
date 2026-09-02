@@ -553,7 +553,7 @@ export function parsePrestige(raw) {
  * on. Both are still ordinary settings — they save and restore like the rest.
  */
 export const SETTINGS_FIELDS = [
-  { key: 'tMin', group: 'Ranking', label: 'Minimum Tax (%)', type: 'number', min: -100, max: 100 },
+  { key: 'tMin', group: 'Ranking', label: 'Minimum Tax (%)', type: 'number', min: 0, max: 100 },
 
   { key: 'plots', group: 'Settle Tile', label: 'Settle Plot Allocation', type: 'plots' },
 
@@ -1711,7 +1711,7 @@ function flagsHtml(r) {
 function planBlockHtml({ ctx, base, plan, floor, geom }) {
   // Whole points only, because that is all the game accepts — a half-point drag
   // would report a plan at a tax the user cannot set.
-  const lowest = Math.ceil(floor);
+  const lowest = Math.max(0, Math.ceil(floor));
   const slider = ctx && Number.isFinite(base.tMax) && base.tMax - lowest >= 1
     ? `<div class="sov-tax">
         <div class="sov-f"><span>Tax <output class="sov-tax-at">${plan.tax.toFixed(0)}%</output>
@@ -1776,9 +1776,10 @@ function mountPlanBlock(scope, state) {
         planGridHtml({ tiles: [], free: [], milsov: [] }, geom)}`;
       return;
     }
-    // A smaller neighbourhood may not hold the tax the user dragged to.
-    tax = Math.min(base.tMax, Math.max(Math.ceil(state.floor), tax));
-    const plan = (ctx ? planSiteAt(ctx, tax) : null) ?? base;
+    // A smaller neighbourhood may not hold the tax the user dragged to, and 0
+    // is a floor under both: below it there is no tax to plan at.
+    tax = Math.max(0, Math.min(base.tMax, Math.max(Math.ceil(state.floor), tax)));
+    const plan = (ctx ? planSiteAt(ctx, tax, { bestEffort: true }) : null) ?? base;
     scope.innerHTML = planBlockHtml({ ctx, base, plan, floor: state.floor, geom });
     bindPlanBlock(scope, ctx, base, geom, (t) => { tax = t; });
   };
@@ -1827,7 +1828,7 @@ function toggleDetail(row, result, settings, onOptimise) {
     settings,
     ctx,
     base: result,
-    floor: Math.min(settings.tMin ?? 0, result.tMax),
+    floor: Math.max(0, Math.min(settings.tMin ?? 0, result.tMax)),
     geom: { radius: Math.round(settings.rClaim ?? 2), x: result.x, y: result.y },
     tax: result.tax,
   });
@@ -1875,17 +1876,20 @@ function focusResultHtml(r) {
   if (r.centre.isTown) warnings.push('This tile already carries a town.');
   if (r.centre.claimedBy) warnings.push(`This tile is already claimed (${r.centre.claimedBy}).`);
 
-  // The settable rate first, since it is the one the user types into the game;
-  // the exact ceiling behind it says how much of the next point is already paid.
-  const exact = Number.isFinite(r.base.tMaxExact)
-    ? ` The arithmetic reaches ${r.base.tMaxExact.toFixed(2)}%, but tax is whole numbers only.`
-    : '';
-  const ceiling = `<p class="sov-note">Highest tax this tile holds on food alone: <strong>${
-    r.base.tMax.toFixed(0)}%</strong>, limited by ${escapeHtml(bindingLabel(r.base.binding).toLowerCase())}.${exact}</p>`;
-  const asked = r.aboveCeiling
-    ? `<p class="sov-flag">This tile cannot hold ${r.requestedTax.toFixed(0)}% — the plan below `
-      + `is at its ceiling of ${r.ceiling.toFixed(0)}%.</p>`
-    : '';
+  // The settable rate, which is the one the user types into the game. The
+  // fraction behind it is on the plan's own tax instead, where it is a hover.
+  const ceiling = r.holdsNoTax
+    ? `<p class="sov-note">This tile holds no tax — its ceiling is <strong>${
+      r.ceiling.toFixed(0)}%</strong>, limited by ${
+      escapeHtml(bindingLabel(r.base.binding).toLowerCase())}.</p>`
+    : `<p class="sov-note">Highest tax this tile holds on food alone: <strong>${
+      r.base.tMax.toFixed(0)}%</strong>, limited by ${escapeHtml(bindingLabel(r.base.binding).toLowerCase())}.</p>`;
+  const asked = r.holdsNoTax
+    ? ''
+    : r.aboveCeiling
+      ? `<p class="sov-flag">This tile cannot hold ${r.requestedTax.toFixed(0)}% — the plan below `
+        + `is at its ceiling of ${r.ceiling.toFixed(0)}%.</p>`
+      : '';
 
   // The plan block owns state, so the caller mounts it into the empty div rather
   // than it being rendered into this string.
@@ -2214,10 +2218,16 @@ function detailBodyHtml(plan, base, geom) {
       signed(claimDelta)} food claims, ${signed(goldDelta)} gold/hr.</p>`
     : '';
 
+  // A plan that does not hold its own tax leads with saying so, above the
+  // balance the shortfall is read off.
+  const short = plan.holds === false
+    ? `<p class="sov-flag">Plan shown at ${plan.tax.toFixed(0)}% tax.</p>`
+    : '';
+
   // The balance goes first, directly under the slider, so dragging moves numbers
   // the eye is already on. The grid is the tallest block, so it goes last rather
   // than pushing the table off the screen.
-  return `${balance}${milPlan}${res}${trade}${planGridHtml(plan, geom)}`;
+  return `${short}${balance}${milPlan}${res}${trade}${planGridHtml(plan, geom)}`;
 }
 
 function escapeHtml(s) {

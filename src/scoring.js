@@ -826,17 +826,43 @@ function foodSpendFor(ctx, tax) {
 }
 
 /**
+ * The most food a site can make at `tax` when no plan holds it: the cheapest
+ * plan reaching the best food the research produced at that tax can pay for.
+ *
+ * The city cannot run on it — that is what a food ceiling below the tax means —
+ * but it is the arithmetic at that rate, and the shortfall on the balance is
+ * read off it.
+ */
+function bestFoodSpend(ctx, tax) {
+  const produced = researchAt({ research: ctx.research, rpBonus: ctx.rpBonus, tax });
+  const affordable = Math.max(0, Math.min(ctx.budget, Math.floor(produced - ctx.minRp)));
+  const target = ctx.dp.best[affordable];
+  let lo = 0;
+  let hi = affordable;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (ctx.dp.best[mid] >= target - EPS) hi = mid;
+    else lo = mid + 1;
+  }
+  return lo;
+}
+
+/**
  * The whole plan at one tax: the cheapest food that holds it, then the most
  * military sovereignty the leftovers buy.
  *
  * This is what makes the tax an input rather than only an output. At the site's
  * own maximum it returns the free plan; run it lower and the food claims get
  * cheaper, which is where the extra military comes from. Returns null for a tax
- * the site cannot hold at all.
+ * the site cannot hold at all, unless `bestEffort` asks for the arithmetic at
+ * that tax anyway — the plan then reports a T_max below its own tax, and its
+ * surplus carries the deficit that says by how much.
  */
-export function planSiteAt(ctx, tax) {
+export function planSiteAt(ctx, tax, { bestEffort = false } = {}) {
   const s = ctx.settings;
-  const spend = Number.isFinite(tax) ? foodSpendFor(ctx, tax) : null;
+  if (!Number.isFinite(tax)) return null;
+  const held = foodSpendFor(ctx, tax);
+  const spend = held ?? (bestEffort ? bestFoodSpend(ctx, tax) : null);
   if (spend === null) return null;
 
   const tiles = recoverSet(ctx.foodCandidates, ctx.dp, spend).map((i) => ctx.foodCandidates[i]);
@@ -875,6 +901,9 @@ export function planSiteAt(ctx, tax) {
 
   return {
     tax,
+    // False where the plan is the arithmetic at a tax the site cannot hold, so
+    // a reader is never left to infer it from tMax being below tax.
+    holds: held !== null,
     tMax: ceiling.value,
     binding: ceiling.binding,
     sFood,

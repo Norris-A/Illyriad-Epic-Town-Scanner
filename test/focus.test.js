@@ -8,6 +8,7 @@ import assert from 'node:assert/strict';
 import {
   DEFAULT_FOCUS,
   FOCUS_DEFAULT_TAX,
+  FOCUS_TAX_FLOOR,
   parseFocus,
   focusRadius,
   resolvePlots,
@@ -341,6 +342,34 @@ test('no payload at all is a distinct answer from a missing tile', () => {
   assert.equal(r.reason, 'no-payload');
 });
 
+test('a site no settable tax holds is planned at 0%, not at a negative rate', () => {
+  // The game's tax field runs 0 to 100, so a ceiling below 0 is not a rate to
+  // plan at. The answer is still the arithmetic — at 0%, where production is at
+  // its maximum — with the food it is short by on the balance.
+  const barren = payloadAround({ rs: '5|5|5|5|2', centreRs: '5|5|5|5|5' });
+  const r = run({ tax: 60 }, settings, barren);
+  assert.equal(r.ok, true);
+  assert.equal(r.holdsNoTax, true);
+  assert.ok(r.ceiling < 0, 'the fixture must hold no tax for this to mean anything');
+  assert.equal(r.plan.tax, 0);
+  assert.equal(r.plan.holds, false);
+  assert.ok(r.plan.surplus.food < 0, 'the shortfall is what the reader is here for');
+  // The plan is still the best one there is at that tax, not an empty one.
+  assert.ok(r.plan.sFood > 0);
+});
+
+test('a site that does hold its tax says so, and is short of nothing', () => {
+  const r = run({ tax: 20 });
+  assert.equal(r.holdsNoTax, false);
+  assert.equal(r.plan.holds, true);
+  assert.ok(r.plan.surplus.food >= 0);
+});
+
+test('the tax input floors at 0, which is the lowest rate the game takes', () => {
+  assert.equal(FOCUS_TAX_FLOOR, 0);
+  assert.equal(parseFocus({ x: 1, y: 1, tax: '-40' }).focus.tax, 0);
+});
+
 // --- the edge of the world ---
 
 test('the world ends where the map does, on all four sides', () => {
@@ -403,9 +432,9 @@ test('the optimiser is the scan engine, not a second model of it', () => {
 });
 
 test('a tax the tile cannot hold is reported, not refused', () => {
-  // "Can this tile hold 60%?" is the question being asked. "No, it holds 44.2%"
+  // "Can this tile hold 100%?" is the question being asked. "No, it holds 11%"
   // is the answer to it; an error is not.
-  const poor = payloadAround({ rs: '5|5|5|5|0', centreRs: '5|5|5|5|5' });
+  const poor = payloadAround({ rs: '5|5|5|5|3', centreRs: '5|5|5|5|5' });
   const r = run({ tax: 100 }, settings, poor);
   assert.equal(r.ok, true);
   assert.equal(r.aboveCeiling, true);

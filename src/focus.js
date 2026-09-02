@@ -238,9 +238,8 @@ export function focusSite({ payload, focus, settings }) {
     };
   }
 
-  const { neighbours, missing } = collectNeighbourhood(payload, key, radius, idx, effective);
+  const { neighbours, missing, ring } = collectNeighbourhood(payload, key, radius, idx, effective);
   if (missing.length) {
-    const ring = (2 * radius + 1) ** 2 - 1;
     return {
       ok: false,
       reason: 'incomplete',
@@ -288,7 +287,7 @@ export function focusSite({ payload, focus, settings }) {
     settings: effective,
     kept,
     claimable: neighbours.length,
-    ring: (2 * radius + 1) ** 2 - 1,
+    ring,
     ctx,
     base,
     plan,

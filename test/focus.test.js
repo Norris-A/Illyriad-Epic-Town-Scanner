@@ -16,7 +16,9 @@ import {
   keptClaims,
 } from '../src/focus.js';
 import { DEFAULT_SETTINGS, PLOT_TOTAL } from '../src/constants.js';
-import { tileKey, indexPayload, townString, townRecord } from '../src/payload.js';
+import {
+  tileKey, indexPayload, townString, townRecord, neighbourhood, inWorld,
+} from '../src/payload.js';
 import { scoreSite, claimUpkeep, distance } from '../src/scoring.js';
 import { focusFormHtml, ownTowns } from '../src/panel.js';
 
@@ -26,19 +28,23 @@ const close = (a, b, eps = 0.05) =>
   assert.ok(Math.abs(a - b) < eps, `expected ${a} ≈ ${b}`);
 
 /**
- * A payload covering radius `r` around 100|100, every tile claimable and rated
+ * A payload covering radius `r` around `cx`|`cy`, every tile claimable and rated
  * `rs`. The centre gets its own so the two allocations can be told apart.
  *
  * Tiles carry what the live game sends — `sov` and `hos` on plain land, and no
  * `set` field, which the game stopped sending. Keeping `set` here reported every
  * tile settleable whatever the code did with the fields it really receives.
  */
-function payloadAround({ r = 3, rs = '5|5|5|5|5', centreRs = '4|4|4|4|9' } = {}) {
+function payloadAround({
+  r = 3, rs = '5|5|5|5|5', centreRs = '4|4|4|4|9', cx = 100, cy = 100,
+} = {}) {
   const data = {};
   for (let dy = -r; dy <= r; dy++) {
     for (let dx = -r; dx <= r; dx++) {
+      // Off-world tiles are left out, because the game has none to send.
+      if (!inWorld(cx + dx, cy + dy)) continue;
       const centre = dx === 0 && dy === 0;
-      data[tileKey(100 + dy, 100 + dx)] = {
+      data[tileKey(cy + dy, cx + dx)] = {
         sov: 1,
         hos: 1,
         b: 5,
@@ -333,6 +339,55 @@ test('no payload at all is a distinct answer from a missing tile', () => {
   const r = focusSite({ payload: null, focus: { ...DEFAULT_FOCUS, x: 1, y: 1 }, settings });
   assert.equal(r.ok, false);
   assert.equal(r.reason, 'no-payload');
+});
+
+// --- the edge of the world ---
+
+test('the world ends where the map does, on all four sides', () => {
+  assert.equal(inWorld(0, 0), true);
+  assert.equal(inWorld(-1000, -3300), true);
+  assert.equal(inWorld(1000, 1000), true);
+  assert.equal(inWorld(-1001, 0), false);
+  assert.equal(inWorld(1001, 0), false);
+  assert.equal(inWorld(0, -3301), false);
+  assert.equal(inWorld(0, 1001), false);
+});
+
+test('a site on the map edge is scored against the tiles that exist', () => {
+  // 928|-3300 sits on the southern edge: three of the seven rows a radius 3
+  // ring wants are off the world, so the ring is 27 tiles rather than 48. No
+  // amount of panning would ever deliver them, so refusing would refuse forever.
+  const payload = payloadAround({ r: 3, cx: 928, cy: -3300 });
+  const r = focusSite({
+    payload,
+    focus: { ...DEFAULT_FOCUS, x: 928, y: -3300, radius: 3 },
+    settings,
+  });
+  assert.equal(r.ok, true);
+  assert.equal(r.ring, 27);
+  assert.equal(r.claimable, 27);
+});
+
+test('on the edge, a tile that could have loaded still refuses', () => {
+  const payload = payloadAround({ r: 3, cx: 928, cy: -3300 });
+  delete payload.data[tileKey(-3299, 927)];
+  const r = focusSite({
+    payload,
+    focus: { ...DEFAULT_FOCUS, x: 928, y: -3300, radius: 3 },
+    settings,
+  });
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'incomplete');
+  assert.equal(r.missing, 1);
+  assert.equal(r.ring, 27);
+});
+
+test('the scan reaches the same sites the optimiser does', () => {
+  // neighbourhood is what the worker calls, and it is null-or-nothing: an edge
+  // site returning null is a site the scan lists as Incomplete and never scores.
+  const payload = payloadAround({ r: 3, cx: 928, cy: -3300 });
+  const ring = neighbourhood(payload, tileKey(-3300, 928), 3, indexPayload(payload), settings);
+  assert.equal(ring.length, 27);
 });
 
 // --- the answer itself ---

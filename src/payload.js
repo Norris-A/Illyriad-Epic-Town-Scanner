@@ -2,7 +2,9 @@
 // Rule zero: never classify on the `t` sprite name. Flags and
 // `rs` only. Read food from rs[4]; `i` is for the descriptor lookup only.
 
-import { descriptorFor } from './constants.js';
+import {
+  descriptorFor, WORLD_MIN_X, WORLD_MAX_X, WORLD_MIN_Y, WORLD_MAX_Y,
+} from './constants.js';
 
 /** Tile keys are "y|x" — y first. Town strings in `t` are "x|y". Don't mix them up. */
 export function tileKey(y, x) {
@@ -173,21 +175,34 @@ export function extractTowns(payload) {
   return out;
 }
 
+/** Whether a tile exists at all, as opposed to lying past an edge of the map. */
+export function inWorld(x, y) {
+  return x >= WORLD_MIN_X && x <= WORLD_MAX_X && y >= WORLD_MIN_Y && y <= WORLD_MAX_Y;
+}
+
 /**
  * The R_claim neighbourhood, separating tiles the payload did not carry from
  * tiles it carried and that are not claimable. Both are dropped from
  * `neighbours`; only the first is a reason not to score.
  *
- * @returns {{neighbours: object[], missing: string[]}} missing holds the keys
- *   the payload had no tile for, in scan order.
+ * Tiles off the edge of the world are neither: they are absent from every
+ * payload there will ever be, so counting them as missing would make sites near
+ * an edge permanently unscorable. `ring` is the count of tiles that do exist,
+ * which is what `neighbours` is out of.
+ *
+ * @returns {{neighbours: object[], missing: string[], ring: number}} missing
+ *   holds the keys the payload had no tile for, in scan order.
  */
 export function collectNeighbourhood(payload, key, rClaim, idx, settings) {
   const { x, y } = parseKey(key);
   const neighbours = [];
   const missing = [];
+  let ring = 0;
   for (let dy = -rClaim; dy <= rClaim; dy++) {
     for (let dx = -rClaim; dx <= rClaim; dx++) {
       if (dx === 0 && dy === 0) continue;
+      if (!inWorld(x + dx, y + dy)) continue;
+      ring += 1;
       const nKey = tileKey(y + dy, x + dx);
       const tile = payload.data[nKey];
       if (!tile) {
@@ -209,7 +224,7 @@ export function collectNeighbourhood(payload, key, rClaim, idx, settings) {
       });
     }
   }
-  return { neighbours, missing };
+  return { neighbours, missing, ring };
 }
 
 /**

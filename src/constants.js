@@ -3,6 +3,14 @@
 // are here deliberately — when output looks wrong, the [F] and [?] values are
 // what to re-check first.
 
+// [F] The world's extent, inclusive. Tiles beyond it are not unloaded map data —
+// they do not exist, so a claim ring overlapping an edge is genuinely smaller
+// rather than unreadable.
+export const WORLD_MIN_X = -1000;
+export const WORLD_MAX_X = 1000;
+export const WORLD_MIN_Y = -3300;
+export const WORLD_MAX_Y = 1000;
+
 export const PRODUCTION_BASE = 125;        // [V] production% = 125 - tax
 export const FARM_YIELD_L20 = 2014;        // [V] food/hr per farm plot at L20
 export const GOLD_PER_TAX_POP = 0.04;      // [F] Gold_income = 0.04 * T * Pop

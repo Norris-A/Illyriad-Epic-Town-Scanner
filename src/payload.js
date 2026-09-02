@@ -29,18 +29,19 @@ export function foodOf(tile) {
   return rs ? rs.food : 0;
 }
 
-/** `b` is 20 on water, 4 or 5 on land. */
+/** Water is a biome group of its own; every other value of `b` is land. */
 const WATER_BIOME = 20;
 
 /**
- * Water, from the ratings rather than the sprite: land rates all five
- * resources, water rates food alone, so four zeros is the test. `b` answers
- * the tile whose `rs` is missing or unparseable, rather than calling it land.
+ * Water, from the biome rather than the sprite or the ratings. Rating four zeros
+ * in the basic resources does not mean water: barren land — Barren Wastes,
+ * Marsh, Fen — rates the same way and takes buildings that water cannot. The
+ * zeros are kept only for the tile carrying no biome at all.
  */
 export function isWaterTile(tile) {
+  if (Number.isFinite(tile?.b)) return tile.b === WATER_BIOME;
   const rs = parseRs(tile);
-  if (!rs) return tile?.b === WATER_BIOME;
-  return rs.wood + rs.clay + rs.iron + rs.stone === 0;
+  return !!rs && rs.wood + rs.clay + rs.iron + rs.stone === 0;
 }
 
 /**

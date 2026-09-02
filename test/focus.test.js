@@ -17,7 +17,7 @@ import {
 } from '../src/focus.js';
 import { DEFAULT_SETTINGS, PLOT_TOTAL } from '../src/constants.js';
 import {
-  tileKey, indexPayload, townString, townRecord, neighbourhood, inWorld,
+  tileKey, indexPayload, townString, townRecord, neighbourhood, inWorld, isWaterTile,
 } from '../src/payload.js';
 import { scoreSite, claimUpkeep, distance } from '../src/scoring.js';
 import { focusFormHtml, ownTowns } from '../src/panel.js';
@@ -472,6 +472,21 @@ test('the neighbourhood still respects claimability', () => {
   const r = run({ radius: 1 }, settings, payload);
   assert.equal(r.ring, 8);
   assert.equal(r.claimable, 4);
+});
+
+test('barren land is land, whatever its resource ratings say', () => {
+  // Barren Wastes rate 0|0|0|0|0 and are ordinary Plains to the game: they take
+  // a Production Structure, which water does not. Reading the zeros as water
+  // struck them off every military plan and told the user the leftovers were sea.
+  const payload = payloadAround();
+  payload.data[tileKey(101, 101)] = { sov: 1, hos: 1, b: 1, l: 2, rs: '0|0|0|0|0' };
+  const r = run({ radius: 3 }, settings, payload);
+  assert.equal(r.neighbours.find((t) => t.key === tileKey(101, 101)).water, false);
+
+  assert.equal(isWaterTile({ b: 20, rs: '0|0|0|0|10' }), true);
+  // No biome at all is the only case the ratings still answer.
+  assert.equal(isWaterTile({ rs: '0|0|0|0|0' }), true);
+  assert.equal(isWaterTile({ rs: '5|5|5|5|5' }), false);
 });
 
 test('claimable water is planned for food but never for a structure', () => {

@@ -403,10 +403,6 @@ export const TERRAIN_DESCRIPTORS = {
   // like the impassable rows and is not: their combat class is Obsidian
   // Mountains, and only i:20-23 are class Impassable anywhere in the client's
   // table. So this is walkable ground that grows nothing — not a wall.
-  //
-  // isWaterTile tests wood+clay+iron+stone === 0, which these satisfy, so the
-  // payload calls them water. They are not flagged `water` here, because they
-  // are not — and nothing reads this flag, so the two do not have to agree.
   199: { name: 'Obsidian Mountain' },
   200: { name: 'Glassy Crag' },
   201: { name: 'Volcanic Mountain' },

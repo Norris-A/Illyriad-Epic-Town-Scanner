@@ -933,6 +933,10 @@ export const DEFAULT_SETTINGS = {
   maxBuildings: 20,
   dOther: 10,
   dOwn: 3,
+  // Its own figure rather than either of the two above: `dOther` is what
+  // convention asks of a stranger, and an ally is someone you will have agreed
+  // the ground with. Confederates are not allies here and keep `dOther`.
+  dAlliance: 3,
   // Which military structure to place, by key into SOV_STRUCTURES. How many, at
   // what levels and on which tiles is the engine's answer, not a setting: food
   // is planned first and military sovereignty takes only the headroom the food
@@ -943,7 +947,6 @@ export const DEFAULT_SETTINGS = {
   // amount of military a site hosts is what its food plan leaves free.
   milsovMinBonus: 0,
   ownClaimsAvailable: false,
-  allianceClaimsAvailable: false,
   // Fold the panel to its icon off the World Map: the scanner reads
   // window.mapData, which exists only there.
   autoMinimizeOffMap: true,

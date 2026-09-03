@@ -651,8 +651,8 @@ export const SETTINGS_FIELDS = [
 
   { key: 'dOther', group: 'Neighbours', label: 'Minimum Distance to Other Players', type: 'number', min: 0, max: 100 },
   { key: 'dOwn', group: 'Neighbours', label: 'Minimum Distance to Your Cities', type: 'number', min: 0, max: 100 },
+  { key: 'dAlliance', group: 'Neighbours', label: 'Minimum Distance to Alliance Towns', type: 'number', min: 0, max: 100 },
   { key: 'ownClaimsAvailable', group: 'Neighbours', label: 'Treat Your Own Claims as Available', type: 'checkbox' },
-  { key: 'allianceClaimsAvailable', group: 'Neighbours', label: 'Treat Alliance Claims as Available', type: 'checkbox' },
 
   {
     key: 'autoMinimizeOffMap',

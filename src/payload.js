@@ -70,11 +70,11 @@ export function isClaimable(tile, key, idx, settings) {
 
   const claim = idx.claims.get(key);
   if (claim) {
-    // sov:1 means eligible, not available — cross-check `s`.
-    const rd = claim.rd;
-    if (rd === 'Yours' && settings.ownClaimsAvailable) return true;
-    if (rd === 'Alliance' && settings.allianceClaimsAvailable) return true;
-    return false;
+    // sov:1 means eligible, not available — cross-check `s`. Sovereignty is never
+    // shared, so an alliance member's claim is as unavailable as a stranger's;
+    // your own is the one exception, because relinquishing it and placing it
+    // again is a move you can make.
+    return claim.rd === 'Yours' && !!settings.ownClaimsAvailable;
   }
   return true;
 }
@@ -105,6 +105,8 @@ export function isCandidateSite(tile, key, idx, settings, towns) {
     const d = Math.sqrt((t.x - x) ** 2 + (t.y - y) ** 2);
     if (t.own) {
       if (d < settings.dOwn) return { ok: false, reason: 'too-close-own' };
+    } else if (t.ally) {
+      if (d < settings.dAlliance) return { ok: false, reason: 'too-close-alliance' };
     } else if (d < settings.dOther) {
       return { ok: false, reason: 'too-close-other' };
     }
@@ -169,6 +171,9 @@ export function extractTowns(payload) {
       ...pos,
       name: (rec ? rec.TownName : parts[0]) ?? '',
       own: town && town.rd === 'Yours',
+      // A confederate reads "Confed " — trailing space and all — and is not one
+      // of these: they are held at the distance a stranger is.
+      ally: town && town.rd === 'Alliance',
       rd: town && town.rd,
       key,
     });

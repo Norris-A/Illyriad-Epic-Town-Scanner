@@ -22,9 +22,11 @@ import {
   productionLabel,
   settingsFormHtml,
   settingsMenuHtml,
+  focusFormHtml,
   clampPanelPosition,
   isWorldMapHash,
 } from '../src/panel.js';
+import { DEFAULT_FOCUS } from '../src/focus.js';
 import { PRODUCTION_ICONS } from '../src/icons.js';
 import {
   DEFAULT_SETTINGS,
@@ -135,6 +137,63 @@ test('the markup carries every hook createPanel reads back out of it', () => {
       'minimums'].includes(f.type)) {
       assert.ok(where.includes(`<input type="number" data-key="${f.key}"`), `${f.key} is not a number input`);
     }
+  }
+});
+
+// --- what a click on a row is allowed to mean ---
+
+// Every form the panel draws. A control in any of them is one an edit here
+// saves, so the rules below hold for all three.
+const markups = () => [
+  ['the settings form', settingsFormHtml(DEFAULT_SETTINGS)],
+  ['the gear menu', settingsMenuHtml(DEFAULT_SETTINGS)],
+  ['the optimiser form', focusFormHtml(DEFAULT_FOCUS, DEFAULT_SETTINGS)],
+];
+
+const controls = (html) => html.match(/<(?:input|select)\b[^>]*>/g) ?? [];
+
+// A label's box is its activation area. One given a row's full width carries the
+// empty gap between text and control with it, and a click there is saved as an
+// edit: a toggled checkbox, or a focused number the wheel then changes.
+test('a control sits beside its label, never inside it', () => {
+  for (const [name, html] of markups()) {
+    for (const row of html.match(/<label class="sov-f"[^>]*>[\s\S]*?<\/label>/g) ?? []) {
+      assert.ok(!/<(input|select)\b/.test(row), `${name} wraps a control in a full-width label`);
+    }
+  }
+});
+
+test('every control is driven by one label of its own', () => {
+  const seen = new Set();
+  for (const [name, html] of markups()) {
+    for (const control of controls(html)) {
+      const id = control.match(/ id="([^"]+)"/)?.[1];
+      // Two inputs under one heading — the coordinate pair — cannot both be its
+      // control, so they name themselves instead.
+      if (!id) {
+        assert.match(control, / aria-label="/, `${name} draws a control with neither id nor aria-label: ${control}`);
+        continue;
+      }
+      assert.ok(id.startsWith('sov-'), `${id} is not namespaced away from the game page`);
+      assert.ok(!seen.has(id), `${id} is used twice, so one label points at the wrong control`);
+      seen.add(id);
+      assert.ok(html.includes(`<label for="${id}">`), `${id} has no label pointing at it`);
+    }
+  }
+  for (const f of SETTINGS_FIELDS) {
+    if (f.type === 'checkbox') assert.ok(seen.has(`sov-cb-${f.key}`), `${f.key} lost its label`);
+    if (['number', 'select', 'milsov'].includes(f.type)) {
+      assert.ok(seen.has(`sov-in-${f.key}`), `${f.key} lost its label`);
+    }
+  }
+  assert.ok(seen.size > SETTINGS_FIELDS.length, 'the controls went missing rather than getting labels');
+});
+
+// A value the browser restores of its own accord on reload is read back as the
+// user's and saved over what they actually chose.
+test('the forms opt out of having their controls restored by the browser', () => {
+  for (const [name, html] of markups()) {
+    assert.match(html, /<form class="sov-[a-z-]+" autocomplete="off">/, `${name} does not opt out`);
   }
 });
 

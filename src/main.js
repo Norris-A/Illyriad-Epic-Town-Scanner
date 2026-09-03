@@ -4,7 +4,7 @@
 
 import { probeInPageData, getLatestPayload } from './capture.js';
 import { createPanel, csvFile, csvFilename } from './panel.js';
-import { createSettingsStore } from './settings-store.js';
+import { createSettingsStore, decodeSettings, STORAGE_KEY } from './settings-store.js';
 import { DEFAULT_SETTINGS } from './constants.js';
 
 /* global __WORKER_SOURCE__ */
@@ -28,10 +28,43 @@ if (hits.length) {
 
 // Every keystroke fires a change; one write per burst of typing is enough.
 let saveTimer = null;
-function saveSoon(s) {
+let unsaved = null;
+
+function flushSave() {
+  if (!unsaved) return;
   clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => panel.setStoreNote(store.save(s)), 250);
+  saveTimer = null;
+  const s = unsaved;
+  unsaved = null;
+  panel.setStoreNote(store.save(s));
 }
+
+function saveSoon(s) {
+  unsaved = s;
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(flushSave, 250);
+}
+
+// The debounce is a window in which the tab can be closed, navigated or frozen
+// with the last edit still only in the form. `pagehide` and the hidden half of
+// `visibilitychange` are the two that fire in every case that ends a page —
+// `unload` does not, and listening for it forfeits the back/forward cache.
+window.addEventListener('pagehide', flushSave);
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) flushSave();
+});
+
+// Another tab of the game is the same settings edited twice. `storage` fires
+// only in the tabs that did not write, so the later save is the newer intent
+// and this one follows it — unless there is an edit here still waiting to be
+// written, which is newer still and wins by being saved next.
+window.addEventListener('storage', (e) => {
+  if (e.key !== STORAGE_KEY || e.newValue === null || unsaved) return;
+  const { settings: s } = decodeSettings(e.newValue);
+  if (!s) return;
+  panel.setSettings(s, { save: false });
+  panel.setStoreNote('Settings were changed in another tab; this panel now matches them.');
+});
 
 const panel = createPanel({
   initialSettings: restored.settings ?? DEFAULT_SETTINGS,

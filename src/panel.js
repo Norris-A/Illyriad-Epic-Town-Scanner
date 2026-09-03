@@ -124,11 +124,15 @@ const CSS = `
   padding:1px 3px;font:inherit}
 .sov-f{display:flex;align-items:center;justify-content:space-between;gap:6px;margin:3px 0}
 .sov-f>span{flex:1}
+/* A row's label is its text and no more, so the gap between it and the control
+belongs to neither and activates nothing. */
+.sov-f>label{cursor:pointer;min-width:0}
 .sov-f input[type=number]{width:76px;text-align:right}
 .sov-f select{max-width:170px}
 .sov-gated{opacity:.4}
 .sov-plot-fields{display:flex;gap:4px;margin:2px 0}
-.sov-plot-fields label{flex:1;text-align:center;font-size:10px;color:#b5b5b5}
+.sov-plot{flex:1;text-align:center}
+.sov-plot-fields label{display:block;font-size:10px;color:#b5b5b5;cursor:pointer}
 .sov-plot-fields input{width:100%;text-align:center}
 .sov-plot-sum{display:flex;justify-content:space-between;align-items:center;gap:6px}
 .sov-bad{color:#e66;font-weight:bold}
@@ -671,28 +675,76 @@ function attr(name, v) {
   return v === undefined || v === null ? '' : ` ${name}="${escapeHtml(v)}"`;
 }
 
+/**
+ * One control and its label, laid out as a row.
+ *
+ * The label holds only its text and names its control by id. A label's box is
+ * its activation area, and a row is a full-width flex line, so one given the
+ * row's own width would carry the empty gap between text and control with it: a
+ * click landing there is a silent toggle on a checkbox, and on a number or a
+ * select a focus nobody asked for that the next turn of the wheel edits.
+ *
+ * @param {object} o
+ * @param {string} o.id unique in the document, and namespaced away from the
+ *   game page the panel is injected into
+ * @param {string} o.label label HTML, already escaped by the caller
+ * @param {string} o.control the input or select, carrying that same id
+ * @param {string} [o.row] attributes for the row itself
+ */
+function fieldRowHtml({ id, label, control, row = '' }) {
+  return `<div class="sov-f"${row}><label for="${id}">${label}</label>
+    ${control}</div>`;
+}
+
+function checkboxRowHtml({ id, label, checked, hooks = '', row = '' }) {
+  return fieldRowHtml({
+    id,
+    label,
+    row,
+    control: `<input type="checkbox"${hooks} id="${id}"${checked ? ' checked' : ''}>`,
+  });
+}
+
 function numberFieldHtml(f, value) {
-  return `<label class="sov-f" data-key="${f.key}"><span>${escapeHtml(f.label)}</span>
-    <input type="number" data-key="${f.key}"${attr('min', f.min)}${attr('max', f.max)}
-      step="${f.integer ? 1 : 'any'}"${attr('value', value)}></label>`;
+  const id = `sov-in-${f.key}`;
+  return fieldRowHtml({
+    id,
+    label: escapeHtml(f.label),
+    row: ` data-key="${f.key}"`,
+    control: `<input type="number" data-key="${f.key}"${attr('min', f.min)}${attr('max', f.max)}
+      step="${f.integer ? 1 : 'any'}"${attr('value', value)} id="${id}">`,
+  });
 }
 
 function selectFieldHtml(f, value) {
+  const id = `sov-in-${f.key}`;
   const opts = f.options.map((o) =>
     `<option value="${escapeHtml(o.value)}"${String(o.value) === String(value) ? ' selected' : ''}>${escapeHtml(o.label)}</option>`).join('');
-  return `<label class="sov-f" data-key="${f.key}"><span>${escapeHtml(f.label)}</span>
-    <select data-key="${f.key}">${opts}</select></label>`;
+  return fieldRowHtml({
+    id,
+    label: escapeHtml(f.label),
+    row: ` data-key="${f.key}"`,
+    control: `<select data-key="${f.key}" id="${id}">${opts}</select>`,
+  });
 }
 
 function checkboxFieldHtml(f, value) {
-  return `<label class="sov-f" data-key="${f.key}"><span>${escapeHtml(f.label)}</span>
-    <input type="checkbox" data-key="${f.key}"${value ? ' checked' : ''}></label>`;
+  return checkboxRowHtml({
+    id: `sov-cb-${f.key}`,
+    label: escapeHtml(f.label),
+    checked: value,
+    hooks: ` data-key="${f.key}"`,
+    row: ` data-key="${f.key}"`,
+  });
 }
 
 function plotsFieldHtml(f, plots) {
-  const fields = PLOT_KEYS.map((p) =>
-    `<label>${productionLabel(p)}<input type="number" data-plot="${p}" min="0" max="${PLOT_TOTAL}"
-      step="1" value="${plots?.[p] ?? 0}"></label>`).join('');
+  const fields = PLOT_KEYS.map((p) => {
+    const id = `sov-in-plot-${p}`;
+    return `<div class="sov-plot"><label for="${id}">${productionLabel(p)}</label>
+      <input type="number" data-plot="${p}" min="0" max="${PLOT_TOTAL}"
+        step="1" value="${plots?.[p] ?? 0}" id="${id}"></div>`;
+  }).join('');
   return `<div class="sov-f-block" data-key="${f.key}">
       <p class="sov-hint">${escapeHtml(f.label)} — how the settle tile's ${PLOT_TOTAL} plots are
         split. The five must total ${PLOT_TOTAL}. Terraforming applies to the settle tile only.</p>
@@ -712,24 +764,37 @@ function calibrationFieldHtml(f, cal) {
         here, with the tax rate it was read at. It replaces the Library's own output.
         Leave the two tick-boxes above set as your city has them: those bonuses are part of
         the figure you read, and are subtracted from it rather than replaced by it.</p>
-      <div class="sov-f"><span>Observed research per hour</span>
-        <input type="number" data-cal="observedRpPerHour" min="0" step="any"
-          placeholder="blank = off"${attr('value', cal?.observedRpPerHour)}></div>
-      <div class="sov-f"><span>…at this tax rate (%)</span>
-        <input type="number" data-cal="atTax" min="0" max="100" step="any"
-          value="${cal?.atTax ?? 0}"></div>
-      <div class="sov-f"><span>…with the Prestige boost running</span>
-        <input type="checkbox" data-cal="prestige"${cal?.prestige ? ' checked' : ''}></div>
+      ${fieldRowHtml({
+    id: 'sov-in-cal-observedRpPerHour',
+    label: 'Observed research per hour',
+    control: `<input type="number" data-cal="observedRpPerHour" min="0" step="any"
+          placeholder="blank = off"${attr('value', cal?.observedRpPerHour)} id="sov-in-cal-observedRpPerHour">`,
+  })}
+      ${fieldRowHtml({
+    id: 'sov-in-cal-atTax',
+    label: '…at this tax rate (%)',
+    control: `<input type="number" data-cal="atTax" min="0" max="100" step="any"
+          value="${cal?.atTax ?? 0}" id="sov-in-cal-atTax">`,
+  })}
+      ${checkboxRowHtml({
+    id: 'sov-cb-cal-prestige',
+    label: '…with the Prestige boost running',
+    checked: cal?.prestige,
+    hooks: ' data-cal="prestige"',
+  })}
       <p class="sov-hint sov-rp-read"></p>
     </fieldset>`;
 }
 
 /** One tick-box per booster, named after the building the user would recognise. */
 function boostersFieldHtml(f, boosters) {
-  const boxes = BASIC_RESOURCES.map((res) =>
-    `<label class="sov-f" data-booster-row="${res}"><span>${RESOURCE_BOOSTERS[res]} —
-      ${productionLabel(res)} (+${RESOURCE_BOOSTER_BONUS}%)</span>
-      <input type="checkbox" data-booster="${res}"${boosters?.[res] ? ' checked' : ''}></label>`).join('');
+  const boxes = BASIC_RESOURCES.map((res) => checkboxRowHtml({
+    id: `sov-cb-booster-${res}`,
+    label: `${RESOURCE_BOOSTERS[res]} — ${productionLabel(res)} (+${RESOURCE_BOOSTER_BONUS}%)`,
+    checked: boosters?.[res],
+    hooks: ` data-booster="${res}"`,
+    row: ` data-booster-row="${res}"`,
+  })).join('');
   return `<div class="sov-f-block" data-key="${f.key}">
       <p class="sov-hint">${escapeHtml(f.label)} — each adds ${RESOURCE_BOOSTER_BONUS}% to that
         resource's production percentage, the same way the Flour Mill adds to food. It is added
@@ -745,10 +810,13 @@ function boostersFieldHtml(f, boosters) {
  * The food box feeds B_other, so the City Food total above accounts for it.
  */
 function prestigeFieldHtml(f, prestige) {
-  const boxes = PRESTIGE_KEYS.map((key) =>
-    `<label class="sov-f" data-prestige-row="${key}"><span>${productionLabel(key)}
-      (+${PRESTIGE_PRODUCTION_BONUS}%)</span>
-      <input type="checkbox" data-prestige="${key}"${prestige?.[key] ? ' checked' : ''}></label>`).join('');
+  const boxes = PRESTIGE_KEYS.map((key) => checkboxRowHtml({
+    id: `sov-cb-prestige-${key}`,
+    label: `${productionLabel(key)} (+${PRESTIGE_PRODUCTION_BONUS}%)`,
+    checked: prestige?.[key],
+    hooks: ` data-prestige="${key}"`,
+    row: ` data-prestige-row="${key}"`,
+  })).join('');
   return `<div class="sov-f-block" data-key="${f.key}">
       <p class="sov-hint">+${PRESTIGE_PRODUCTION_BONUS}% on the production percentage,
         cumulative with spells and sovereignty. Added rather than multiplied, so each is worth
@@ -764,10 +832,16 @@ function prestigeFieldHtml(f, prestige) {
  * scarcest resource goes to upkeep: affordable, and useless.
  */
 function minimumsFieldHtml(f, minimums) {
-  const boxes = MINIMUM_KEYS.map((key) =>
-    `<label class="sov-f" data-minimum-row="${key}"><span>${productionLabel(key)} — keep at least</span>
-      <input type="number" data-minimum="${key}" min="0" step="1"
-        value="${minimums?.[key] ?? 0}"></label>`).join('');
+  const boxes = MINIMUM_KEYS.map((key) => {
+    const id = `sov-in-min-${key}`;
+    return fieldRowHtml({
+      id,
+      label: `${productionLabel(key)} — keep at least`,
+      row: ` data-minimum-row="${key}"`,
+      control: `<input type="number" data-minimum="${key}" min="0" step="1"
+        value="${minimums?.[key] ?? 0}" id="${id}">`,
+    });
+  }).join('');
   return `<div class="sov-f-block" data-key="${f.key}">
       <p class="sov-hint">${escapeHtml(f.label)} — how much of each must still be free once
         the plan is paid for: the four resources after sovereignty upkeep, food after the
@@ -793,9 +867,13 @@ function milsovFieldHtml(f, structure) {
   const opts = MILSOV_STRUCTURES.map((s) =>
     `<option value="${s.key}"${s.key === structure ? ' selected' : ''}>${escapeHtml(s.name)}</option>`).join('');
   return `<div class="sov-f-block" data-key="${f.key}">
-      <label class="sov-f"><span>${escapeHtml(f.label)}</span>
-        <select data-key="${f.key}" title="Which structure to place on the tiles the food plan leaves free">
-          <option value=""${structure ? '' : ' selected'}>None — food only</option>${opts}</select></label>
+      ${fieldRowHtml({
+    id: `sov-in-${f.key}`,
+    label: escapeHtml(f.label),
+    control: `<select data-key="${f.key}" id="sov-in-${f.key}"
+          title="Which structure to place on the tiles the food plan leaves free">
+          <option value=""${structure ? '' : ' selected'}>None — food only</option>${opts}</select>`,
+  })}
       <p class="sov-hint">Food is planned first and sets the tax. Military sovereignty is
         then fitted into what that plan leaves over — the research it did not spend, the
         tiles it did not claim, and what the city can still afford to run — so it never
@@ -833,7 +911,10 @@ export function settingsFormHtml(settings) {
     return `<fieldset><legend>${escapeHtml(g.name)}</legend>
       ${g.fields.map((f) => fieldHtml(f, settings)).join('')}${extra}</fieldset>`;
   }).join('');
-  return `<form class="sov-form">
+  // `autocomplete="off"` is not about autofill: it is what stops the browser
+  // restoring control values of its own across a reload. A restored value is
+  // read back as though the user had set it, and saved.
+  return `<form class="sov-form" autocomplete="off">
       ${body}
       <p class="sov-hint sov-derived-food"></p>
       <p><button type="button" class="sov-reset sec">Reset to Defaults</button></p>
@@ -854,7 +935,7 @@ export function settingsMenuHtml(settings) {
   const fields = SETTINGS_FIELDS.filter((f) => f.menu);
   const rows = fields.map((f) =>
     `${fieldHtml(f, settings)}${f.hint ? `<p class="sov-hint">${escapeHtml(f.hint)}</p>` : ''}`).join('');
-  return `<h3>Settings</h3><form class="sov-menu-form">${rows}</form>`;
+  return `<h3>Settings</h3><form class="sov-menu-form" autocomplete="off">${rows}</form>`;
 }
 
 /**
@@ -865,35 +946,52 @@ export function settingsMenuHtml(settings) {
 export function focusFormHtml(focus, settings) {
   const f = { ...DEFAULT_FOCUS, ...focus };
   const rClaim = Math.round(settings?.rClaim ?? 2);
-  return `<form class="sov-focus-form">
+  return `<form class="sov-focus-form" autocomplete="off">
       <fieldset><legend>Tile</legend>
-        <label class="sov-f"><span>One of Your Towns</span>
-          <select class="sov-town-pick"><option value="">—</option></select></label>
+        ${fieldRowHtml({
+    id: 'sov-in-town-pick',
+    label: 'One of Your Towns',
+    control: '<select class="sov-town-pick" id="sov-in-town-pick"><option value="">—</option></select>',
+  })}
         <p class="sov-hint sov-town-note">Fills the coordinates below from a town of yours on
           the map. For a town you have already built out, tick Preserve Existing Sovereignty
           so the plan accounts for the claims it is already paying for.</p>
-        <label class="sov-f"><span>Coordinates — x | y</span>
+        <div class="sov-f"><span>Coordinates — x | y</span>
           <span class="sov-xy">
-            <input type="number" data-focus="x" step="1" placeholder="x"${attr('value', f.x)}>
-            <input type="number" data-focus="y" step="1" placeholder="y"${attr('value', f.y)}>
-          </span></label>
-        <label class="sov-f"><span>Sovereignty Radius</span>
-          <input type="number" data-focus="radius" min="1" max="6" step="1"
-            placeholder="${rClaim}"${attr('value', f.radius)}></label>
+            <input type="number" data-focus="x" step="1" placeholder="x" aria-label="x"${attr('value', f.x)}>
+            <input type="number" data-focus="y" step="1" placeholder="y" aria-label="y"${attr('value', f.y)}>
+          </span></div>
+        ${fieldRowHtml({
+    id: 'sov-in-focus-radius',
+    label: 'Sovereignty Radius',
+    control: `<input type="number" data-focus="radius" min="1" max="6" step="1"
+            placeholder="${rClaim}"${attr('value', f.radius)} id="sov-in-focus-radius">`,
+  })}
         <p class="sov-hint sov-radius-hint">How far out sovereignty may be placed. Blank
           follows the claim radius in City Configuration, currently ${rClaim}.</p>
       </fieldset>
       <fieldset><legend>Plan</legend>
-        <label class="sov-f"><span>Starting Tax (%)</span>
-          <input type="number" data-focus="tax" min="${FOCUS_TAX_FLOOR}" max="100" step="1"
-            value="${f.tax ?? FOCUS_DEFAULT_TAX}"></label>
-        <label class="sov-f"><span>Use the Plot Allocation from City Configuration</span>
-          <input type="checkbox" data-focus="useConfiguredPlots"${f.useConfiguredPlots ? ' checked' : ''}></label>
+        ${fieldRowHtml({
+    id: 'sov-in-focus-tax',
+    label: 'Starting Tax (%)',
+    control: `<input type="number" data-focus="tax" min="${FOCUS_TAX_FLOOR}" max="100" step="1"
+            value="${f.tax ?? FOCUS_DEFAULT_TAX}" id="sov-in-focus-tax">`,
+  })}
+        ${checkboxRowHtml({
+    id: 'sov-cb-focus-useConfiguredPlots',
+    label: 'Use the Plot Allocation from City Configuration',
+    checked: f.useConfiguredPlots,
+    hooks: ' data-focus="useConfiguredPlots"',
+  })}
         <p class="sov-hint">On, the plan uses the ${PLOT_TOTAL}-plot allocation from City
           Configuration — the tile as you intend to terraform it. Off, it uses the tile's own
           resource ratings, as the map reports them today.</p>
-        <label class="sov-f"><span>Preserve Existing Sovereignty</span>
-          <input type="checkbox" data-focus="preserveSovereignty"${f.preserveSovereignty ? ' checked' : ''}></label>
+        ${checkboxRowHtml({
+    id: 'sov-cb-focus-preserveSovereignty',
+    label: 'Preserve Existing Sovereignty',
+    checked: f.preserveSovereignty,
+    hooks: ' data-focus="preserveSovereignty"',
+  })}
         <p class="sov-hint">For a tile you have already settled. On, claims you already hold
           inside the radius are kept as they are: they are drawn on the grid and the research
           and gold they already cost are taken off the top, so the plan is what you can still
@@ -1233,7 +1331,9 @@ licence and full copyright notice.">ⓘ</a></span></span></h2>
 
   // --- writing the form ---
 
-  function writeSettings(s) {
+  // `save` is off for settings that arrived from the store rather than from an
+  // edit here — writing them back would echo between tabs without end.
+  function writeSettings(s, { save = true } = {}) {
     for (const f of SETTINGS_FIELDS) {
       const v = s[f.key];
       switch (f.type) {
@@ -1273,7 +1373,7 @@ licence and full copyright notice.">ⓘ</a></span></span></h2>
           containerFor(f).querySelector(`input[data-key="${f.key}"]`).value = v ?? f.fallback ?? '';
       }
     }
-    refresh();
+    refresh({ save });
     applyCollapsed();
   }
 

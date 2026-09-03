@@ -20,8 +20,40 @@ import {
 /** One key per origin. The suffix is the envelope's shape, not the tool's. */
 export const STORAGE_KEY = 'illyriad-sov-scanner.settings';
 
-/** Bumped only if the envelope around `settings` changes. */
+/**
+ * The shape of the whole stored document. Bumped only when a stored settings
+ * object stops being readable field-for-field — a key that changed name or
+ * split in two — and never for one merely added or removed: sanitizeSettings
+ * already keeps what still exists, drops what does not, and defaults what is
+ * new.
+ */
 export const STORAGE_VERSION = 1;
+
+/**
+ * from-version -> that document one version newer. A stored blob is walked up
+ * through these before it is sanitized, which is the only way a renamed key
+ * arrives at the current schema still carrying its value instead of quietly
+ * taking a default.
+ *
+ * Empty while every schema change is an addition or a removal: those need no
+ * step, since sanitizeSettings already keeps, drops and defaults field by field.
+ * A migration returns a settings object and is never asked to validate —
+ * whatever it produces goes through sanitizeSettings after.
+ */
+export const MIGRATIONS = {};
+
+/** Walk a stored settings object from the version it was written at to ours. */
+function migrate(body, from) {
+  let out = body;
+  for (let v = from; v < STORAGE_VERSION; v++) {
+    const step = MIGRATIONS[v];
+    // No path from here: stop and let sanitizeSettings salvage field-for-field
+    // rather than hand a half-migrated document on.
+    if (!step) break;
+    out = step(out);
+  }
+  return out;
+}
 
 /**
  * Coerce anything at all into a complete settings object, reading each field by
@@ -113,19 +145,39 @@ export function encodeSettings(settings) {
  */
 export function decodeSettings(text) {
   if (text === null || text === undefined || text === '') return { settings: null, note: '' };
+  const unreadable = () => ({
+    settings: sanitizeSettings({}),
+    note: 'Saved settings were unreadable — defaults restored.',
+  });
   let parsed;
   try {
     parsed = JSON.parse(text);
   } catch {
-    return { settings: sanitizeSettings({}), note: 'Saved settings were unreadable — defaults restored.' };
+    return unreadable();
   }
   // A bare settings object is accepted alongside the envelope, so a blob
   // hand-edited in devtools still loads.
   const body = parsed?.settings ?? parsed;
-  if (!body || typeof body !== 'object' || Array.isArray(body)) {
-    return { settings: sanitizeSettings({}), note: 'Saved settings were unreadable — defaults restored.' };
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return unreadable();
+
+  // An unstamped blob is a hand-written one, which is written to look like what
+  // this build reads.
+  const version = Number.isInteger(parsed?.version) ? parsed.version : STORAGE_VERSION;
+  if (version > STORAGE_VERSION) {
+    return {
+      settings: sanitizeSettings(body),
+      note: 'Settings were saved by a newer build — what it knows and this one does not is at its default here.',
+    };
   }
-  return { settings: sanitizeSettings(body), note: driftNote(body) };
+  let migrated;
+  try {
+    migrated = migrate(body, version);
+  } catch {
+    // A migration that throws must not cost the user the settings it was handed:
+    // the unmigrated document still sanitizes field-for-field.
+    migrated = body;
+  }
+  return { settings: sanitizeSettings(migrated), note: driftNote(migrated) };
 }
 
 /** A storage that keeps nothing, for when the real one is unavailable. */

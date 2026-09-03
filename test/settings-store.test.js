@@ -8,6 +8,7 @@ import assert from 'node:assert/strict';
 import {
   STORAGE_KEY,
   STORAGE_VERSION,
+  MIGRATIONS,
   sanitizeSettings,
   encodeSettings,
   decodeSettings,
@@ -86,6 +87,58 @@ test('settings added since the blob was written take their defaults', () => {
 
 test('a blob written by this exact build says nothing', () => {
   assert.equal(decodeSettings(encodeSettings(DEFAULT_SETTINGS)).note, '');
+});
+
+// --- versions older and newer than this build's ---
+
+/** Run `fn` with one migration step registered, whatever it does. */
+function withMigration(from, step, fn) {
+  MIGRATIONS[from] = step;
+  try {
+    fn();
+  } finally {
+    delete MIGRATIONS[from];
+  }
+}
+
+// Dropping and defaulting handles a key that came or went. A key that changed
+// name is the case it cannot handle — the old name is discarded and the new one
+// defaults, so the value is lost — and this ladder is where that is repaired.
+test('a blob from an older schema is walked up before it is read', () => {
+  withMigration(STORAGE_VERSION - 1, (s) => ({ ...s, tMin: s.oldMinimumTax }), () => {
+    const stored = JSON.stringify({
+      version: STORAGE_VERSION - 1,
+      settings: { oldMinimumTax: 44 },
+    });
+    assert.equal(decodeSettings(stored).settings.tMin, 44, 'the renamed value did not survive');
+  });
+});
+
+test('a migration that throws costs the user nothing it was holding', () => {
+  withMigration(STORAGE_VERSION - 1, () => { throw new Error('bad step'); }, () => {
+    const stored = JSON.stringify({ version: STORAGE_VERSION - 1, settings: { tMin: 61 } });
+    const { settings } = decodeSettings(stored);
+    assert.equal(settings.tMin, 61, 'what was still readable should be read');
+    assert.deepEqual(settings.plots, DEFAULT_SETTINGS.plots);
+  });
+});
+
+test('a version with no step still loads field-for-field', () => {
+  const stored = JSON.stringify({ version: STORAGE_VERSION - 1, settings: { tMin: 33 } });
+  assert.equal(decodeSettings(stored).settings.tMin, 33);
+});
+
+// Two builds on one machine: the older one must not silently strip what the
+// newer one saved, and must say why it cannot honour all of it.
+test('a blob from a newer build is read as far as it goes, not discarded', () => {
+  const stored = JSON.stringify({
+    version: STORAGE_VERSION + 1,
+    settings: { ...DEFAULT_SETTINGS, tMin: 77, somethingFromTheFuture: true },
+  });
+  const { settings, note } = decodeSettings(stored);
+  assert.equal(settings.tMin, 77, 'what this build understands is kept');
+  assert.ok(!('somethingFromTheFuture' in settings));
+  assert.match(note, /newer build/);
 });
 
 // --- every field type is re-validated, not trusted ---

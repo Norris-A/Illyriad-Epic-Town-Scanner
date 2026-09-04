@@ -553,8 +553,8 @@ export function parsePrestige(raw) {
  * question and winning.
  *
  * `menu: true` moves a control out of the City Configuration form and into the
- * panel's own settings menu. `advanced: true` hides one until Advanced Mode is
- * on. Both are still ordinary settings — they save and restore like the rest.
+ * panel's own settings menu. It is still an ordinary setting — it saves and
+ * restores like the rest.
  */
 export const SETTINGS_FIELDS = [
   { key: 'tMin', group: 'Ranking', label: 'Minimum Tax (%)', type: 'number', min: 0, max: 100 },

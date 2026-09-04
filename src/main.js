@@ -17,7 +17,9 @@ const workerUrl = URL.createObjectURL(
 let settings = { ...DEFAULT_SETTINGS };
 let lastResults = [];
 
-// Settings persist in this browser's local storage. Nothing else is stored.
+// The City Configuration persists in this browser's local storage. The panel's
+// own position and collapsed state are kept under their own keys by panel.js, so
+// resetting the configuration never moves the panel.
 const store = createSettingsStore();
 const restored = store.load();
 

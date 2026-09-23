@@ -64,6 +64,45 @@ export function indexPayload(payload) {
   return { claims, towns };
 }
 
+/**
+ * The `s` block's level field reads "<sov level>|<building level>". Null where
+ * the sov level does not parse: charging a claim the wrong level is worse than
+ * not charging it.
+ */
+export function claimLevel(claim) {
+  const n = Number(String(claim?.s ?? '').split('|')[0]);
+  return Number.isInteger(n) && n >= 1 && n <= 5 ? n : null;
+}
+
+/**
+ * The strings a town answers to, for matching the `s` block's `t` field against
+ * it. The live payload carries the town's name there; the id is accepted too,
+ * so a claim naming its town by id is not handed to nobody.
+ */
+export function townIdentity(town) {
+  const text = (v) => String(v ?? '').trim();
+  const rec = townRecord(town);
+  const parts = rec ? null : townString(town).split('|');
+  return (rec ? [rec.TownName, rec.TownId] : [parts[0], parts[1]]).map(text).filter(Boolean);
+}
+
+/**
+ * Whether a claim is held by the town named in `town`.
+ *
+ * Sovereignty belongs to a town rather than to a player, so a second city of
+ * yours standing nearby holds its own: `rd` says the claim is yours, and says
+ * nothing about which of your towns pays for it. A claim naming no town is not
+ * attributed to one, since guessing would hand this town its neighbour's
+ * sovereignty for free.
+ */
+export function isTownsClaim(claim, town) {
+  if (!claim || claim.rd !== 'Yours' || !town?.length) return false;
+  const names = claim.t && typeof claim.t === 'object'
+    ? townIdentity(claim.t)
+    : [String(claim.t ?? '').trim()].filter(Boolean);
+  return names.some((n) => town.includes(n));
+}
+
 export function isClaimable(tile, key, idx, settings) {
   if (!tile || tile.sov !== 1) return false;
   if (tile.imp || tile.brg) return false;
@@ -71,12 +110,29 @@ export function isClaimable(tile, key, idx, settings) {
   const claim = idx.claims.get(key);
   if (claim) {
     // sov:1 means eligible, not available — cross-check `s`. Sovereignty is never
-    // shared, so an alliance member's claim is as unavailable as a stranger's;
-    // your own is the one exception, because relinquishing it and placing it
-    // again is a move you can make.
-    return claim.rd === 'Yours' && !!settings.ownClaimsAvailable;
+    // shared, so an alliance member's claim is as unavailable as a stranger's,
+    // and so is another of your own towns'. What is left is a claim you would
+    // relinquish and place again, and one the planning town holds itself —
+    // either way, ground the plan may use, which is what this answers.
+    return claim.rd === 'Yours'
+      && (!!settings.ownClaimsAvailable || isTownsClaim(claim, settings?.homeTown));
   }
   return true;
+}
+
+/**
+ * The sovereignty level already standing on a tile, which the plan builds on
+ * top of instead of paying for again.
+ *
+ * Zero for anything the planning town does not itself hold and keep — another
+ * town's claim it may take is taken as bare ground, and so is one whose level
+ * does not parse, which overstates the bill rather than reading a level nobody
+ * can see.
+ */
+export function heldLevel(key, idx, settings) {
+  const claim = idx.claims.get(key);
+  if (!isTownsClaim(claim, settings?.preserveTown)) return 0;
+  return claimLevel(claim) ?? 0;
 }
 
 /**
@@ -216,6 +272,8 @@ export function collectNeighbourhood(payload, key, rClaim, idx, settings) {
         continue;
       }
       if (!isClaimable(tile, nKey, idx, settings)) continue;
+      const held = heldLevel(nKey, idx, settings);
+      const claim = idx.claims.get(nKey);
       neighbours.push({
         dx,
         dy,
@@ -223,6 +281,13 @@ export function collectNeighbourhood(payload, key, rClaim, idx, settings) {
         key: nKey,
         i: tile.i,
         water: isWaterTile(tile),
+        // What the tile already carries, so every cost downstream is the
+        // UPGRADE rather than the whole claim.
+        held,
+        // The level of a claim of yours standing here that this plan does not
+        // keep: priced as bare ground, but not ground nobody holds. 0 where the
+        // level does not read, null for a tile carrying no such claim.
+        relaid: held === 0 && claim?.rd === 'Yours' ? (claimLevel(claim) ?? 0) : null,
         // Carried on the tile so the panel never repeats the lookup, and so a
         // plan travelling from the worker arrives with its descriptors already
         // on it. Null where nothing identifies the terrain.

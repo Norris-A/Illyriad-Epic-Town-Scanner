@@ -79,7 +79,7 @@ would I actually build on *this* one".
 | Sovereignty Radius | Blank, which follows the Claim Radius in City Configuration |
 | Starting Tax | 60%, then dragged on the same slider the results carry |
 | Use the Plot Allocation from City Configuration | On — plans the centre tile as you mean to terraform it, rather than on its ratings today |
-| Preserve Existing Sovereignty | Off — on a town of yours, keeps the claims you already hold and charges what they already cost, so the plan is what you can still add |
+| Preserve Existing Sovereignty | Off — on a town of yours, keeps the claims that town itself holds: their research and gold come off the top, and the plan builds on those squares for the cost of the levels it raises them by. A second city of yours nearby keeps its own, which stay as unavailable as a stranger's. Left off on a town of yours, its claims are planned as empty ground at full price, for reworking a layout |
 
 Everything else comes from City Configuration.
 

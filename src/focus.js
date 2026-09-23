@@ -9,7 +9,8 @@
 
 import { PLOT_KEYS, PLOT_TOTAL } from './constants.js';
 import {
-  indexPayload, tileKey, parseRs, collectNeighbourhood, isSettleable,
+  indexPayload, tileKey, parseRs, collectNeighbourhood, isSettleable, claimLevel,
+  townIdentity, isTownsClaim,
 } from './payload.js';
 import { prepareSite, planSiteAt, scoreSiteFrom, claimUpkeep, distance } from './scoring.js';
 
@@ -122,36 +123,36 @@ export function resolvePlots(focus, settings, rs) {
 }
 
 /**
- * The `s` block's level field reads "<level>|?". Null where it does not parse:
- * charging a claim the wrong level is worse than not charging it.
- */
-export function claimLevel(claim) {
-  const n = Number(String(claim?.s ?? '').split('|')[0]);
-  return Number.isInteger(n) && n >= 1 && n <= 5 ? n : null;
-}
-
-/**
- * Your own claims inside the radius, which the city pays for whatever the plan
- * does next.
+ * The claims `town` already holds inside the radius, which it pays for whatever
+ * the plan does next.
  *
  * Level and distance are the whole of a claim's bill, and both are in the
- * payload, so what a kept claim COSTS is always knowable. What it PRODUCES is
- * not: the block's building field is usually "Unknown", so a kept Farmstead's
- * food cannot be credited. The caller says so rather than guessing.
+ * payload, so this is the floor under every plan on the tile: research and gold
+ * already committed, which no plan can free and none may spend twice. What the
+ * plan then does with those squares is priced against this floor — a claim it
+ * builds on is charged only the levels it adds.
  *
- * @returns {{claims: object[], rp: number, unknownLevel: number}} `rp` is the
- *   hourly research the kept claims already spend
+ * `otherTown` counts claims that are yours but another town's, which this one
+ * can no more build on than a stranger's.
+ *
+ * @returns {{claims: object[], rp: number, unknownLevel: number,
+ *   otherTown: number}} `rp` is the hourly research the kept claims already spend
  */
-export function keptClaims({ payload, centre, radius, idx, chancery }) {
+export function keptClaims({ payload, centre, radius, idx, chancery, town }) {
   const claims = [];
   let rp = 0;
   let unknownLevel = 0;
+  let otherTown = 0;
   for (let dy = -radius; dy <= radius; dy++) {
     for (let dx = -radius; dx <= radius; dx++) {
       if (dx === 0 && dy === 0) continue;
       const key = tileKey(centre.y + dy, centre.x + dx);
       const claim = idx.claims.get(key);
       if (!claim || claim.rd !== 'Yours') continue;
+      if (!isTownsClaim(claim, town)) {
+        otherTown += 1;
+        continue;
+      }
       const level = claimLevel(claim);
       if (level === null) {
         unknownLevel += 1;
@@ -163,7 +164,7 @@ export function keptClaims({ payload, centre, radius, idx, chancery }) {
       rp += up.rp;
     }
   }
-  return { claims, rp, unknownLevel };
+  return { claims, rp, unknownLevel, otherTown };
 }
 
 /** Reported, never branched on — the caller only renders these. */
@@ -217,19 +218,40 @@ export function focusSite({ payload, focus, settings }) {
   const { plots, source: plotSource, note: plotNote } = resolvePlots(focus, settings, rs);
   let effective = { ...settings, plots, rClaim: radius };
 
+  // Sovereignty belongs to a town, so there is something to preserve only where
+  // the centre is a town of yours — and only its own claims, never the ones a
+  // second city of yours holds nearby.
+  const centreTown = idx.towns.get(key);
+  const homeTown = centreTown?.rd === 'Yours' ? townIdentity(centreTown) : [];
+  const preserveTown = focus.preserveSovereignty ? homeTown : [];
+
+  // The town's own claims are ground this plan may use whether they are kept or
+  // not: not keeping them means laying them out again, at full price, which is
+  // how a layout that is not optimal gets reworked.
+  if (homeTown.length) effective = { ...effective, homeTown };
+
   // Charged as a research minimum, which is what it is — research the plan may
   // not spend — so ceiling, knapsack budget and balance all read it off the one
   // field instead of three that could disagree. `keptClaimRp` is the gold half.
   //
-  // Keeping a claim and treating it as free ground are opposite instructions, so
-  // preserving overrides ownClaimsAvailable rather than combining with it.
-  const kept = focus.preserveSovereignty
-    ? keptClaims({ payload, centre: focus, radius, idx, chancery: !!settings.chancery })
-    : { claims: [], rp: 0, unknownLevel: 0 };
-  if (focus.preserveSovereignty) {
+  // The town travels with the settings because which levels are already bought
+  // turns on it further down.
+  const kept = preserveTown.length
+    ? keptClaims({
+      payload, centre: focus, radius, idx, chancery: !!settings.chancery, town: preserveTown,
+    })
+    : { claims: [], rp: 0, unknownLevel: 0, otherTown: 0 };
+  // Counted only to be reported: claims the plan was told to ignore are free
+  // ground, and none of their cost is charged.
+  const released = homeTown.length && !preserveTown.length
+    ? keptClaims({
+      payload, centre: focus, radius, idx, chancery: !!settings.chancery, town: homeTown,
+    })
+    : null;
+  if (preserveTown.length) {
     effective = {
       ...effective,
-      ownClaimsAvailable: false,
+      preserveTown,
       keptClaimRp: kept.rp,
       resourceMinimums: {
         ...effective.resourceMinimums,
@@ -286,6 +308,14 @@ export function focusSite({ payload, focus, settings }) {
     plotSource,
     plotNote,
     centre: centreFacts(centre, key, idx),
+    // What was asked for, and the town it could be asked of — null where the
+    // centre carries no town of yours and there is nothing of its own to keep.
+    preserving: !!focus.preserveSovereignty,
+    preserveTown: preserveTown[0] ?? null,
+    homeTown: homeTown[0] ?? null,
+    // How many of the town's own claims were laid out afresh because preserving
+    // was off.
+    released: released ? released.claims.length + released.unknownLevel : 0,
     // Both kept so the caller can re-plan this site without a tile, which needs
     // the settings this plan was made with — the pane overrides two of them.
     neighbours,

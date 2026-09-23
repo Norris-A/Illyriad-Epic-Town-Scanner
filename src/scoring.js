@@ -199,6 +199,19 @@ export function claimUpkeep(d, level, chancery) {
   };
 }
 
+/**
+ * How many levels of a claim at `level` are still to be bought on a tile that
+ * already stands at `held` of them.
+ *
+ * Zero where the standing claim is already at or above it. A tile carries
+ * `held` only where the plan is preserving what is there, and the whole of that
+ * standing bill is charged once as a floor — so charging any of it here as well
+ * would price those levels twice.
+ */
+export function upgradeLevels(level, held = 0) {
+  return Math.max(0, level - (held ?? 0));
+}
+
 // --- Structure upkeep ------------------------------------------------------
 
 /**
@@ -589,18 +602,21 @@ function descriptorBonus(tile, structure) {
  * So the plan is a staircase: levels never rise with distance.
  *
  * **That staircase decomposes into five independent layers.** Let `m[j]` be how
- * many tiles carry level j or better, and let D(m) be the summed distance of the
- * m nearest tiles. Then, writing STEP[j] for what raising one building to level
- * j adds to its hourly bill:
+ * many tiles carry level j or better, and let D_j(m) be the summed distance of
+ * the m nearest tiles, counting as zero any tile whose claim already stands at
+ * level j — that layer is bought, and only the levels above it are still for
+ * sale. Then, writing STEP[j] for what raising one building to level j adds to
+ * its hourly bill:
  *
  *     bonus  = 5 x SUM m[j]
- *     rp     = 10 x chancery x SUM D(m[j])
+ *     rp     = 10 x chancery x SUM D_j(m[j])
  *     upkeep = SUM STEP[j] x m[j]
  *
  * All three are sums of per-layer terms, so the whole problem is five numbers,
- * m[1] >= m[2] >= ... >= m[5]. That ordering does not even need enforcing: every
- * layer costs the same research for the same m, while STEP rises with j, so an
- * out-of-order pair is always strictly improvable by swapping it.
+ * m[1] >= m[2] >= ... >= m[5]. That ordering does not even need enforcing: a
+ * lower layer is never dearer than a higher one for the same m, since a claim
+ * standing at the higher level stands at the lower one too, while STEP rises
+ * with j — so an out-of-order pair is always improvable by swapping it.
  *
  * **The two budgets pull opposite ways**, which is the whole content of the
  * answer. Research wants concentration, because reaching a further tile costs
@@ -623,6 +639,13 @@ function descriptorBonus(tile, structure) {
  * understating rather than by inventing. Making selection bonus-aware means
  * giving up the prefix-sum distance bound the search is built on.
  *
+ * **Tiles are taken nearest-first, which standing claims can make second-best.**
+ * A further tile already at Sov V costs no research to build on, where the
+ * nearer one taken ahead of it has all five levels to buy; a prefix of one
+ * distance order cannot express that. It costs the plan a tile it could have
+ * afforded rather than one it cannot — understating, never inventing, the same
+ * way the descriptor case below does.
+ *
  * **Equal bonuses are broken on research.** Bonus is quantised in fives, so
  * several staircases routinely reach the same total by different routes — one
  * tile at level 2, or two at level 1 — and they are not equally good: gold tracks
@@ -640,10 +663,16 @@ export function planMilsov({ tiles, headroom, chancery, structure }) {
   const f = chancery ? CHANCERY_FACTOR : 1;
   const n = Math.min(tiles.length, Math.floor(headroom.slots));
 
-  // D[m] — summed distance of the m nearest free tiles.
-  const D = [0];
-  for (let i = 0; i < n; i++) D.push(D[i] + tiles[i].d);
-  const rpOf = (m) => CLAIM_RP_PER_LEVEL_DISTANCE * f * D[m];
+  // D[j][m] — summed distance of the m nearest free tiles for layer j, which is
+  // level j+1. A tile whose claim already stands at that level or above adds
+  // nothing: the layer is charged only to the tiles that still have to buy it.
+  const D = [];
+  for (let j = 0; j < MILSOV_MAX_LEVEL; j++) {
+    const pre = [0];
+    for (let i = 0; i < n; i++) pre.push(pre[i] + ((tiles[i].held ?? 0) > j ? 0 : tiles[i].d));
+    D.push(pre);
+  }
+  const rpOf = (j, m) => CLAIM_RP_PER_LEVEL_DISTANCE * f * D[j][m];
 
   const empty = { counts: [0, 0, 0, 0, 0], levels: [], bonus: 0, rp: 0, upkeep: 0, buildings: 0 };
   if (n === 0) return empty;
@@ -663,7 +692,7 @@ export function planMilsov({ tiles, headroom, chancery, structure }) {
       counts,
       levels,
       bonus,
-      rp: counts.reduce((sum, m) => sum + rpOf(m), 0),
+      rp: counts.reduce((sum, m, j) => sum + rpOf(j, m), 0),
       upkeep: counts.reduce((sum, m, j) => sum + MILSOV_UPKEEP_STEP[j] * m, 0),
       buildings: levels.length,
     };
@@ -671,8 +700,8 @@ export function planMilsov({ tiles, headroom, chancery, structure }) {
 
   // Every free tile at the top level. Where both budgets cover it there is
   // nothing to choose and no reason to search for it.
-  if (rpOf(n) * MILSOV_MAX_LEVEL <= headroom.rp + EPS
-      && layerTotal * n <= headroom.upkeep + EPS) {
+  const topRp = D.reduce((sum, _, j) => sum + rpOf(j, n), 0);
+  if (topRp <= headroom.rp + EPS && layerTotal * n <= headroom.upkeep + EPS) {
     return finish(new Array(MILSOV_MAX_LEVEL).fill(n));
   }
 
@@ -690,7 +719,7 @@ export function planMilsov({ tiles, headroom, chancery, structure }) {
     // count, so the feasible counts are the run 0..vMax.
     let vMax = 0;
     while (vMax < cap
-        && rp + rpOf(vMax + 1) <= headroom.rp + EPS
+        && rp + rpOf(j, vMax + 1) <= headroom.rp + EPS
         && upkeep + MILSOV_UPKEEP_STEP[j] * (vMax + 1) <= headroom.upkeep + EPS) vMax++;
 
     for (let v = vMax; v >= 0; v--) {
@@ -706,7 +735,7 @@ export function planMilsov({ tiles, headroom, chancery, structure }) {
         if (bound === best.units && rp >= best.rp - EPS) break;
       }
       m[j] = v;
-      search(j + 1, units + v, rp + rpOf(v), upkeep + MILSOV_UPKEEP_STEP[j] * v, v);
+      search(j + 1, units + v, rp + rpOf(j, v), upkeep + MILSOV_UPKEEP_STEP[j] * v, v);
     }
     m[j] = 0;
   };
@@ -722,13 +751,18 @@ export function planMilsov({ tiles, headroom, chancery, structure }) {
  * a cheaper claim beats it outright.
  */
 function milsovClaims({ tiles, levels, structure, chancery }) {
-  return levels.map((level, i) => ({
-    ...tiles[i],
-    structure,
-    sovLevel: level,
-    buildingLevel: level,
-    ...claimUpkeep(tiles[i].d, level, chancery),
-  }));
+  return levels.map((level, i) => {
+    const held = tiles[i].held ?? 0;
+    return {
+      ...tiles[i],
+      structure,
+      // A standing claim is not given back, so it keeps the level it is at even
+      // where the plan wanted no more than a smaller building on it.
+      sovLevel: Math.max(level, held),
+      buildingLevel: level,
+      ...claimUpkeep(tiles[i].d, upgradeLevels(level, held), chancery),
+    };
+  });
 }
 
 /**
@@ -742,7 +776,8 @@ function milsovBlockedBy({ hosts, free, headroom, chancery }) {
   if (hosts.length === 0) return 'water';
   if (headroom.slots < 1) return 'slots';
   if (headroom.upkeep + 1e-9 < MILSOV_UPKEEP_BY_LEVEL[1]) return 'upkeep';
-  const cheapest = CLAIM_RP_PER_LEVEL_DISTANCE * (chancery ? CHANCERY_FACTOR : 1) * hosts[0].d;
+  const nearest = hosts.reduce((d, t) => Math.min(d, (t.held ?? 0) > 0 ? 0 : t.d), Infinity);
+  const cheapest = CLAIM_RP_PER_LEVEL_DISTANCE * (chancery ? CHANCERY_FACTOR : 1) * nearest;
   if (headroom.rp + 1e-9 < cheapest) return 'rp';
   return null;
 }
@@ -772,10 +807,13 @@ export function prepareSite({ neighbours, settings }) {
     .map((n, idx) => ({ ...n, idx, d: distance(n.dx, n.dy) }))
     .sort((a, b) => a.d - b.d || a.food - b.food);
 
+  // Food sovereignty wants a level 5 claim, so a tile standing at some of that
+  // is charged only the levels between — down to a weight of nothing for one
+  // already there, which is food the city has and has paid for.
   const foodCandidates = byDistance
     .filter((t) => t.food > 0)
     .map((t) => {
-      const up = claimUpkeep(t.d, FOOD_CLAIM_LEVEL, chancery);
+      const up = claimUpkeep(t.d, upgradeLevels(FOOD_CLAIM_LEVEL, t.held), chancery);
       return { ...t, level: FOOD_CLAIM_LEVEL, ...up, weight: Math.round(up.rp) };
     });
   // The most research the city can produce, which is at 0 tax. The budget has to

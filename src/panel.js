@@ -992,10 +992,14 @@ export function focusFormHtml(focus, settings) {
     checked: f.preserveSovereignty,
     hooks: ' data-focus="preserveSovereignty"',
   })}
-        <p class="sov-hint">For a tile you have already settled. On, claims you already hold
-          inside the radius are kept as they are: they are drawn on the grid and the research
-          and gold they already cost are taken off the top, so the plan is what you can still
-          add. Off, the plan is drawn as though the ground were empty.</p>
+        <p class="sov-hint">For a tile you have already settled. On, the claims this town
+          itself holds inside the radius are kept: the research and gold they already cost are
+          taken off the top, and the plan then builds on those squares, paying only for the
+          levels it raises them by. Sovereignty belongs to a town, so a second city of yours
+          nearby keeps its own — those claims stay as unavailable as a stranger's. Off, this
+          town's existing sovereignty is ignored: its claims are planned as empty ground and
+          priced in full, as though given up and laid out again — for reworking a layout that
+          is not optimal.</p>
       </fieldset>
       <p><button type="button" class="sov-focus-run">Optimise</button></p>
       <p class="sov-hint">Everything else — research, city food, chancery, the building cap
@@ -1935,22 +1939,46 @@ function toggleDetail(row, result, settings, onOptimise) {
 }
 
 /**
- * What preserving cost, and what it could not account for. Uncredited production
- * understates a settled city rather than overstating it, so the plan errs toward
- * caution — but the reader still has to be told which way it leans.
+ * What the plan did with the town's existing sovereignty: what keeping it cost
+ * and which claims it reached, or how many claims it laid out afresh. Buildings
+ * on a kept claim are costed as if new, so the plan errs toward caution, and
+ * the reader still has to be told which way it leans.
  */
-function keptNote(kept) {
-  if (!kept?.claims?.length && !kept?.unknownLevel) return '';
+function keptNote(r) {
+  if (!r?.preserving) {
+    if (!r?.released) return '';
+    const one = r.released === 1;
+    return `Preserve Existing Sovereignty is off, so the ${r.released} claim${one ? '' : 's'} `
+      + `${escapeHtml(r.homeTown)} already holds inside the radius ${one ? 'is' : 'are'} `
+      + 'planned as empty ground and priced in full, as though given up and laid out again. '
+      + 'Turn it on to plan around them instead.';
+  }
+  // Sovereignty is a town's, so a tile carrying no town of yours has none of
+  // its own however many of your claims surround it.
+  if (!r.preserveTown) {
+    return 'Preserve Existing Sovereignty is on, but this tile carries no town of yours — '
+      + 'sovereignty belongs to a town, so there is none here to keep and the plan is drawn '
+      + 'on empty ground.';
+  }
+  const kept = r.kept;
   const parts = [];
   if (kept.claims.length) {
-    parts.push(`Keeping ${kept.claims.length} claim${kept.claims.length === 1 ? '' : 's'} you `
-      + `already hold, costing ${Math.round(kept.rp).toLocaleString('en-GB')} research and `
-      + `${Math.round(kept.rp * 10).toLocaleString('en-GB')} gold an hour. The plan below is `
-      + 'what fits on top of that. Any food or military bonus those claims already produce is '
-      + 'not counted — the map does not say what is built on them.');
+    parts.push(`Keeping ${kept.claims.length} claim${kept.claims.length === 1 ? '' : 's'} `
+      + `${escapeHtml(r.preserveTown)} already holds, costing `
+      + `${Math.round(kept.rp).toLocaleString('en-GB')} research and `
+      + `${Math.round(kept.rp * 10).toLocaleString('en-GB')} gold an hour, which is taken off `
+      + 'the top. The plan is free to build on those squares and pays only for the levels it '
+      + 'raises them by. Their buildings are costed as if new.');
   }
   if (kept.unknownLevel) {
-    parts.push(`${kept.unknownLevel} more could not be read and are ignored.`);
+    parts.push(`${kept.unknownLevel} more carry a level that could not be read, `
+      + 'and are planned as bare ground.');
+  }
+  if (kept.otherTown) {
+    const one = kept.otherTown === 1;
+    parts.push(`${kept.otherTown} claim${one ? '' : 's'} of yours inside the radius `
+      + `belong${one ? 's' : ''} to another of your towns, and ${one ? 'is' : 'are'} held `
+      + "against this one on the same terms as a stranger's.");
   }
   return parts.join(' ');
 }
@@ -1965,7 +1993,7 @@ function focusResultHtml(r) {
     r.plotNote,
     `Radius ${r.radius}${r.radiusFromConfig ? ', from City Configuration' : ''}. `
       + `${r.claimable} of the ${r.ring} surrounding tiles are claimable.`,
-    keptNote(r.kept),
+    keptNote(r),
   ].filter(Boolean);
   // Loud, but still not enforced — the plan below is rendered either way.
   const warnings = [];
@@ -2147,6 +2175,22 @@ export function descriptorBadge(tile) {
  *   Non-finite coordinates fall back to offset labels
  * @returns {string} the grid, with its legend under it
  */
+/** "your Sov III claim", or "your claim" where its level did not read. */
+function relaidText(t) {
+  return t.relaid > 0 ? `your Sov ${roman(t.relaid)} claim` : 'your claim';
+}
+
+/**
+ * A claim's research, said as an upgrade where one is kept standing, and as a
+ * replacement where one of yours is given up and laid out again.
+ */
+function claimCostText(t) {
+  const held = t.held ?? 0;
+  if (held > 0) return `${t.rp.toFixed(0)} RP on top of the Sov ${roman(held)} claim already there`;
+  if (t.relaid != null) return `${t.rp.toFixed(0)} RP, replacing ${relaidText(t)}`;
+  return `${t.rp.toFixed(0)} RP`;
+}
+
 export function planGridHtml(plan, geom) {
   const r = Math.max(1, Math.round(geom?.radius ?? 0) || spanOf(plan));
   const cx = geom?.x;
@@ -2162,14 +2206,30 @@ export function planGridHtml(plan, geom) {
   const name = (dx, dy) => (absolute ? `${cx + dx}|${cy + dy}` : `${signed(dx)},${signed(dy)}`);
 
   const specs = new Map();
+  // Set by whichever square is actually drawn as kept, since a kept claim the
+  // plan built on is drawn as the claim it became and wants no legend entry.
+  let anyKept = false;
 
   // `free` goes down first because the other two overwrite it: military claims
   // are placed on free tiles, so those squares appear in both lists.
   for (const t of plan.free ?? []) {
-    specs.set(cellKey(t.dx, t.dy), {
+    // A square the plan passed over that carries a kept claim is not ground going
+    // spare: it is a claim you keep paying for and build nothing on.
+    const held = t.held ?? 0;
+    if (held > 0) anyKept = true;
+    specs.set(cellKey(t.dx, t.dy), held > 0 ? {
+      cls: 'sov-cell-kept',
+      badge: descriptorBadge(t),
+      title: `${name(t.dx, t.dy)} — Sov ${roman(held)} claim you already hold, food ${
+        t.food}, distance ${t.d.toFixed(2)}. Kept as it is${descriptorText(t)}`,
+      level: roman(held),
+      body: 'kept',
+    } : {
       cls: t.water ? 'sov-cell-free sov-cell-water' : 'sov-cell-free',
       badge: descriptorBadge(t),
-      title: `${name(t.dx, t.dy)} — unclaimed${t.water ? ' water' : ''}, food ${t.food}, `
+      title: `${name(t.dx, t.dy)} — ${t.relaid != null
+        ? `${relaidText(t)}${t.water ? ' on water' : ''}, given up in this plan`
+        : `unclaimed${t.water ? ' water' : ''}`}, food ${t.food}, `
         + `distance ${t.d.toFixed(2)}${descriptorText(t)}`,
       body: `${FOOD_ICON} ${t.food}`,
     });
@@ -2179,7 +2239,7 @@ export function planGridHtml(plan, geom) {
       cls: 'sov-cell-food',
       badge: descriptorBadge(t),
       title: `${name(t.dx, t.dy)} — Sov ${roman(t.level)} food claim, food ${t.food}, `
-        + `distance ${t.d.toFixed(2)}, ${t.rp.toFixed(0)} RP${descriptorText(t)}`,
+        + `distance ${t.d.toFixed(2)}, ${claimCostText(t)}${descriptorText(t)}`,
       level: roman(t.level),
       body: `${FOOD_ICON} ${t.food}`,
     });
@@ -2192,7 +2252,7 @@ export function planGridHtml(plan, geom) {
       badge: descriptorBadge(m),
       title: `${name(m.dx, m.dy)} — Sov ${roman(m.sovLevel)} claim carrying a level `
         + `${m.buildingLevel} ${structure.name}, distance ${m.d.toFixed(2)}, `
-        + `${m.rp.toFixed(0)} RP, ${structureUpkeep(m).toLocaleString('en-GB')}/hr upkeep`
+        + `${claimCostText(m)}, ${structureUpkeep(m).toLocaleString('en-GB')}/hr upkeep`
         + descriptorText(m),
       level: roman(m.sovLevel),
       body: `${icon ? `<img src="${icon}" alt="${escapeHtml(structure.name)}">` : ''} L${
@@ -2216,10 +2276,11 @@ export function planGridHtml(plan, geom) {
     }
     const spec = specs.get(cellKey(dx, dy));
     if (!spec) {
-      // A kept claim is not in the plan — it was never claimable — so it is
-      // drawn from the site's own record rather than from `plan`.
+      // A kept claim on a tile the planner was never offered is in none of the
+      // plan's lists, so it is drawn from the site's own record.
       const k = kept.get(cellKey(dx, dy));
       if (k) {
+        anyKept = true;
         return gridCell({
           cls: 'sov-cell-kept',
           title: `${name(dx, dy)} — Sov ${roman(k.level)} claim you already hold, distance ${
@@ -2245,7 +2306,7 @@ export function planGridHtml(plan, geom) {
       <b class="sov-key-mil">I–V</b> military claim with its building level,
       <b class="sov-key-free">grey</b> claimable but unclaimed,
       <b class="sov-key-out">✕</b> not available${
-  kept.size ? ', <b class="sov-key-kept">I–V</b> already yours and kept' : ''}.${
+  anyKept ? ', <b class="sov-key-kept">I–V</b> already yours and kept' : ''}.${
   pickable ? ' Click a tile to cross it out and re-plan without it.' : ''}
       A tile's third line is its terrain bonus, if it has one.
       Hover for distance, research cost, upkeep and the full descriptor.</p>`;

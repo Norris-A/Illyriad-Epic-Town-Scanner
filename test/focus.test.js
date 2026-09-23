@@ -13,15 +13,15 @@ import {
   focusRadius,
   resolvePlots,
   focusSite,
-  claimLevel,
   keptClaims,
 } from '../src/focus.js';
-import { DEFAULT_SETTINGS, PLOT_TOTAL } from '../src/constants.js';
+import { DEFAULT_SETTINGS, PLOT_TOTAL, FOOD_CLAIM_LEVEL } from '../src/constants.js';
 import {
   tileKey, indexPayload, townString, townRecord, neighbourhood, inWorld, isWaterTile,
+  claimLevel,
 } from '../src/payload.js';
 import { scoreSite, claimUpkeep, distance } from '../src/scoring.js';
-import { focusFormHtml, ownTowns } from '../src/panel.js';
+import { focusFormHtml, ownTowns, planGridHtml } from '../src/panel.js';
 
 const settings = { ...DEFAULT_SETTINGS, tMin: -1000 };
 
@@ -145,13 +145,30 @@ test('ratings that are not a 25-plot allocation fall back rather than mislead', 
 
 // --- sovereignty the city already holds -------------------------------------
 
-/** The same payload, with `n` of the nearest ring already claimed by you. */
-function withOwnClaims(n = 3, level = 3) {
-  const payload = payloadAround();
+// Sovereignty is a town's, not a player's, so every fixture here has to say
+// which town: one on the centre tile, and a name on each claim it holds.
+const HOME = 'Rivermeet';
+const NEXT_DOOR = 'Ashford';
+
+/** The centre tile as a town of yours, in the record shape the live game sends. */
+function withTown(payload, name = HOME, id = '1') {
+  payload.t[tileKey(100, 100)] = {
+    t: { TownName: name, TownId: id, X: '100', Y: '100' },
+    rd: 'Yours',
+  };
+  return payload;
+}
+
+const ownClaim = (level, town = HOME) =>
+  ({ rd: 'Yours', s: `${level}|?`, b: 'Unknown', t: town });
+
+/** The same payload, with `n` of the nearest ring already claimed by `town`. */
+function withOwnClaims(n = 3, level = 3, town = HOME) {
+  const payload = withTown(payloadAround());
   const ring = [[1, 0], [0, 1], [-1, 0], [0, -1], [1, 1], [-1, -1]].slice(0, n);
   payload.s = {};
   for (const [dx, dy] of ring) {
-    payload.s[tileKey(100 + dy, 100 + dx)] = { rd: 'Yours', s: `${level}|?`, b: 'Unknown' };
+    payload.s[tileKey(100 + dy, 100 + dx)] = ownClaim(level, town);
   }
   return payload;
 }
@@ -165,31 +182,53 @@ test("a claim's level comes out of the s block, and a bad one is refused", () =>
   }
 });
 
-test('only your own claims inside the radius are kept, and only readable ones', () => {
+test('only this town\'s own claims inside the radius are kept, and only readable ones', () => {
   const payload = withOwnClaims(3);
-  // An alliance claim and one with an unreadable level, both of which must not
-  // be billed to you.
+  // An alliance claim, one of yours with an unreadable level, one belonging to
+  // another town of yours, and one naming no town at all. None may be billed to
+  // this town, and only the second is a claim it would have kept.
   payload.s[tileKey(102, 100)] = { rd: 'Alliance', s: '5|?' };
-  payload.s[tileKey(100, 102)] = { rd: 'Yours', s: '?|?' };
+  payload.s[tileKey(100, 102)] = { rd: 'Yours', s: '?|?', t: HOME };
+  payload.s[tileKey(98, 100)] = ownClaim(5, NEXT_DOOR);
+  payload.s[tileKey(100, 98)] = { rd: 'Yours', s: '5|?' };
   const kept = keptClaims({
-    payload, centre: { x: 100, y: 100 }, radius: 2, idx: indexPayload(payload), chancery: false,
+    payload,
+    centre: { x: 100, y: 100 },
+    radius: 2,
+    idx: indexPayload(payload),
+    chancery: false,
+    town: [HOME, '1'],
   });
   assert.equal(kept.claims.length, 3, 'the alliance claim is not yours to keep');
   assert.equal(kept.unknownLevel, 1);
+  assert.equal(kept.otherTown, 2, 'another town\'s claim, and one that names no town');
   // Level and distance are the whole of the bill, and both are known.
   const expected = [[1, 0], [0, 1], [-1, 0]]
     .reduce((sum, [dx, dy]) => sum + claimUpkeep(distance(dx, dy), 3, false).rp, 0);
   close(kept.rp, expected, 1e-9);
 });
 
+/**
+ * The same payload, with the three corners already yours. Every tile here rates
+ * the same food, so the corners are the ones a plan drops when the building cap
+ * binds — which makes their bill pure cost, and the ceiling it takes visible.
+ */
+function withCornerClaims(level = 3) {
+  const payload = withTown(payloadAround());
+  payload.s = {};
+  for (const [dx, dy] of [[2, 2], [-2, -2], [2, -2]]) {
+    payload.s[tileKey(100 + dy, 100 + dx)] = ownClaim(level);
+  }
+  return payload;
+}
+
 test('preserving charges the research and gold the kept claims already cost', () => {
-  const payload = withOwnClaims(3);
-  const free = run({ preserveSovereignty: false }, settings, payload);
-  const held = run({ preserveSovereignty: true }, settings, payload);
+  const free = run({ preserveSovereignty: false }, settings, withTown(payloadAround()));
+  const held = run({ preserveSovereignty: true }, settings, withCornerClaims());
 
   assert.ok(held.kept.claims.length === 3 && held.kept.rp > 0, 'precondition: something is kept');
-  // Research already spent is research the plan may not spend, so the ceiling
-  // has to come down — and by no more than the claims actually cost.
+  // Research already committed is research the plan may not spend, so the same
+  // ground carrying claims reaches a lower ceiling than ground carrying none.
   assert.ok(held.base.tMax < free.base.tMax, 'kept claims must cost the site tax');
 
   // The gold bill is exact: the plan's own claims at 10:1, plus the kept ones.
@@ -201,24 +240,197 @@ test('preserving charges the research and gold the kept claims already cost', ()
   assert.ok(held.base.goldNet < free.base.goldNet, 'and must cost it gold');
 });
 
-// Keeping a claim and treating it as free ground are opposite instructions.
-test('preserving overrides "treat your own claims as available"', () => {
-  const payload = withOwnClaims(3);
-  const s = { ...settings, ownClaimsAvailable: true };
-  const held = run({ preserveSovereignty: true }, s, payload);
-  assert.equal(held.settings.ownClaimsAvailable, false);
-  // The kept tiles are not offered to the planner as ground it can take.
+test('a kept claim is ground the plan may still use, and is charged the upgrade only', () => {
+  const payload = withOwnClaims(3, 3);
+  const held = run({ preserveSovereignty: true }, settings, payload);
+
   for (const k of held.kept.claims) {
+    const n = held.neighbours.find((t) => t.dx === k.dx && t.dy === k.dy);
+    assert.ok(n, `${k.dx},${k.dy} is kept but was never offered to the planner`);
+    assert.equal(n.held, 3);
+  }
+
+  // Every kept tile here is food-bearing and nearest, so the plan takes them —
+  // at two levels apiece, not five, the other three being already paid for.
+  for (const k of held.kept.claims) {
+    const t = held.base.tiles.find((c) => c.dx === k.dx && c.dy === k.dy);
+    assert.ok(t, `${k.dx},${k.dy} was not claimed`);
+    assert.equal(t.level, FOOD_CLAIM_LEVEL, 'food sovereignty is still a level 5 claim');
+    close(t.rp, claimUpkeep(distance(k.dx, k.dy), FOOD_CLAIM_LEVEL - 3, false).rp, 1e-9);
+  }
+});
+
+test('a claim already at level 5 costs the food plan nothing to take', () => {
+  const payload = withOwnClaims(1, 5);
+  const held = run({ preserveSovereignty: true }, settings, payload);
+  const [k] = held.kept.claims;
+  const t = held.base.tiles.find((c) => c.dx === k.dx && c.dy === k.dy);
+  assert.ok(t, 'a claim already at food level is food the city has');
+  assert.equal(t.rp, 0);
+  assert.equal(t.weight, 0);
+});
+
+// Whether you would give a claim back does not arise on one you are keeping.
+test('preserving does not depend on "treat your own claims as available"', () => {
+  const payload = withOwnClaims(3);
+  const on = run({ preserveSovereignty: true }, { ...settings, ownClaimsAvailable: true }, payload);
+  const off = run({ preserveSovereignty: true }, { ...settings, ownClaimsAvailable: false }, payload);
+  assert.equal(on.base.tMax, off.base.tMax);
+  assert.equal(on.neighbours.length, off.neighbours.length);
+  for (const k of off.kept.claims) {
     assert.ok(
-      !held.neighbours.some((n) => n.dx === k.dx && n.dy === k.dy),
-      `${k.dx},${k.dy} is both kept and claimable`,
+      off.neighbours.some((n) => n.dx === k.dx && n.dy === k.dy),
+      `${k.dx},${k.dy} is kept but not plannable`,
     );
   }
 });
 
+// The claims are the same ground either way; preserving only says who has
+// already paid for part of it.
+test('preserving beats replanning the same tiles from scratch', () => {
+  const payload = withOwnClaims(3, 3);
+  const s = { ...settings, ownClaimsAvailable: true };
+  const held = run({ preserveSovereignty: true }, s, payload);
+  const rebuilt = run({ preserveSovereignty: false }, s, payload);
+  assert.ok(held.base.tMax >= rebuilt.base.tMax - 1e-9,
+    'levels already bought cannot make a site worse than buying them again');
+});
+
 test('nothing is kept when the setting is off, whatever the map holds', () => {
   const r = run({ preserveSovereignty: false }, settings, withOwnClaims(3));
-  assert.deepEqual(r.kept, { claims: [], rp: 0, unknownLevel: 0 });
+  assert.deepEqual(r.kept, { claims: [], rp: 0, unknownLevel: 0, otherTown: 0 });
+  assert.ok(r.neighbours.every((n) => n.held === 0), 'nothing is standing on ground left empty');
+});
+
+test("off, the town's own claims are ground to lay out again, at full price", () => {
+  const payload = withOwnClaims(3, 3);
+  const r = run({ preserveSovereignty: false }, settings, payload);
+  assert.equal(r.homeTown, HOME);
+  assert.equal(r.released, 3);
+  assert.equal(r.settings.keptClaimRp, undefined, 'nothing ignored is charged');
+  for (const [dx, dy] of [[1, 0], [0, 1], [-1, 0]]) {
+    const n = r.neighbours.find((t) => t.dx === dx && t.dy === dy);
+    assert.ok(n, `${dx},${dy} is this town's own, so a rework may use it`);
+    assert.equal(n.held, 0, 'and pays for every level of it');
+  }
+});
+
+// A claim given up for the rework is priced as bare ground, but is not ground
+// nobody holds, and the grid must not say it is.
+test("off, the grid names the town's claims as yours rather than unclaimed", () => {
+  const r = run({ preserveSovereignty: false }, settings, withOwnClaims(3, 3));
+  const html = planGridHtml(r.plan, { radius: r.radius, x: r.x, y: r.y });
+  for (const at of ['101|100', '100|101', '99|100']) {
+    const title = html.split('title="').find((t) => t.startsWith(`${at} — `))?.split('"')[0];
+    assert.ok(title, `${at} has no tooltip`);
+    assert.match(title, /your Sov III claim/, `${at}: ${title}`);
+    assert.doesNotMatch(title, /unclaimed/, `${at}: ${title}`);
+  }
+});
+
+// --- whose sovereignty it is ------------------------------------------------
+
+// The shapes the live game sends: the town as a pipe string, and a claim naming
+// its town by bare name, with the level ahead of the building's.
+test('claims in the live payload shape are matched to the town that holds them', () => {
+  const payload = payloadAround({ cx: 360, cy: -3178 });
+  payload.t = {
+    '-3178|360': {
+      t: 'Eruyt|602050|360|-3178|8939|444185|2|1|75|1|Firebolty|YARR!|0|2-elf-|3',
+      r: 100,
+      rd: 'Yours',
+      v: 14,
+      p: 444185,
+    },
+  };
+  const claim = (t, s, b) => ({
+    r: 100, rd: 'Yours', pn: 'Firebolty', t, a: 'YARR!', s, b, v: 4.5, p: 444185,
+  });
+  payload.s = {
+    '-3179|359': claim('Eruyt', '3|3', 'Fishery'),
+    '-3177|360': claim('Eruyt', '5|4', 'Fishery'),
+    '-3180|361': claim('Yascaret', '5|4', 'Fishery'),
+  };
+
+  const held = run({ x: 360, y: -3178, preserveSovereignty: true }, settings, payload);
+  assert.equal(held.preserveTown, 'Eruyt');
+  assert.equal(held.kept.claims.length, 2);
+  assert.equal(held.kept.otherTown, 1);
+  assert.equal(held.neighbours.find((t) => t.dx === -1 && t.dy === -1).held, 3);
+  assert.equal(held.neighbours.find((t) => t.dx === 0 && t.dy === 1).held, 5);
+  assert.ok(!held.neighbours.some((t) => t.dx === 1 && t.dy === -2), "Yascaret's claim is not Eruyt's");
+
+  const rework = run({ x: 360, y: -3178, preserveSovereignty: false }, settings, payload);
+  assert.equal(rework.released, 2);
+  assert.ok(rework.neighbours.some((t) => t.dx === 0 && t.dy === 1));
+  assert.ok(!rework.neighbours.some((t) => t.dx === 1 && t.dy === -2));
+});
+
+test('a second city of yours keeps its own claims, and lends this one none', () => {
+  const payload = withOwnClaims(3, 5, NEXT_DOOR);
+  const held = run({ preserveSovereignty: true }, settings, payload);
+
+  assert.equal(held.preserveTown, HOME);
+  assert.equal(held.kept.claims.length, 0, 'the neighbour pays its own bill');
+  assert.equal(held.kept.otherTown, 3);
+  assert.equal(held.kept.rp, 0);
+  // Unavailable on exactly the terms a stranger's claim is.
+  for (const [dx, dy] of [[1, 0], [0, 1], [-1, 0]]) {
+    assert.ok(
+      !held.neighbours.some((n) => n.dx === dx && n.dy === dy),
+      `${dx},${dy} belongs to another town and must not be plannable`,
+    );
+  }
+
+  // And preserving must not have changed what that setting does with them.
+  const bare = run({ preserveSovereignty: false }, settings, payload);
+  assert.equal(held.neighbours.length, bare.neighbours.length);
+  assert.equal(held.base.tMax, bare.base.tMax);
+});
+
+test("another town's claim is free ground only where you would relinquish it", () => {
+  const payload = withOwnClaims(3, 5, NEXT_DOOR);
+  const s = { ...settings, ownClaimsAvailable: true };
+  const held = run({ preserveSovereignty: true }, s, payload);
+  for (const [dx, dy] of [[1, 0], [0, 1], [-1, 0]]) {
+    const n = held.neighbours.find((t) => t.dx === dx && t.dy === dy);
+    assert.ok(n, `${dx},${dy} is a claim you would give back, so it is takeable`);
+    assert.equal(n.held, 0, 'but its levels were bought by another town, not this one');
+  }
+});
+
+test('a tile carrying no town of yours has no sovereignty of its own to keep', () => {
+  const payload = withOwnClaims(3, 5);
+  delete payload.t[tileKey(100, 100)];
+  const held = run({ preserveSovereignty: true }, settings, payload);
+  assert.equal(held.preserving, true);
+  assert.equal(held.preserveTown, null);
+  assert.deepEqual(held.kept, { claims: [], rp: 0, unknownLevel: 0, otherTown: 0 });
+  assert.ok(held.neighbours.every((n) => n.held === 0));
+});
+
+test('a town of someone else\'s on the centre tile keeps nothing either', () => {
+  const payload = withOwnClaims(3, 5);
+  payload.t[tileKey(100, 100)].rd = 'Alliance';
+  const held = run({ preserveSovereignty: true }, settings, payload);
+  assert.equal(held.preserveTown, null);
+  assert.equal(held.kept.claims.length, 0);
+});
+
+test('a claim naming the town by id rather than by name is still its own', () => {
+  const payload = withOwnClaims(3, 5, '1');
+  const held = run({ preserveSovereignty: true }, settings, payload);
+  assert.equal(held.kept.claims.length, 3);
+  assert.equal(held.kept.otherTown, 0);
+});
+
+test('a claim whose level will not read is planned as bare ground', () => {
+  const payload = withOwnClaims(1);
+  payload.s[tileKey(100, 101)] = { rd: 'Yours', s: '?|?', t: HOME };
+  const held = run({ preserveSovereignty: true }, settings, payload);
+  assert.equal(held.kept.unknownLevel, 1);
+  const n = held.neighbours.find((t) => t.dx === 1 && t.dy === 0);
+  assert.equal(n.held, 0, 'a level nobody read is charged in full rather than guessed');
 });
 
 // --- picking one of your own towns ------------------------------------------

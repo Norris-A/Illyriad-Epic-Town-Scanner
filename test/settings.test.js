@@ -99,7 +99,7 @@ test('the defaults render into the form without throwing', () => {
 test('the research reading is drawn as an override', () => {
   const html = settingsFormHtml(DEFAULT_SETTINGS);
   assert.ok(
-    html.includes('<fieldset class="sov-f-block sov-override" data-key="rpCalibration">'),
+    /<fieldset class="sov-f-block sov-override" data-key="rpCalibration"[\s>]/.test(html),
     'the research reading is not framed as an override',
   );
   assert.equal((html.match(/<legend>Override — /g) ?? []).length, 1);

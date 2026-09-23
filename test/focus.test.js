@@ -21,7 +21,7 @@ import {
   claimLevel,
 } from '../src/payload.js';
 import { scoreSite, claimUpkeep, distance } from '../src/scoring.js';
-import { focusFormHtml, ownTowns, planGridHtml } from '../src/panel.js';
+import { focusFormHtml, ownTowns, planGridHtml, claimHolderText } from '../src/panel.js';
 
 const settings = { ...DEFAULT_SETTINGS, tMin: -1000 };
 
@@ -760,4 +760,12 @@ test('claimable water is planned for food but never for a structure', () => {
   for (const m of [...r.base.milsov, ...r.plan.milsov]) {
     assert.equal(m.water, false, `a Jousting Yard was placed on water at ${m.key}`);
   }
+});
+
+test('a claimed tile says who holds it, in words', () => {
+  assert.equal(claimHolderText('Yours'), 'One of your towns holds sovereignty on this tile.');
+  assert.equal(claimHolderText('Alliance'), 'An alliance member holds sovereignty on this tile.');
+  // The live payload sends this one with a trailing space.
+  assert.equal(claimHolderText('Confed '), 'A confederate holds sovereignty on this tile.');
+  assert.equal(claimHolderText('someone'), 'Another player holds sovereignty on this tile.');
 });

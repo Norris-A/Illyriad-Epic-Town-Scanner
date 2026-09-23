@@ -664,8 +664,7 @@ export const SETTINGS_FIELDS = [
     label: 'Minimise when off the World Map',
     type: 'checkbox',
     menu: true,
-    hint: 'Folds the panel down to its icon on any page other than the World Map — the '
-      + 'only page where the scanner has map data to read.',
+    hint: 'Folds the panel to its icon on any page but the World Map, the only one with map data.',
   },
 ];
 
@@ -767,7 +766,7 @@ function checkboxFieldHtml(f, value) {
     label: escapeHtml(f.label),
     checked: value,
     hooks: ` data-key="${f.key}"`,
-    row: ` data-key="${f.key}"`,
+    row: ` data-key="${f.key}"${attr('title', f.hint)}`,
   });
 }
 
@@ -778,9 +777,9 @@ function plotsFieldHtml(f, plots) {
       <input type="number" data-plot="${p}" min="0" max="${PLOT_TOTAL}"
         step="1" value="${plots?.[p] ?? 0}" id="${id}"></div>`;
   }).join('');
-  return `<div class="sov-f-block" data-key="${f.key}">
-      <p class="sov-hint">${escapeHtml(f.label)} — how the settle tile's ${PLOT_TOTAL} plots are
-        split. The five must total ${PLOT_TOTAL}. Terraforming applies to the settle tile only.</p>
+  return `<div class="sov-f-block" data-key="${f.key}"
+      title="How the settle tile's ${PLOT_TOTAL} plots are split. Terraforming applies to the settle tile only.">
+      <p class="sov-hint">${escapeHtml(f.label)}</p>
       <div class="sov-plot-fields">${fields}</div>
       <div class="sov-plot-sum">
         <span class="sov-plot-total"></span>
@@ -791,12 +790,9 @@ function plotsFieldHtml(f, plots) {
 }
 
 function calibrationFieldHtml(f, cal) {
-  return `<fieldset class="sov-f-block sov-override" data-key="${f.key}">
+  return `<fieldset class="sov-f-block sov-override" data-key="${f.key}"
+      title="Your city's research per hour as the game shows it, and the tax it was read at. Replaces the Library's own output. Leave the two tick-boxes above as your city has them: their bonuses are taken out of the reading.">
       <legend>Override — ${escapeHtml(f.label)}</legend>
-      <p class="sov-hint">Read your city's actual research output off the game and enter it
-        here, with the tax rate it was read at. It replaces the Library's own output.
-        Leave the two tick-boxes above set as your city has them: those bonuses are part of
-        the figure you read, and are subtracted from it rather than replaced by it.</p>
       ${fieldRowHtml({
     id: 'sov-in-cal-observedRpPerHour',
     label: 'Observed research per hour',
@@ -828,11 +824,9 @@ function boostersFieldHtml(f, boosters) {
     hooks: ` data-booster="${res}"`,
     row: ` data-booster-row="${res}"`,
   })).join('');
-  return `<div class="sov-f-block" data-key="${f.key}">
-      <p class="sov-hint">${escapeHtml(f.label)} — each adds ${RESOURCE_BOOSTER_BONUS}% to that
-        resource's production percentage, the same way the Flour Mill adds to food. It is added
-        to that percentage rather than multiplied into it, so it is worth a straight
-        ${RESOURCE_BOOSTER_BONUS} points of tax headroom against the resource's ceiling.</p>
+  return `<div class="sov-f-block" data-key="${f.key}"
+      title="Each adds ${RESOURCE_BOOSTER_BONUS}% to that resource's production: ${RESOURCE_BOOSTER_BONUS} points of tax headroom against its ceiling.">
+      <p class="sov-hint">${escapeHtml(f.label)}</p>
       ${boxes}
     </div>`;
 }
@@ -850,11 +844,8 @@ function prestigeFieldHtml(f, prestige) {
     hooks: ` data-prestige="${key}"`,
     row: ` data-prestige-row="${key}"`,
   })).join('');
-  return `<div class="sov-f-block" data-key="${f.key}">
-      <p class="sov-hint">+${PRESTIGE_PRODUCTION_BONUS}% on the production percentage,
-        cumulative with spells and sovereignty. Added rather than multiplied, so each is worth
-        ${PRESTIGE_PRODUCTION_BONUS} points of tax headroom — half a booster building. Tick
-        only what the boost is actually running on: these move every ceiling they touch.</p>
+  return `<div class="sov-f-block" data-key="${f.key}"
+      title="Each adds ${PRESTIGE_PRODUCTION_BONUS}% to that production: ${PRESTIGE_PRODUCTION_BONUS} points of tax headroom. Tick only what the boost is running on.">
       ${boxes}
     </div>`;
 }
@@ -875,13 +866,9 @@ function minimumsFieldHtml(f, minimums) {
         value="${minimums?.[key] ?? 0}" id="${id}">`,
     });
   }).join('');
-  return `<div class="sov-f-block" data-key="${f.key}">
-      <p class="sov-hint">${escapeHtml(f.label)} — how much of each must still be free once
-        the plan is paid for: the four resources after sovereignty upkeep, food after the
-        town has eaten, research after the claims. Zero spends the lot, which is what a
-        city sitting exactly on a ceiling does — it can run what it has placed and never
-        build, grow or trade on top of it. Each figure lowers the ceiling it belongs to by
-        its own worth in production points.</p>
+  return `<div class="sov-f-block" data-key="${f.key}"
+      title="How much of each must still be free once the plan is paid for: resources after upkeep, food after the town eats, research after the claims. Zero spends it all, leaving nothing to build, grow or trade with.">
+      <p class="sov-hint">${escapeHtml(f.label)}</p>
       ${boxes}
     </div>`;
 }
@@ -904,15 +891,9 @@ function milsovFieldHtml(f, structure) {
     id: `sov-in-${f.key}`,
     label: escapeHtml(f.label),
     control: `<select data-key="${f.key}" id="sov-in-${f.key}"
-          title="Which structure to place on the tiles the food plan leaves free">
+          title="Which structure to place on the tiles the food plan leaves free. It only uses what food leaves over, so it never costs the site tax.">
           <option value=""${structure ? '' : ' selected'}>None — food only</option>${opts}</select>`,
   })}
-      <p class="sov-hint">Food is planned first and sets the tax. Military sovereignty is
-        then fitted into what that plan leaves over — the research it did not spend, the
-        tiles it did not claim, and what the city can still afford to run — so it never
-        costs the site a point of tax. Each result says how much it fitted and what one
-        more point of tax would buy. The minimum below drops sites that fit less than
-        you want; it does not make them fit more.</p>
     </div>`;
 }
 
@@ -951,9 +932,7 @@ export function settingsFormHtml(settings) {
       ${body}
       <p class="sov-hint sov-derived-food"></p>
       <p><button type="button" class="sov-reset sec">Reset to Defaults</button></p>
-      <p class="sov-hint">This configuration is saved in this browser as you edit it and
-        restored next time. It is applied to the map on the next Scan, and to a single
-        tile on the next Optimise.</p>
+      <p class="sov-hint">Saved in this browser as you edit.</p>
       <p class="sov-hint sov-store-note"></p>
     </form>`;
 }
@@ -967,8 +946,12 @@ export function settingsFormHtml(settings) {
 export function settingsMenuHtml(settings) {
   const fields = SETTINGS_FIELDS.filter((f) => f.menu);
   const rows = fields.map((f) =>
-    `${fieldHtml(f, settings)}${f.hint ? `<p class="sov-hint">${escapeHtml(f.hint)}</p>` : ''}`).join('');
+    fieldHtml(f, settings)).join('');
   return `<h3>Settings</h3><form class="sov-menu-form" autocomplete="off">${rows}</form>`;
+}
+
+function focusRadiusTitle(rClaim) {
+  return `How far out sovereignty may be placed. Blank follows City Configuration, currently ${rClaim}.`;
 }
 
 /**
@@ -985,10 +968,8 @@ export function focusFormHtml(focus, settings) {
     id: 'sov-in-town-pick',
     label: 'One of Your Towns',
     control: '<select class="sov-town-pick" id="sov-in-town-pick"><option value="">—</option></select>',
+    row: ' title="Fills the coordinates from a town of yours on the map."',
   })}
-        <p class="sov-hint sov-town-note">Fills the coordinates below from a town of yours on
-          the map. For a town you have already built out, tick Preserve Existing Sovereignty
-          so the plan accounts for the claims it is already paying for.</p>
         <div class="sov-f"><span>Coordinates — x | y</span>
           <span class="sov-xy">
             <input type="number" data-focus="x" step="1" placeholder="x" aria-label="x"${attr('value', f.x)}>
@@ -999,9 +980,8 @@ export function focusFormHtml(focus, settings) {
     label: 'Sovereignty Radius',
     control: `<input type="number" data-focus="radius" min="1" max="6" step="1"
             placeholder="${rClaim}"${attr('value', f.radius)} id="sov-in-focus-radius">`,
+    row: ` data-radius-row title="${focusRadiusTitle(rClaim)}"`,
   })}
-        <p class="sov-hint sov-radius-hint">How far out sovereignty may be placed. Blank
-          follows the claim radius in City Configuration, currently ${rClaim}.</p>
       </fieldset>
       <fieldset><legend>Plan</legend>
         ${fieldRowHtml({
@@ -1015,29 +995,18 @@ export function focusFormHtml(focus, settings) {
     label: 'Use the Plot Allocation from City Configuration',
     checked: f.useConfiguredPlots,
     hooks: ' data-focus="useConfiguredPlots"',
+    row: ` title="On: plan on your ${PLOT_TOTAL}-plot allocation, the tile as you will terraform it. Off: plan on the tile's ratings as they are today."`,
   })}
-        <p class="sov-hint">On, the plan uses the ${PLOT_TOTAL}-plot allocation from City
-          Configuration — the tile as you intend to terraform it. Off, it uses the tile's own
-          resource ratings, as the map reports them today.</p>
         ${checkboxRowHtml({
     id: 'sov-cb-focus-preserveSovereignty',
     label: 'Preserve Existing Sovereignty',
     checked: f.preserveSovereignty,
     hooks: ' data-focus="preserveSovereignty"',
+    row: ' title="On: keep the claims this town already holds, and pay only for the levels the plan adds. Off: lay its claims out afresh at full price, to rework a layout. Claims held by your other towns are never used."',
   })}
-        <p class="sov-hint">For a tile you have already settled. On, the claims this town
-          itself holds inside the radius are kept: the research and gold they already cost are
-          taken off the top, and the plan then builds on those squares, paying only for the
-          levels it raises them by. Sovereignty belongs to a town, so a second city of yours
-          nearby keeps its own — those claims stay as unavailable as a stranger's. Off, this
-          town's existing sovereignty is ignored: its claims are planned as empty ground and
-          priced in full, as though given up and laid out again — for reworking a layout that
-          is not optimal.</p>
       </fieldset>
       <p><button type="button" class="sov-focus-run">Optimise</button></p>
-      <p class="sov-hint">Everything else — research, city food, chancery, the building cap
-        and which military structure to place — comes from City Configuration. Any tile can
-        be examined here, including one already settled, claimed, or too near a town.</p>
+      <p class="sov-hint">Everything else comes from City Configuration.</p>
     </form>
     <div class="sov-focus-status"></div>
     <div class="sov-focus-out"></div>`;
@@ -1599,9 +1568,7 @@ licence and full copyright notice.">ⓘ</a></span></span></h2>
     const { settings: s } = readSettings();
     const rClaim = Math.round(s.rClaim ?? 2);
     focusForm.querySelector('[data-focus="radius"]').placeholder = String(rClaim);
-    focusForm.querySelector('.sov-radius-hint').textContent =
-      'How far out sovereignty may be placed. Blank follows the claim radius in '
-      + `City Configuration, currently ${rClaim}.`;
+    focusForm.querySelector('[data-radius-row]').title = focusRadiusTitle(rClaim);
     syncTownPicker();
   }
 
@@ -2023,6 +1990,16 @@ function keptNote(r) {
  * radius are inputs a reader would otherwise assume, and both move every figure
  * below them.
  */
+/** Who holds sovereignty on a tile, from its claim's `rd`, which reads "Confed " with a trailing space. */
+export function claimHolderText(rd) {
+  const holder = {
+    Yours: 'One of your towns',
+    Alliance: 'An alliance member',
+    Confed: 'A confederate',
+  }[String(rd ?? '').trim()] ?? 'Another player';
+  return `${holder} holds sovereignty on this tile.`;
+}
+
 function focusResultHtml(r) {
   const notes = [
     r.plotNote,
@@ -2030,14 +2007,16 @@ function focusResultHtml(r) {
       + `${r.claimable} of the ${r.ring} surrounding tiles are claimable.`,
     keptNote(r),
   ].filter(Boolean);
-  // Loud, but still not enforced — the plan below is rendered either way.
+  // Loud, but still not enforced — the plan below is rendered either way. A
+  // town's own tile is the settled case this tool plans on purpose, so it is
+  // not warned about, although it reads as unsettleable and claimed.
   const warnings = [];
-  if (!r.centre.settleable) {
-    warnings.push('This tile cannot be settled and its claims cannot be placed — '
-      + 'the plan below is for analysis only.');
+  if (!r.centre.isTown) {
+    if (!r.centre.settleable) {
+      warnings.push('This tile cannot be settled, so the plan below is for analysis only.');
+    }
+    if (r.centre.claimedBy) warnings.push(claimHolderText(r.centre.claimedBy));
   }
-  if (r.centre.isTown) warnings.push('This tile already carries a town.');
-  if (r.centre.claimedBy) warnings.push(`This tile is already claimed (${r.centre.claimedBy}).`);
 
   // The settable rate, which is the one the user types into the game. The
   // fraction behind it is on the plan's own tax instead, where it is a hover.

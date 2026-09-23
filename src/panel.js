@@ -705,6 +705,39 @@ function checkboxRowHtml({ id, label, checked, hooks = '', row = '' }) {
   });
 }
 
+/** The native `checked` accessor, looked up on use: Node has no DOM to find it in. */
+const nativeChecked = () => Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'checked');
+
+/** Set a guarded checkbox, which only this panel and the user may do. */
+function setChecked(el, value) {
+  nativeChecked().set.call(el, !!value);
+}
+
+/**
+ * Pin every checkbox under `container` to what the user and this panel set.
+ *
+ * The panel lives in the game's own document, so a page script that ticks
+ * every checkbox on the page ticks these too. Setting `checked` fires no
+ * event, so nothing notices until the next real edit reads the whole form back
+ * and saves the stray ticks as settings. A user's click never goes through the
+ * `checked` setter, so blocking it stops scripts and nobody else. The game's
+ * own "Check All" is one such script: it sets every checkbox on the page.
+ */
+function guardCheckboxes(container) {
+  for (const el of container.querySelectorAll('input[type="checkbox"]')) {
+    // A control whose property has been written ignores the `checked`
+    // attribute, which is the other way a script could tick it.
+    setChecked(el, nativeChecked().get.call(el));
+    Object.defineProperty(el, 'checked', {
+      configurable: true,
+      get() {
+        return nativeChecked().get.call(this);
+      },
+      set() {},
+    });
+  }
+}
+
 function numberFieldHtml(f, value) {
   const id = `sov-in-${f.key}`;
   return fieldRowHtml({
@@ -1231,6 +1264,8 @@ licence and full copyright notice.">ⓘ</a></span></span></h2>
   menu.hidden = true;
   menu.innerHTML = settingsMenuHtml(opening);
   document.body.appendChild(menu);
+  guardCheckboxes(root);
+  guardCheckboxes(menu);
   const containerFor = (f) => (f.menu ? menu : form);
   let rendered = [];       // the results currently in the table
   let selected = null;     // the row Prefill copies `rs` from
@@ -1342,7 +1377,7 @@ licence and full copyright notice.">ⓘ</a></span></span></h2>
       const v = s[f.key];
       switch (f.type) {
         case 'checkbox':
-          containerFor(f).querySelector(`input[data-key="${f.key}"]`).checked = !!v;
+          setChecked(containerFor(f).querySelector(`input[data-key="${f.key}"]`), v);
           break;
         case 'select':
           containerFor(f).querySelector(`select[data-key="${f.key}"]`).value = String(v);
@@ -1356,16 +1391,16 @@ licence and full copyright notice.">ⓘ</a></span></span></h2>
         case 'calibration':
           form.querySelector('[data-cal="observedRpPerHour"]').value = v?.observedRpPerHour ?? '';
           form.querySelector('[data-cal="atTax"]').value = v?.atTax ?? 0;
-          form.querySelector('[data-cal="prestige"]').checked = !!v?.prestige;
+          setChecked(form.querySelector('[data-cal="prestige"]'), v?.prestige);
           break;
         case 'boosters':
           for (const res of BASIC_RESOURCES) {
-            form.querySelector(`[data-booster="${res}"]`).checked = !!v?.[res];
+            setChecked(form.querySelector(`[data-booster="${res}"]`), v?.[res]);
           }
           break;
         case 'prestige':
           for (const key of PRESTIGE_KEYS) {
-            form.querySelector(`[data-prestige="${key}"]`).checked = !!v?.[key];
+            setChecked(form.querySelector(`[data-prestige="${key}"]`), v?.[key]);
           }
           break;
         case 'minimums':

@@ -28,7 +28,7 @@ import {
   PRODUCTION_LABEL,
   descriptorFor,
 } from './constants.js';
-import { ICONS, APP_ICON_SVG, PRODUCTION_ICONS, STRUCTURE_ICONS, DEFAULT_STRUCTURE_ICON } from './icons.js';
+import { ICONS, APP_ICON_SVG, PRODUCTION_ICONS, STRUCTURE_ICONS } from './icons.js';
 import { extractTowns, tileKey } from './payload.js';
 import {
   computeBOther,
@@ -36,7 +36,6 @@ import {
   computeResearch,
   prestigeBonus,
   researchAt,
-  computeBasicYield,
   sovStructure,
   structureUpkeep,
   prepareSite,
@@ -1055,9 +1054,10 @@ function capitalDerivedHtml(s) {
  *   edit with the settings as read back out of the form, including edits that
  *   fail validation — a half-finished allocation should come back as the user
  *   left it rather than be discarded.
- * @param {() => object|null} [o.getPayload] the map payload on screen, read on
- *   each Optimise press. The optimiser plans on the main thread: it is one
- *   site, and the tax slider already runs the same planner there.
+ * @param {() => object|null} [o.getPayload] the map payload on screen, read
+ *   afresh for each Optimise press and each rebuild of the town picker. The
+ *   optimiser plans on the main thread: it is one site, and the tax slider
+ *   already runs the same planner there.
  */
 export function createPanel({ onScan, onExport, initialSettings, onSettingsChange, getPayload }) {
   const style = document.createElement('style');

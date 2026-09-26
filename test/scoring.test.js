@@ -45,10 +45,9 @@ test("B_other = Flour Mill 40 + Nature's Bounty 20 = 60", () => {
 });
 
 test('the 20 points the baseline needs are the spell, and are counted once', () => {
-  // They used to sit in a free "other" field as an unattributed residual while
-  // the spell defaulted off, so a city that actually had the spell was scored
-  // with both — 80 points where the baseline calls for 60. Every food bonus now
-  // has a named field, and B_other is the only place any of them are totalled.
+  // Every food bonus has a named field, and B_other is the only place any of
+  // them are totalled, so a city with the spell is scored with 60 points, not
+  // the spell counted a second time as 80.
   close(computeBOther(worked), 60, 1e-9);
   close(computeBOther({ ...worked, naturesBounty: false }), 40, 1e-9);
 
@@ -734,8 +733,8 @@ test('with nothing placed the ceiling is absent rather than indicative', () => {
 
 test('the claim is charged on its sovereignty level, the structure on its own', () => {
   // A Sov V claim carrying a level 1 building: 50 RP at d = 1 for the claim, but
-  // only 150/hr of each basic resource for the structure. The engine no longer
-  // plans that split, but tRes must still read the levels apart — that is the
+  // only 150/hr of each basic resource for the structure. The engine does not
+  // plan that split, but tRes must still read the levels apart — that is the
   // schema the whole cost model rests on.
   close(tRes({
     milsovAssignments: [{ sovLevel: 5, buildingLevel: 1 }],
@@ -744,7 +743,7 @@ test('the claim is charged on its sovereignty level, the structure on its own', 
 });
 
 test('a Resource Structure pays its claim but no hourly bill', () => {
-  // The picker does not offer them any more — nothing would stop the search
+  // The picker does not offer them — nothing would stop the search
   // claiming every spare tile with one — but the engine still knows them, and
   // knowing them must not mean a special case.
   const none = { ceiling: Infinity, indicative: false, binding: null, impossible: false };
@@ -1156,8 +1155,9 @@ test('among equally good staircases the cheapest in research wins', () => {
   // Two tiles, one near and one far, and an upkeep budget of exactly 300 —
   // a real boundary, since the bonus is quantised in fives. +10% is reachable
   // twice over: one building at level 2 on the near tile (300/hr, 20 RP) or one
-  // level 1 on each (300/hr, 60 RP). The first descent finds the spread, and
-  // pruning on "cannot beat" instead of "cannot tie" used to keep it.
+  // level 1 on each (300/hr, 60 RP). The first descent finds the spread, so the
+  // search has to keep a branch that can only tie it, not just one that can
+  // beat it.
   const tiles = [{ d: 1 }, { d: 5 }];
   const plan = planMilsov({ tiles, headroom: { rp: 1000, upkeep: 300, slots: 2 }, chancery: false });
   assert.equal(plan.bonus, 10);

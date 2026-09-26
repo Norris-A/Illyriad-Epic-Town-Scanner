@@ -11,7 +11,6 @@ import {
   FOCUS_TAX_FLOOR,
   parseFocus,
   focusRadius,
-  resolvePlots,
   focusSite,
   keptClaims,
 } from '../src/focus.js';

@@ -169,8 +169,7 @@ test('an indicative ceiling exports its figure, its resource and its status', ()
 });
 
 test('a zero-plot resource exports as impossible, not as a numeric sentinel', () => {
-  // -Infinity in a numeric column is what a spreadsheet cannot do anything with,
-  // and it is the value that used to delete the site outright.
+  // -Infinity in a numeric column is what a spreadsheet cannot do anything with.
   const r = row({
     resCeiling: -Infinity, resIndicative: true, resBinding: 'stone', resImpossible: true,
   });

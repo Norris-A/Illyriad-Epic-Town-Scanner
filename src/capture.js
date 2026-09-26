@@ -28,7 +28,7 @@ function looksLikeMapPayload(obj) {
 
 /**
  * The client's own parsed map data, read from the page fresh each call, or null if
- * no known global (nor the mapSVG element) holds any.
+ * no known global holds any.
  */
 function readInPageData() {
   if (typeof window !== 'undefined') {
@@ -36,14 +36,6 @@ function readInPageData() {
       try {
         if (looksLikeMapPayload(window[n])) return window[n];
       } catch (_) { /* cross-origin or getter throw — ignore */ }
-    }
-  }
-  const svg = typeof document !== 'undefined' ? document.getElementById('mapSVG') : null;
-  if (svg) {
-    for (const prop of Object.keys(svg)) {
-      try {
-        if (looksLikeMapPayload(svg[prop])) return svg[prop];
-      } catch (_) { /* ignore */ }
     }
   }
   return null;
@@ -69,14 +61,6 @@ export function probeInPageData() {
     try {
       if (looksLikeMapPayload(window[n])) hits.push({ source: `window.${n}`, value: window[n] });
     } catch (_) { /* cross-origin or getter throw — ignore */ }
-  }
-  const svg = document.getElementById('mapSVG');
-  if (svg) {
-    for (const prop of Object.keys(svg)) {
-      try {
-        if (looksLikeMapPayload(svg[prop])) hits.push({ source: `mapSVG.${prop}`, value: svg[prop] });
-      } catch (_) { /* ignore */ }
-    }
   }
   return hits;
 }

@@ -60,18 +60,17 @@ export const MILSOV_MAX_LEVEL = 5;
 // A claimed tile carries two levels, set independently in game: the claim's
 // SOVEREIGNTY level, which fixes its RP and gold upkeep and rises with distance,
 // and the BUILDING level of the structure on it, which fixes this bonus and the
-// flat upkeep above. This table and MILSOV_UPKEEP_BY_LEVEL are both keyed by
+// flat upkeep above. This bonus and MILSOV_UPKEEP_BY_LEVEL are both keyed by
 // building level; CLAIM_RP_PER_LEVEL_DISTANCE is keyed by sovereignty level. The
 // planner sets the two equal, since a claim above its building buys nothing.
 //
 // A tile whose terrain descriptor names the structure being placed raises this
 // rate for that tile: a Training Ground on a Wooded Glade (+2% Spear Units per
 // level of Training Ground) runs at 7 points a level, not 5. The descriptor is
-// per BUILDING level, the same footing as this table, so the two simply add.
+// per BUILDING level, the same footing as this rate, so the two simply add.
 // See descriptorBonus in scoring.js — the reported bonus accounts for it; tile
 // SELECTION still runs nearest-first.
-export const MILSOV_BONUS_BY_LEVEL = { 1: 5, 2: 10, 3: 15, 4: 20, 5: 25 };
-export const MILSOV_BONUS_PER_LEVEL = 5; // [F] the linear coefficient itself
+export const MILSOV_BONUS_PER_LEVEL = 5; // [F] points of bonus per building level
 
 // [F] Every sovereignty structure, and the three fields the rest of the tool
 // reads off them. `type` is the whole of the arithmetic: a 'production'
@@ -776,24 +775,17 @@ export function descriptorFor(i) {
 /**
  * Which (building, bonus) rungs more than one terrain grants.
  *
- * This was an invariant — one terrain per rung — and it was wrong. It survived
- * three rounds of contrary evidence because each round was explained away:
- * first three "mis-transcribed" rows that were re-read and changed to fit, then
- * a glacial set that repeated five rungs, which produced a `family` field to
- * scope the rule by, then a wetland and a tropical set that repeated one each.
+ * A rung is not unique to one terrain. i:120 Rainforest Hilltop grants
+ * Papermill +3% Books, and so does i:6 Rich Clay Seam, both read in the same
+ * Jungle biome. Nor does grouping terrains by biome restore uniqueness: **biome
+ * belongs to the region, not to the terrain type** — Wooded Quarry, Clay Seam
+ * and a dozen other "temperate" terrains sit in that Jungle biome with their
+ * bonuses unchanged — so a biome says where a tile was read, not anything about
+ * its terrain.
  *
- * What ended it: i:120 Rainforest Hilltop grants Papermill +3% Books, and so
- * does i:6 Rich Clay Seam — both read in the same Jungle biome, so no scoping
- * saves it. The same harvest showed Wooded Quarry, Clay Seam and a dozen other
- * "temperate" terrains sitting in that Jungle biome with unchanged bonuses,
- * which is the deeper point: **biome belongs to the region, not to the terrain
- * type**, and `family` was describing where a tile happened to be read rather
- * than anything about the terrain. The field is gone.
- *
- * So a rung is simply not unique, and this reports rather than fails. It stays
- * because a duplicate is still worth seeing when a row is added — it is how a
- * genuine transcription error would look, and now that the rule is gone, the
- * only way to notice one is to read the list.
+ * A shared rung is therefore reported, not treated as an error. A duplicate is
+ * still worth seeing when a row is added — it is how a genuine transcription
+ * error would look, and reading this list is the only way to notice one.
  *
  * @returns {string[]} one line per shared rung, empty when every rung is held
  *   by a single terrain.

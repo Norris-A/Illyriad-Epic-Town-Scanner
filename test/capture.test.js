@@ -14,7 +14,6 @@ function payload(x, y) {
 
 afterEach(() => {
   delete globalThis.window;
-  delete globalThis.document;
 });
 
 test('reads the client global as the current payload', () => {
@@ -58,7 +57,6 @@ test('with no global there is no payload', () => {
 
 test('probe reports the source without freezing what a later read sees', () => {
   globalThis.window = { mapData: payload(361, -3168) };
-  globalThis.document = { getElementById: () => null };
   const hits = probeInPageData();
   assert.deepEqual(hits.map((h) => h.source), ['window.mapData']);
   // Probing has no side effect, so a later pan is still what a read returns.

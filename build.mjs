@@ -107,8 +107,10 @@ async function makeConfig() {
 mkdirSync(dirname(OUT), { recursive: true });
 
 if (process.argv.includes('--watch')) {
-  // The worker is re-bundled on each rebuild by re-entering makeConfig, so watch
-  // mode restarts the context when worker sources change.
+  // The worker is bundled once, here, and baked into `define`; the watch rebuilds
+  // only the main bundle. A change to a module both import, such as scoring.js,
+  // triggers a rebuild that still carries the old worker, so worker changes need
+  // the watch restarted.
   const ctx = await context(await makeConfig());
   await ctx.watch();
   console.log(`watching -> ${OUT}`);

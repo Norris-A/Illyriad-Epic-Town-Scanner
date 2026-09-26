@@ -16,8 +16,6 @@ import {
   MILSOV_BLOCKED_TEXT,
   parseRpCalibration,
   parseResourceBoosters,
-  parseResourceMinimums,
-  parsePrestige,
   surplusRows,
   productionLabel,
   settingsFormHtml,
@@ -34,7 +32,6 @@ import {
   BASIC_YIELD_L20,
   FARM_YIELD_L20,
   PRESTIGE_KEYS,
-  PRESTIGE_PRODUCTION_BONUS,
   SOV_STRUCTURES,
   MILSOV_STRUCTURES,
   MILSOV_UPKEEP_BY_LEVEL,
@@ -417,7 +414,7 @@ test('the picker offers the military structures and a way to ask for none', () =
   // Resource sovereignty is not placed automatically, so it is not offered.
   assert.ok(!/<option value="(farmstead|fishery|mineshaft|loggingCamp|earthworks|gravelPit)"/i.test(html),
     'a Resource Structure must not be pickable');
-  // Nothing in the form asks for a count or a level any more.
+  // Nothing in the form asks for a count or a level.
   assert.ok(!/data-milsov=/.test(html), 'no control should ask for a count or a level');
 
   const blank = settingsFormHtml(DEFAULT_SETTINGS);

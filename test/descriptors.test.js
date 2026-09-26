@@ -13,11 +13,9 @@ import {
   scanSummaryText, bindingLabel,
 } from '../src/panel.js';
 
-// A rung is NOT unique to one terrain. This was asserted as an invariant for
-// most of the table's life and defended twice by rescoping it; i:6 and i:120
-// both grant Papermill +3% and were read in the same biome, which is what
-// finally settled it. The list is pinned so a new duplicate is visible — that
-// is still what a transcription error would look like.
+// A rung is NOT unique to one terrain: i:6 and i:120 both grant Papermill +3%
+// and were read in the same biome. The list is pinned so a new duplicate is
+// visible — that is what a transcription error would look like.
 test('the rungs that are shared are the ones we know about', () => {
   assert.deepEqual(sharedRungs(), [
     'Papermill +3%: i:6, i:120',
@@ -105,7 +103,7 @@ test('no-bonus terrain is a known answer, not a gap', () => {
   assert.match(descriptorText({ i: 58 }), /no sovereignty bonus/);
 });
 
-// Three answers now, where there were two. The client's table names all 229
+// Three distinct answers. The client's table names all 229
 // ids, so "nobody has read this" and "nothing knows this id" are different
 // facts and only the second is a hole in the game's own data.
 test('an unread bonus, a node class and an id off the table read differently', () => {
@@ -227,8 +225,8 @@ test('the ice terrains are known to grant nothing', () => {
 });
 
 // A node class rates differently tile to tile, which says nothing about whether
-// its descriptor grants something — the two were conflated while these six were
-// unread. All six have been read now, and all six grant nothing.
+// its descriptor grants something. All six have been read, and all six grant
+// nothing.
 test('the six NPC terrains are read', () => {
   for (const i of NODE_CLASS_TERRAIN) {
     assert.equal(descriptorFor(i).bonusUnread, undefined, `i:${i} unread`);

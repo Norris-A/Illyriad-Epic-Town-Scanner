@@ -158,7 +158,7 @@ export function heldLevel(key, idx, settings) {
  * Can a city sit on this tile?
  *
  * `set:1` answers it outright, on the payloads that carry the field — the live
- * one no longer does. Without it the answer is what a settleable tile is not:
+ * one does not. Without it the answer is what a settleable tile is not:
  * impassable, a bridge, an NPC lair, or water. `hos` is the positive marker,
  * but it rides on water and lairs too, so it cannot decide this alone.
  */

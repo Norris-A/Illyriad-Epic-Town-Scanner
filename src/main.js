@@ -23,11 +23,6 @@ let lastResults = [];
 const store = createSettingsStore();
 const restored = store.load();
 
-const hits = probeInPageData();
-if (hits.length) {
-  console.info('[sov-scanner] reading in-page map data live from:', hits.map((h) => h.source).join(', '));
-}
-
 // Every keystroke fires a change; one write per burst of typing is enough.
 let saveTimer = null;
 let unsaved = null;
@@ -72,7 +67,8 @@ const panel = createPanel({
   initialSettings: restored.settings ?? DEFAULT_SETTINGS,
   onSettingsChange: saveSoon,
   onScan: runScan,
-  // Read on each Optimise press, cut to the view on screen as a Scan's is.
+  // Read afresh whenever the optimiser or its town picker needs it, cut to the
+  // view on screen as a Scan's is.
   getPayload: getLatestPayload,
   onExport: () => {
     if (!lastResults.length) return;

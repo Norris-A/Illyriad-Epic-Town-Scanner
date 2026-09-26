@@ -48,7 +48,15 @@ export const PRODUCTION_ICONS = {
 };
 
 // Which icon stands for each Production Structure. The kit has no building art,
-// so each one is represented by the unit type it trains.
+// so each one is represented by the unit type it trains, and all five share one
+// mark: the structure is chosen once, for the whole plan, so a per-cell icon
+// naming which one it is would repeat what the user already picked.
+// What the cell has to say is that a military claim sits there, and at what
+// level.
+//
+// Terrain descriptors do not use these at all: their product is written out,
+// because Bows and Ranged Units are different rungs and one bow icon cannot say
+// which. Add art here and the descriptor badge still will not use it.
 export const STRUCTURE_ICONS = {
   trainingGround: ICONS.troops,
   targetRange: ICONS.troops,
@@ -56,15 +64,3 @@ export const STRUCTURE_ICONS = {
   joustingYard: ICONS.troops,
   assemblyYard: ICONS.troops,
 };
-
-/**
- * Anything else a plan can carry. One mark for every military claim rather than
- * five: the structure is chosen once, for the whole plan, so a per-cell icon
- * naming which one it is repeats what the user already picked. What the cell
- * has to say is that a military claim sits there, and at what level.
- *
- * Terrain descriptors do not use these at all: their product is written out,
- * because Bows and Ranged Units are different rungs and one bow icon cannot say
- * which. Add art here and the descriptor badge still will not use it.
- */
-export const DEFAULT_STRUCTURE_ICON = ICONS.troops;

@@ -1113,7 +1113,7 @@ export function scoreSiteFrom(ctx) {
     // in the acceptable range does.
     milsovMinTax: reach ? reach.tax : null,
     milsovMinBonusAt: reach ? reach.bonus : null,
-    // Only a genuine shortfall now: not reachable anywhere the user would accept.
+    // Only a genuine shortfall: not reachable anywhere the user would accept.
     milsovShortfall: required > 0 && plan.milsovBonus < required && !reach,
   };
 }

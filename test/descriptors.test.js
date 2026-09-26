@@ -236,14 +236,12 @@ test('the six NPC terrains are read', () => {
   }
 });
 
-// The summary was once built inside the table branch, so a scan that found no
-// site reported nothing it had learned — the tile count and the exclusion
-// breakdown included. A region with no candidate site is where that costs the
-// most: it is unsettled ground, so it is the least explored.
+// A region with no candidate site is where the summary matters most: it is
+// unsettled ground, so it is the least explored.
 test('the summary survives a scan that found no site', () => {
   const html = resultsHtml([], 'Centre -877|-2848, zoom 2, 25 tiles, 0 candidates.');
   assert.match(html, /Centre -877\|-2848/);
-  assert.match(html, /No sites met the minimum tax/);
+  assert.match(html, /No available sites met the minimum tax/);
 });
 
 test('the summary is shown above the table when there are results', () => {

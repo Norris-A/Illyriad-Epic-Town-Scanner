@@ -473,9 +473,9 @@ test('a town whose string is not the pipe format is offered by position', () => 
   assert.deepEqual(ownTowns(payload), [{ x: 360, y: -3178, label: '360|-3178' }]);
 });
 
-// The `t` block reaches past the tiles the payload carries, so a town can be
-// named by it long after its ground has been panned away. Offering one leads
-// straight to the optimiser refusing the centre it was just handed.
+// The `t` block reaches past the tiles on screen, so it can name a town whose
+// ground is off screen. Offering one leads straight to the optimiser refusing
+// the centre it was just handed.
 test('a town the payload has no tile for is not offered', () => {
   const t = { [tileKey(-3178, 360)]: { s: 'Rivermeet|1|360|-3178|900|7', rd: 'Yours' } };
   assert.deepEqual(ownTowns({ data: {}, s: {}, t }), []);
@@ -526,7 +526,7 @@ test('a town record is read for its name and position, whatever carries it', () 
 
 // --- the refusals ---
 
-test('a tile outside the last payload is named, not silently skipped', () => {
+test('a tile off screen is named, not silently skipped', () => {
   const r = focusSite({
     payload: payloadAround(),
     focus: { ...DEFAULT_FOCUS, x: 500, y: 500 },

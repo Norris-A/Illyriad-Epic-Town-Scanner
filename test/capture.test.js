@@ -1,5 +1,5 @@
 // The payload reader. getLatestPayload reads the client's global live on each call
-// so a Scan sees the current view; these tests stub the page globals capture.js
+// and cuts it to the view on screen; these tests stub the page globals capture.js
 // reads.
 
 import { test, afterEach } from 'node:test';
@@ -22,12 +22,28 @@ test('reads the client global as the current payload', () => {
   assert.equal(getLatestPayload().x, 361);
 });
 
-test('tracks the global when the client replaces it on a pan', () => {
+test('reads the global afresh on every call', () => {
   globalThis.window = { mapData: payload(361, -3168) };
   assert.equal(getLatestPayload().x, 361);
-  // The client swaps in a new view on a pan; the reader must return the new one.
   globalThis.window.mapData = payload(368, -3166);
   assert.equal(getLatestPayload().x, 368);
+});
+
+test('reads only the tiles on screen, though the global holds every view', () => {
+  // The client merges each pan into the one global: the tile from the earlier
+  // view is still in `data`, 20 tiles west of the centre now on screen.
+  const map = payload(361, -3168);
+  map.data['-3168|341'] = { rs: '5|5|5|5|5' };
+  globalThis.window = { mapData: map };
+  assert.deepEqual(Object.keys(getLatestPayload().data), ['-3168|361']);
+  assert.equal(Object.keys(map.data).length, 2);
+});
+
+test('a global that does not say where the screen is gives no payload', () => {
+  const map = payload(361, -3168);
+  delete map.x;
+  globalThis.window = { mapData: map };
+  assert.equal(getLatestPayload(), null);
 });
 
 test('ignores a global that is not a map payload', () => {

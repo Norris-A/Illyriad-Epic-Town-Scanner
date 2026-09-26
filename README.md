@@ -60,7 +60,7 @@ the first two hundred the table lists.
 
 The summary line above the results says how much map was checked and how many
 candidates it held, whether or not any met your minimum. If sites were skipped
-because the map data does not reach all the way around them, it says how many —
+because their claim radius runs past the edge of the screen, it says how many —
 zoom out or pan so the whole area is on screen, then scan again.
 
 Tiles are dropped from the results when they already carry a town, are already
@@ -85,8 +85,9 @@ Everything else comes from City Configuration.
 
 Any tile can be examined here, including one already settled, already claimed, or
 too near a town — the result says which of those it is rather than hiding the
-tile. If the radius reaches past the map data currently loaded, it says how many
-tiles are missing instead of planning around ground it cannot see.
+tile. The tile must be on screen, and so must the whole radius around it: if the
+radius runs past the edge of the screen, it says how many tiles are missing
+instead of planning around ground it cannot see.
 
 ## City Configuration
 
@@ -228,7 +229,7 @@ copy.
 | `src/constants.js` | Game constants, each marked with how well it is known — verified, sourced, derived or assumed. Also the terrain name table read from the game client, and the descriptor bonuses read by hand |
 | `src/scoring.js` | Pure engine — the three ceilings, the food knapsack and frontier walk, then the military plan fitted into what they leave. No DOM. Imported by both the worker and the tests |
 | `src/payload.js` | Payload reading and the candidacy filters |
-| `src/capture.js` | Reads the client's live `window.mapData`. Reader only — no requests |
+| `src/capture.js` | Reads the client's live `window.mapData`, cut to the tiles on screen. Reader only — no requests |
 | `src/worker.js` | Web Worker entry; bundled to a string and inlined |
 | `src/focus.js` | The Optimal Sovereignty calculator — one named tile, planned on the shared engine. No DOM |
 | `src/panel.js` | Side panel UI — the three tabs, the gear menu and the CSV writer |
@@ -242,11 +243,18 @@ and are not tracked here.
 
 ## Payload source
 
-The client parks its current map view in `window.mapData`, replacing it whole on
-every pan or zoom. `getLatestPayload` reads that global **live** on each Scan and
-Optimise press, so a scan always sees what is on screen. This is a plain memory
-read of data the client already fetched to draw the tiles — no network, no side
-effects. It is the tool's only source: nothing patches or wraps the network.
+The client keeps its map data in `window.mapData`. It is cumulative: each pan
+and zoom is merged in, so its tiles cover every view since the World Map was
+entered, while its `x`, `y` and `zoom` describe the view on screen now — centred
+on `x|y`, reaching `zoom` tiles out on every side. `getLatestPayload` reads that
+global **live** on each Scan and Optimise press and keeps only the tiles within
+that square, so a scan ranks exactly what is on screen and nothing panned past
+earlier. The towns and claims the global carries are kept whole: they only ever
+rule a site out, so one just past the edge still keeps its distance.
+
+This is a plain memory read of data the client already fetched to draw the
+tiles — no network, no side effects. It is the tool's only source: nothing
+patches or wraps the network.
 
 To confirm the global on a live map, open the console and run:
 
@@ -255,8 +263,10 @@ window.__sovScanner.probeInPageData()
 ```
 
 It reports which globals hold a payload. If a client update ever hides
-`window.mapData`, a Scan reports no payload rather than reading a stale one, and
-`IN_PAGE_NAMES` in `src/capture.js` is where a renamed global would be added.
+`window.mapData`, or stops giving it an `x`, `y` and `zoom` to say where the
+screen is, a Scan reports no payload rather than reading a stale one or guessing
+at the view. `IN_PAGE_NAMES` in `src/capture.js` is where a renamed global would
+be added.
 
 ## License
 

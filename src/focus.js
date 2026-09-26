@@ -182,9 +182,9 @@ function centreFacts(tile, key, idx) {
  *
  * Returns `{ ok: false, reason, message }` when there is nothing to plan, where
  * `reason` is one of:
- *   - `no-payload`   the game has not been observed sending map data yet
- *   - `centre-missing` the named tile is outside what it did send
- *   - `incomplete`   part of the claim radius is outside what it did send
+ *   - `no-payload`   there is no map data on screen to read
+ *   - `centre-missing` the named tile is off screen
+ *   - `incomplete`   part of the claim radius is off screen
  *
  * `incomplete` carries a count where the scan's equivalent carries nothing: the
  * user can pan and retry, so the number is worth returning.
@@ -197,7 +197,7 @@ export function focusSite({ payload, focus, settings }) {
     return {
       ok: false,
       reason: 'no-payload',
-      message: 'No map payload observed yet. Pan or zoom the map, then try again.',
+      message: 'No map data on screen yet. Pan or zoom the map, then try again.',
     };
   }
 
@@ -208,7 +208,7 @@ export function focusSite({ payload, focus, settings }) {
     return {
       ok: false,
       reason: 'centre-missing',
-      message: `${focus.x}|${focus.y} is not in the last map payload. `
+      message: `${focus.x}|${focus.y} is off screen. `
         + 'Pan the map over that tile, then try again.',
     };
   }
@@ -266,7 +266,7 @@ export function focusSite({ payload, focus, settings }) {
       ok: false,
       reason: 'incomplete',
       message: `${missing.length} of the ${ring} tiles within radius ${radius} of `
-        + `${focus.x}|${focus.y} are outside the last map payload. Pan the map so the whole `
+        + `${focus.x}|${focus.y} are off screen. Zoom out or pan so the whole `
         + 'area is on screen, then try again.',
       missing: missing.length,
       ring,

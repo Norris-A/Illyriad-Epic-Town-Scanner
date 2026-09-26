@@ -7,7 +7,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  tileKey, indexPayload, isClaimable, isCandidateSite, extractTowns,
+  tileKey, indexPayload, isClaimable, isCandidateSite, extractTowns, onScreen,
 } from '../src/payload.js';
 import { DEFAULT_SETTINGS } from '../src/constants.js';
 
@@ -107,4 +107,62 @@ test('a claimed or occupied tile is no site, whoever holds it', () => {
   );
   const idx = indexPayload({ data: {}, s: {}, t: { [SITE]: { rd: 'Alliance' } } });
   assert.equal(isCandidateSite(LAND, SITE, idx, DEFAULT_SETTINGS, []).reason, 'town-tile');
+});
+
+// --- the view on screen -----------------------------------------------------
+
+/**
+ * A view centred on 100|200 at zoom 2, with `data` holding the square on screen
+ * and one tile past each edge.
+ */
+function viewWithBorder() {
+  const data = {};
+  for (let y = 197; y <= 203; y++) {
+    for (let x = 97; x <= 103; x++) data[tileKey(y, x)] = { ...LAND };
+  }
+  return {
+    x: 100, y: 200, zoom: 2, data,
+    t: { [tileKey(210, 100)]: { rd: 'Enemy' } },
+    s: { [tileKey(200, 90)]: { rd: 'Enemy', s: '1|0' } },
+  };
+}
+
+test('the whole square on screen is kept, edge to edge', () => {
+  const kept = onScreen(viewWithBorder()).data;
+  for (let y = 198; y <= 202; y++) {
+    for (let x = 98; x <= 102; x++) assert.ok(kept[tileKey(y, x)], `${x}|${y}`);
+  }
+  assert.equal(Object.keys(kept).length, 25);
+});
+
+test('a tile one past any edge is dropped', () => {
+  const kept = onScreen(viewWithBorder()).data;
+  for (const [x, y] of [[97, 200], [103, 200], [100, 197], [100, 203]]) {
+    assert.equal(kept[tileKey(y, x)], undefined, `${x}|${y}`);
+  }
+});
+
+test('towns and claims off screen are kept, so they still rule sites out', () => {
+  const view = viewWithBorder();
+  const cut = onScreen(view);
+  assert.equal(cut.t, view.t);
+  assert.equal(cut.s, view.s);
+});
+
+test('no view without a whole-number centre and zoom', () => {
+  for (const field of ['x', 'y', 'zoom']) {
+    const missing = viewWithBorder();
+    delete missing[field];
+    assert.equal(onScreen(missing), null, `${field} missing`);
+    assert.equal(onScreen({ ...viewWithBorder(), [field]: 2.5 }), null, `${field} fractional`);
+    assert.equal(onScreen({ ...viewWithBorder(), [field]: '2' }), null, `${field} a string`);
+  }
+  assert.equal(onScreen(null), null);
+});
+
+test('the payload it is given is left as it was', () => {
+  const view = viewWithBorder();
+  const before = JSON.stringify(view);
+  onScreen(view);
+  assert.equal(JSON.stringify(view), before);
 });

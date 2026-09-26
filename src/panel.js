@@ -1055,8 +1055,8 @@ function capitalDerivedHtml(s) {
  *   edit with the settings as read back out of the form, including edits that
  *   fail validation — a half-finished allocation should come back as the user
  *   left it rather than be discarded.
- * @param {() => object|null} [o.getPayload] the last observed map payload, read
- *   on each Optimise press. The optimiser plans on the main thread: it is one
+ * @param {() => object|null} [o.getPayload] the map payload on screen, read on
+ *   each Optimise press. The optimiser plans on the main thread: it is one
  *   site, and the tax slider already runs the same planner there.
  */
 export function createPanel({ onScan, onExport, initialSettings, onSettingsChange, getPayload }) {
@@ -1547,16 +1547,15 @@ licence and full copyright notice.">ⓘ</a></span></span></h2>
   // --- what the scan could not see ---
 
   /**
-   * Sites the payload did not reach all the way around. This is the one thing a
-   * scan withholds that the user can act on: the answer is to pan and run it
-   * again. Why the other tiles were dropped is the tool's business, not theirs.
+   * Sites whose claim radius runs off screen. This is the one thing a scan
+   * withholds that the user can act on: the answer is to pan and run it again.
+   * Why the other tiles were dropped is the tool's business, not theirs.
    */
   function drawIncomplete() {
     $('.sov-diagnostics').innerHTML = incomplete.length
       ? `<p class="sov-hint">${incomplete.length} ${
-        incomplete.length === 1 ? 'site was' : 'sites were'} skipped because the map data does
-        not reach all the way around them. Zoom out or pan so the whole area is on screen,
-        then scan again.</p>`
+        incomplete.length === 1 ? 'site was' : 'sites were'} skipped because their claim radius
+        runs off screen. Zoom out or pan so the whole area is on screen, then scan again.</p>`
       : '';
   }
 
@@ -1573,9 +1572,9 @@ licence and full copyright notice.">ⓘ</a></span></span></h2>
   }
 
   /**
-   * The towns of yours the map currently covers. Rebuilt immediately before the
-   * list can be read rather than held, because panning the map changes the
-   * answer and a stale list would offer a town whose tile is no longer loaded.
+   * The towns of yours on screen. Rebuilt immediately before the list can be
+   * read rather than held, because panning the map changes the answer and a
+   * stale list would offer a town that has been panned off screen.
    * The control stays enabled even with nothing to offer, so opening it is what
    * asks the map again.
    */
@@ -1587,8 +1586,8 @@ licence and full copyright notice.">ⓘ</a></span></span></h2>
     sel.innerHTML = towns.length
       ? `<option value="">—</option>${towns.map((t) =>
         `<option value="${t.x}|${t.y}">${escapeHtml(t.label)}</option>`).join('')}`
-      : `<option value="">${payload ? 'none on the map right now' : 'no map data yet'}</option>`;
-    // A town the map still carries keeps the selection; one panned away drops it
+      : `<option value="">${payload ? 'none on screen' : 'no map data yet'}</option>`;
+    // A town still on screen keeps the selection; one panned away drops it
     // rather than leaving a label the list no longer holds.
     if (was && towns.some((t) => `${t.x}|${t.y}` === was)) sel.value = was;
   }
@@ -2100,15 +2099,13 @@ export function descriptorText(tile) {
  * The results pane, summary and all.
  *
  * Separate from `renderResults` because that one needs a document and this is
- * where the mistakes are: the summary was once built inside the table branch,
- * so a scan that found no site printed "No sites met the minimum tax." and
- * threw away everything the scan had learned — the tile count and the exclusion
- * breakdown. A region with no candidate is exactly where those are worth the
- * most. The summary belongs to the scan, not to the table.
+ * where the mistakes are. The summary belongs to the scan, not to the table, so
+ * it is shown even when no site met the minimum: a region with no candidate is
+ * exactly where the tile count is worth the most.
  */
 export function resultsHtml(results, summary) {
   const head = `<p>${summary}</p>`;
-  if (!results?.length) return `${head}<p>No sites met the minimum tax.</p>`;
+  if (!results?.length) return `${head}<p>No available sites met the minimum tax.</p>`;
   const rows = results.slice(0, 200).map((r, n) => `
         <tr class="sov-row" data-n="${n}">
           <td>${r.x}|${r.y}</td>

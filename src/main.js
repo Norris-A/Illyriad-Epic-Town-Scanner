@@ -72,7 +72,7 @@ const panel = createPanel({
   initialSettings: restored.settings ?? DEFAULT_SETTINGS,
   onSettingsChange: saveSoon,
   onScan: runScan,
-  // Read on each Optimise press, against the same payload the last Scan ran on.
+  // Read on each Optimise press, cut to the view on screen as a Scan's is.
   getPayload: getLatestPayload,
   onExport: () => {
     if (!lastResults.length) return;
@@ -109,7 +109,7 @@ function runScan() {
 
   const payload = getLatestPayload();
   if (!payload) {
-    panel.setStatus('No map payload observed yet. Pan or zoom the map, then Scan.');
+    panel.setStatus('No map data on screen yet. Pan or zoom the map, then Scan.');
     return;
   }
 
@@ -140,8 +140,9 @@ function runScan() {
 // runScan reads the form, not this variable.
 window.__sovScanner = {
   get settings() { return panel.getSettings().settings; },
-  // The last payload, for looking at when the tool reads something out of it
-  // wrongly — the block formats are only partly documented.
+  // The payload a Scan would read now, for looking at when the tool reads
+  // something out of it wrongly — the block formats are only partly documented.
+  // The client's uncut global is window.mapData.
   get payload() { return getLatestPayload(); },
   set settings(v) { panel.setSettings({ ...DEFAULT_SETTINGS, ...v }); },
   probeInPageData,

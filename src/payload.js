@@ -16,6 +16,25 @@ export function parseKey(key) {
   return { x, y };
 }
 
+/**
+ * The payload cut down to the tiles on screen: `zoom` tiles either side of its
+ * centre. Null when the envelope does not say where the screen is.
+ *
+ * Only `data` is cut. The `t` and `s` blocks only ever rule sites and claims
+ * out, so reading past the edge can only make a result more cautious — and a
+ * town just off screen must still hold the sites on screen at their distance.
+ */
+export function onScreen(payload) {
+  const { x, y, zoom } = payload ?? {};
+  if (!Number.isInteger(x) || !Number.isInteger(y) || !Number.isInteger(zoom)) return null;
+  const data = {};
+  for (const [key, tile] of Object.entries(payload.data ?? {})) {
+    const t = parseKey(key);
+    if (Math.abs(t.x - x) <= zoom && Math.abs(t.y - y) <= zoom) data[key] = tile;
+  }
+  return { ...payload, data };
+}
+
 /** rs is "wood|clay|iron|stone|food". Food is index 4. */
 export function parseRs(tile) {
   if (!tile || typeof tile.rs !== 'string') return null;

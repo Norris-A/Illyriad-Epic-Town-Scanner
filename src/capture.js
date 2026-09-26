@@ -2,11 +2,13 @@
 // This module reads, it never requests: no fetch, XHR or WebSocket of any kind.
 //
 // The client parks its map view in a page global (window.mapData) and merges each
-// pan and zoom into it: what it holds is the union of every view loaded since the
-// World Map was last entered, not the one on screen. Its `data` keys therefore
-// outrun the viewport, and the tiles behind them age — bounded by leaving the map,
-// which starts the accumulation over. Reading that global is a plain memory read of
-// data already delivered to the page — no network, no side effects.
+// pan and zoom into it: its `data` holds every tile loaded since the World Map was
+// last entered, while its envelope — x, y and zoom — describes the view on screen
+// now. A read cuts `data` down to that view, so nothing panned past long ago is
+// ranked. Reading the global is a plain memory read of data already delivered to
+// the page — no network, no side effects.
+
+import { onScreen } from './payload.js';
 
 // The globals the client is known or plausible to keep its parsed map view in.
 // window.mapData is the one this client uses; the rest are guesses in case a client
@@ -47,9 +49,13 @@ function readInPageData() {
   return null;
 }
 
-/** The payload every Scan and Optimise press reads: every view of the current map visit. */
+/**
+ * The payload every Scan and Optimise press reads: the client's map data, read
+ * fresh and cut to the tiles on screen. Null when there is no map data, or when
+ * it does not say where the screen is.
+ */
 export function getLatestPayload() {
-  return readInPageData();
+  return onScreen(readInPageData());
 }
 
 /**

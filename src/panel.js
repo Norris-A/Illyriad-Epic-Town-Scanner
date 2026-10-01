@@ -1,5 +1,9 @@
-// Side panel UI. v1 is panel-only; the map overlay is v2 and
-// deliberately deferred (it couples to the game DOM and will break).
+// Side panel UI: the three tabs, the gear menu and the CSV writer. The panel
+// never touches the game's map. The map markers are overlay.js's, and main.js
+// relays between the two: a selection goes out through `onSelect`, a click on
+// the map comes back through `selectSite`, what the markers show is reported
+// through `setMapNote`, and `onSiteSearchShown` says when Site Search is open
+// on screen for them to show beside.
 //
 // Coordinates are DISPLAYED as "x|y" to match in-game convention, even though
 // payload keys are "y|x". Convert at the boundary, never in the middle.
@@ -665,6 +669,15 @@ export const SETTINGS_FIELDS = [
     menu: true,
     hint: 'Folds the panel to its icon on any page but the World Map, the only one with map data.',
   },
+  {
+    key: 'mapOverlay',
+    group: 'Display',
+    label: 'Mark sites on the World Map',
+    type: 'checkbox',
+    menu: true,
+    hint: 'After a Scan, numbers the top ten on the map and outlines the selected row’s tile. '
+      + 'It draws on the game’s own map, so it depends on that map’s layout.',
+  },
 ];
 
 // --- Form markup (strings only — no DOM until createPanel) ------------------
@@ -1058,8 +1071,15 @@ function capitalDerivedHtml(s) {
  *   afresh for each Optimise press and each rebuild of the town picker. The
  *   optimiser plans on the main thread: it is one site, and the tax slider
  *   already runs the same planner there.
+ * @param {(result: object) => void} [o.onSelect] a result row was selected,
+ *   from the table or through selectSite
+ * @param {(shown: boolean) => void} [o.onSiteSearchShown] Site Search opened or
+ *   closed on screen — switched to or away from, or the panel unfolded or
+ *   folded. Called once at the start with how the panel opens.
  */
-export function createPanel({ onScan, onExport, initialSettings, onSettingsChange, getPayload }) {
+export function createPanel({
+  onScan, onExport, initialSettings, onSettingsChange, getPayload, onSelect, onSiteSearchShown,
+}) {
   const style = document.createElement('style');
   style.textContent = CSS;
   document.head.appendChild(style);
@@ -1182,6 +1202,9 @@ licence and full copyright notice.">ⓘ</a></span></span></h2>
   let manualCollapsed = loadPanelCollapsed();
   // A hand-expand riding over the off-map force-collapse; cleared on route change.
   let offMapExpandOverride = false;
+  // Whether Site Search was last reported open on screen. Null until the first
+  // report, so the opening state is reported too.
+  let siteSearchShown = null;
 
   const autoMinimizeOn = () => !!readSettings().settings.autoMinimizeOffMap;
   const currentlyOnMap = () => isWorldMapHash(globalThis.location?.hash);
@@ -1201,6 +1224,16 @@ licence and full copyright notice.">ⓘ</a></span></span></h2>
       const rect = root.getBoundingClientRect();
       positionPanel(rect.left, rect.top);
     }
+    reportSiteSearch();
+  }
+
+  /** Tell the caller when Site Search opens or closes on screen: by tab or by folding. */
+  function reportSiteSearch() {
+    const shown = !root.classList.contains('sov-collapsed')
+      && !root.querySelector('[data-pane="scan"]').hidden;
+    if (shown === siteSearchShown) return;
+    siteSearchShown = shown;
+    onSiteSearchShown?.(shown);
   }
 
   function toggleCollapsed() {
@@ -1262,6 +1295,7 @@ licence and full copyright notice.">ⓘ</a></span></span></h2>
     });
     root.querySelectorAll('[data-pane]').forEach((p) => { p.hidden = p.dataset.pane !== name; });
     if (name === 'focus') syncFocusRadiusHint();
+    reportSiteSearch();
   }
   root.querySelectorAll('.sov-tabs button').forEach((tab) => {
     tab.addEventListener('click', () => showTab(tab.dataset.tab));
@@ -1541,6 +1575,7 @@ licence and full copyright notice.">ⓘ</a></span></span></h2>
         ? `Selected ${selected.x}|${selected.y} — ratings ${
           PLOT_KEYS.map((p) => selected.rs[p]).join('|')}.`
         : `Selected ${selected.x}|${selected.y} — no resource ratings in the payload for this tile.`;
+      onSelect?.(selected);
     }
   }
 
@@ -1702,6 +1737,16 @@ licence and full copyright notice.">ⓘ</a></span></span></h2>
       root.querySelector('.sov-status').innerHTML = html;
     },
     /**
+     * The line under the scan summary saying what the map markers show; ''
+     * clears it. The line exists only while the table lists a site.
+     */
+    setMapNote(text, tooltip) {
+      const note = $('.sov-map-note');
+      if (!note) return;
+      note.textContent = text;
+      note.title = tooltip ?? '';
+    },
+    /**
      * @param {object[]} results ranked sites
      * @param {object} scan `{x, y, zoom, scanned}` — the facts of the run. The
      *   wording is the panel's, not the caller's.
@@ -1722,6 +1767,23 @@ licence and full copyright notice.">ⓘ</a></span></span></h2>
           toggleDetail(row, results[Number(row.dataset.n)], readSettings().settings, optimiseSite);
         });
       });
+    },
+    /**
+     * Select the listed site at x|y and open its plan, as a click on its row does.
+     * A plan already open stays open. False, with nothing changed, when no row
+     * lists that tile. The map takes clicks only while Site Search is open on
+     * screen, so the row is already in view to scroll to.
+     */
+    selectSite(x, y) {
+      const n = rendered.findIndex((r) => r.x === x && r.y === y);
+      const row = n < 0 ? null : root.querySelector(`.sov-results .sov-row[data-n="${n}"]`);
+      if (!row) return false;
+      select(n);
+      if (!row.nextElementSibling?.classList.contains('sov-detail')) {
+        toggleDetail(row, rendered[n], readSettings().settings, optimiseSite);
+      }
+      row.scrollIntoView({ block: 'nearest' });
+      return true;
     },
     renderIncomplete(list) {
       incomplete = list;
@@ -2101,7 +2163,8 @@ export function descriptorText(tile) {
  * Separate from `renderResults` because that one needs a document and this is
  * where the mistakes are. The summary belongs to the scan, not to the table, so
  * it is shown even when no site met the minimum: a region with no candidate is
- * exactly where the tile count is worth the most.
+ * exactly where the tile count is worth the most. Under it, a table gets an empty
+ * line for what the map markers show, filled once they are drawn.
  */
 export function resultsHtml(results, summary) {
   const head = `<p>${summary}</p>`;
@@ -2121,6 +2184,7 @@ export function resultsHtml(results, summary) {
         </tr>`).join('');
   return `
         ${head}
+        <p class="sov-legend sov-map-note"></p>
         <table>
           <thead><tr><th>Site</th>
             <th title="The highest whole-number tax this site can hold on food alone — the game takes no other kind">Max Tax</th>
@@ -2150,10 +2214,10 @@ function conditionalDescriptors(plan) {
  *
  * The PRODUCT is written out rather than drawn, because the products are what
  * distinguish the rungs and the icon set cannot. Bowyer makes Bows and Target
- * Range makes Ranged Units; Farrier and Jousting Yard both mean horses;
- * Engineering Yard and Assembly Yard both mean siege. One icon each would make
- * six of the eighteen unreadable, and there is no art at all for saddles,
- * livestock, beer, chainmail, leather armour, spears, books or diplomats.
+ * Range makes Ranged Units; Farrier and Jousting Yard both mean horses. One
+ * icon each would make four of the eighteen unreadable, and there is no art at
+ * all for saddles, livestock, beer, chainmail, leather armour, spears, books
+ * or diplomats.
  *
  * Empty for terrain that grants nothing and for terrain nothing has identified;
  * both of those are answered in the hover text, where there is room to say

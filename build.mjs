@@ -70,9 +70,6 @@ ${UPDATE_LINES}// @supportURL   https://github.com/Norris-A/Illyriad-Epic-Town-S
 // @grant        none
 // @noframes
 // ==/UserScript==
-
-// This script makes ZERO network requests. It observes map payloads the game
-// has already received on the user's behalf, and analyses them locally.
 `;
 
 async function bundleWorker() {

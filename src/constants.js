@@ -99,6 +99,11 @@ export const SOV_STRUCTURES = [
   { key: 'bridlemaker', name: 'Bridlemaker', type: 'production' },
   { key: 'plateForger', name: 'Plate Forger', type: 'production' },
   { key: 'armourer', name: 'Armourer', type: 'production' },
+  // No terrain grants an Engineering Yard bonus, so it is the one crafting
+  // structure the descriptor table never names. It is here because the planner
+  // still has to cost one if a plan asks for it — and because the game's
+  // "Siege Block production" against the Assembly Yard's "Siege unit
+  // production" is easy to conflate when reading a tile.
   { key: 'engineeringYard', name: 'Engineering Yard', type: 'production' },
   { key: 'papermill', name: 'Papermill', type: 'production' },
   { key: 'brewersYard', name: "Brewer's Yard", type: 'production' },
@@ -141,9 +146,14 @@ export const DEFAULT_SOV_STRUCTURE = 'trainingGround';
 export const SOV_LEVEL_ROMAN = ['I', 'II', 'III', 'IV', 'V'];
 
 // [V] What each terrain type `i` grants a claim built on it, from the account
-// owner's own reading of the tiles. A `bonus` is scored, but only on a tile
-// hosting the very structure its `building` names — see descriptorBonus. On
-// every other tile it is a column and a flag.
+// owner's own reading of the tiles, and for thirty-nine rows from the client's
+// own Sovereignty Bonuses table. Where the two disagree the client's table
+// wins: it states the whole ladder at once, where a tile is read one at a time
+// and the building a bonus belongs to is the easy thing to misattribute.
+//
+// A `bonus` is scored, but only on a tile hosting the very structure its
+// `building` names — see descriptorBonus. On every other tile it is a column
+// and a flag.
 //
 // `building` is what the bonus scales with, per level of it. Every one of them
 // is a Production Structure, crafting and military alike, so a descriptor names
@@ -158,8 +168,9 @@ export const SOV_LEVEL_ROMAN = ['I', 'II', 'III', 'IV', 'V'];
 // impossible and is not — see sharedRungs.
 //
 // `disputed` marks a row read once and not yet confirmed. Nothing carries it:
-// every row here has been read off a tile, and the twenty-two the in-game
-// harvest covered all matched what was already written down.
+// thirty-nine rows have the client's table behind them as a second source, and
+// the others stand on one reading each without being flagged, because a row
+// read once is not a row that is wrong.
 export const TERRAIN_DESCRIPTORS = {
   1: { name: 'Plains' },
   2: { name: 'Plains' },
@@ -173,7 +184,7 @@ export const TERRAIN_DESCRIPTORS = {
   12: { name: 'Abundant Crops', bonus: 3, product: 'Beer', building: "Brewer's Yard" },
   13: { name: 'Bountiful Land', bonus: 3, product: 'Livestock', building: 'Cattle Rancher' },
   14: { name: 'Fertile Pasture', bonus: 2, product: 'Cavalry Units', building: 'Jousting Yard' },
-  15: { name: 'Fertile Orchard' },
+  15: { name: 'Fertile Orchard', bonus: 1, product: 'Beer', building: "Brewer's Yard" },
   16: { name: 'Alluvial Plain', bonus: 1, product: 'Livestock', building: 'Cattle Rancher' },
   17: { name: 'Fertile Ground', bonus: 1, product: 'Horses', building: 'Farrier' },
   18: { name: 'Lake', water: true },
@@ -209,7 +220,7 @@ export const TERRAIN_DESCRIPTORS = {
   45: { name: 'Dolmen' },
   46: { name: 'Abundant Quarry', bonus: 3, product: 'Platesteel', building: 'Plate Forger' },
   47: { name: 'Rich Quarry', bonus: 2, product: 'Infantry Units', building: 'Military Academy' },
-  48: { name: 'Wooded Quarry', bonus: 1, product: 'Siege Blocks', building: 'Engineering Yard' },
+  48: { name: 'Wooded Quarry', bonus: 1, product: 'Siege Units', building: 'Assembly Yard' },
   49: { name: 'Rocky Outcrop', bonus: 3, product: 'Horses', building: 'Farrier' },
   50: { name: 'Landslip', bonus: 2, product: 'Siege Units', building: 'Assembly Yard' },
   51: { name: 'Stony Ground', bonus: 1, product: 'Chainmail', building: 'Armourer' },
@@ -237,20 +248,14 @@ export const TERRAIN_DESCRIPTORS = {
   // The glacial terrains, read off tiles in a b:2 region. Their plots total 0
   // to 15 where most land totals 25, so they are poor ground whatever they
   // grant — which is what the scanner reads, the bonus being a column.
-  68: { name: 'Barren Wastes', bonus: 3, product: 'Spears', building: 'Poleturner' },
+  68: { name: 'Barren Wastes', bonus: 3, product: 'Spear Units', building: 'Training Ground' },
   69: { name: 'Glacier' },
   70: { name: 'Frozen Ground' },
-  // The one military rung above +2 anywhere in the table. Eight other military
-  // readings — Training Ground, Target Range, Military Academy and Jousting
-  // Yard, +1 and +2 each — all stop at +2, while crafting rungs reach +3
-  // freely. Read by eye before the in-game harvester existed, and the game
-  // prints "Siege Block production" for the Engineering Yard against "Siege
-  // unit production" for the Assembly Yard, which is an easy conflation.
-  // Marked until a Nunatak is hovered and it is read again.
-  71: {
-    name: 'Nunatak', bonus: 3, product: 'Siege Units', building: 'Assembly Yard',
-    disputed: 'only military rung above +2; re-read against Siege Block',
-  },
+  // One of only two military +3 rungs, with i:68 Barren Wastes. Every other
+  // military rung stops at +2, where crafting rungs reach +3 freely — so a
+  // military +3 is rare rather than impossible, and the pair is pinned by a
+  // test to keep a third from arriving unnoticed.
+  71: { name: 'Nunatak', bonus: 3, product: 'Siege Units', building: 'Assembly Yard' },
   72: {
     name: 'Scoured Bedrock', bonus: 2, product: 'Infantry Units', building: 'Military Academy',
   },
@@ -296,7 +301,7 @@ export const TERRAIN_DESCRIPTORS = {
   // The rainforests, all read in the Jungle biome. Their plots total 22 or 23,
   // which is the counterexample to "land always sums to 25".
   //
-  // Thick Rainforest grants Poleturner +3%, a rung three other terrains also
+  // Thick Rainforest grants Poleturner +3%, a rung two other terrains also
   // hold. Rainforest Hilltop grants Papermill +3%, which i:6 Rich Clay Seam
   // holds — and both were read in the SAME biome, which is what finally
   // disproved the one-terrain-per-rung rule rather than rescoping it again.
@@ -942,4 +947,7 @@ export const DEFAULT_SETTINGS = {
   // Fold the panel to its icon off the World Map: the scanner reads
   // window.mapData, which exists only there.
   autoMinimizeOffMap: true,
+  // Number the top ten on the game's own World Map after a Scan, and outline the
+  // selected row's tile there.
+  mapOverlay: true,
 };

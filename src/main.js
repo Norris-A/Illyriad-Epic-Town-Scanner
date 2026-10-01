@@ -1,9 +1,11 @@
-// Userscript entry point. Wires capture -> panel -> worker.
+// Userscript entry point. Wires capture -> panel -> worker, and the panel to the
+// map markers.
 // __WORKER_SOURCE__ is replaced at build time by build.mjs with the bundled
 // worker code as a string literal.
 
 import { probeInPageData, getLatestPayload } from './capture.js';
 import { createPanel, csvFile, csvFilename } from './panel.js';
+import { createOverlay } from './overlay.js';
 import { createSettingsStore, decodeSettings, STORAGE_KEY } from './settings-store.js';
 import { DEFAULT_SETTINGS } from './constants.js';
 
@@ -60,13 +62,34 @@ window.addEventListener('storage', (e) => {
   const { settings: s } = decodeSettings(e.newValue);
   if (!s) return;
   panel.setSettings(s, { save: false });
+  if (!s.mapOverlay) overlay.clear();
   panel.setStoreNote('Settings were changed in another tab; this panel now matches them.');
 });
 
+// A payload's envelope is the view on screen.
+const viewOf = (p) => p && { x: p.x, y: p.y, zoom: p.zoom };
+
+const overlay = createOverlay({
+  getView: () => viewOf(getLatestPayload()),
+  onPickSite: (x, y) => panel.selectSite(x, y),
+  onNote: (text, tooltip) => panel.setMapNote(text, tooltip),
+});
+
+const mapOverlayOn = () => panel.getSettings().settings.mapOverlay;
+
 const panel = createPanel({
   initialSettings: restored.settings ?? DEFAULT_SETTINGS,
-  onSettingsChange: saveSoon,
+  onSettingsChange: (s) => {
+    // Turned off, the markers leave the map at once; turned on, they wait for
+    // the next Scan.
+    if (!s.mapOverlay) overlay.clear();
+    saveSoon(s);
+  },
   onScan: runScan,
+  onSelect: (result) => {
+    if (mapOverlayOn()) overlay.outline(result);
+  },
+  onSiteSearchShown: (shown) => overlay.setShown(shown),
   // Read afresh whenever the optimiser or its town picker needs it, cut to the
   // view on screen as a Scan's is.
   getPayload: getLatestPayload,
@@ -109,6 +132,9 @@ function runScan() {
     return;
   }
 
+  const view = viewOf(payload);
+  // The markers belong to the table this Scan is about to replace.
+  overlay.clear();
   panel.setStatus('Scanning…');
   const worker = new Worker(workerUrl);
 
@@ -120,9 +146,8 @@ function runScan() {
     }
     lastResults = msg.results;
     // The facts, not the sentence — the panel does the wording.
-    panel.renderResults(msg.results, {
-      x: payload.x, y: payload.y, zoom: payload.zoom, scanned: msg.scanned,
-    });
+    panel.renderResults(msg.results, { ...view, scanned: msg.scanned });
+    if (mapOverlayOn()) overlay.showTop(msg.results, view);
     panel.renderIncomplete(msg.incomplete);
     panel.setStatus('');
     worker.terminate();

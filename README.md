@@ -58,6 +58,20 @@ at a lower rate. **Optimise x|y →** carries that tile over to the Optimal
 Sovereignty tab. **Export CSV** writes out every site the scan found, not just
 the first two hundred the table lists.
 
+The top ten are also numbered on the World Map itself, 1 to 10 in the table's
+order, so you can see where they lie. Clicking a row outlines its tile in blue;
+clicking a numbered tile opens its row, as clicking the row does. The numbers
+belong to the view you scanned, so moving the map — dragging it, the compass, or
+*View Centred In Map* — clears them; Scan again to number the new view. They
+show only while Site Search is open: switching to another tab or folding the
+panel hides them, and they come back when you return, unless the map has moved
+in the meantime. A row
+you click after moving is still outlined if its tile is on screen. The line
+under the summary says what the map is showing. If a game update changes how the
+map is laid out, the markers turn themselves off and that line says so; the
+results are unaffected. To leave the map untouched, untick *Mark sites on the
+World Map* under the gear.
+
 The summary line above the results says how much map was checked and how many
 candidates it held, whether or not any met your minimum. If sites were skipped
 because their claim radius runs past the edge of the screen, it says how many —
@@ -186,7 +200,7 @@ npm test
 ```
 
 Runs the scoring engine against the mechanics worked example, the optimiser, the
-payload reader and capture, the grid, the CSV writer, the settings validators and
+payload reader and capture, the grid, the map markers' geometry, the CSV writer, the settings validators and
 store, and the terrain descriptor table.
 
 ## Releasing
@@ -233,6 +247,7 @@ copy.
 | `src/worker.js` | Web Worker entry; bundled to a string and inlined |
 | `src/focus.js` | The Optimal Sovereignty calculator — one named tile, planned on the shared engine. No DOM |
 | `src/panel.js` | Side panel UI — the three tabs, the gear menu and the CSV writer |
+| `src/overlay.js` | The markers on the game's World Map — the numbered top ten, the selected row's outline, and a click on a tile opening its row. The geometry is DOM-free and tested |
 | `src/icons.js` | The app mark and the resource icons, as inline SVG and data URIs |
 | `src/settings-store.js` | Saving and restoring the City Configuration; sanitizes anything it loads |
 | `src/main.js` | Userscript entry; wires capture, panel and worker together |

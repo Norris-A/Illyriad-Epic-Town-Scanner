@@ -30,7 +30,7 @@ test('the rungs that are shared are the ones we know about', () => {
     'Armourer +1%: i:51, i:81',
     'Bowyer +3%: i:52, i:116',
     'Bowyer +1%: i:54, i:103',
-    'Poleturner +3%: i:55, i:68, i:90, i:119',
+    'Poleturner +3%: i:55, i:90, i:119',
     'Training Ground +2%: i:56, i:109',
     'Poleturner +1%: i:57, i:63, i:105',
     'Bowyer +2%: i:89, i:107',
@@ -149,8 +149,6 @@ test('rungs sharing a subject stay distinguishable on the tile', () => {
   assert.match(descriptorBadge({ i: 53 }), /Ranged Units/);    // Target Range
   assert.match(descriptorBadge({ i: 49 }), /Horses/);          // Farrier
   assert.match(descriptorBadge({ i: 33 }), /Cavalry Units/);   // Jousting Yard
-  assert.match(descriptorBadge({ i: 48 }), /Siege Blocks/);    // Engineering Yard
-  assert.match(descriptorBadge({ i: 71 }), /Siege Units/);     // Assembly Yard
 });
 
 // No art for these, so none is borrowed — a wrong icon reads as a fact.
@@ -160,26 +158,28 @@ test('no descriptor badge carries an image', () => {
   }
 });
 
-// One row is marked: i:71 Nunatak is the only military rung above +2 in the
-// table, against eight military readings that all stop at +2. Marked rather
-// than deleted — it may well be right, and a row read once is not a row that is
-// wrong.
-test('the disputed rows are the ones we have doubts about', () => {
+// No row is marked. The flag is kept because the table is read off the game and
+// the next row added may need it, so the rendering is tested on a made-up
+// descriptor rather than on a real id.
+test('no row is disputed, and the mark still renders when one is', () => {
   assert.deepEqual(
     Object.entries(TERRAIN_DESCRIPTORS).filter(([, d]) => d.disputed).map(([i]) => Number(i)),
-    [71],
+    [],
   );
-  assert.match(descriptorText({ i: 71 }), /\[unconfirmed\]/);
+  const made = { i: 999, name: 'Somewhere', bonus: 2, product: 'Pies', building: 'Bakery' };
+  assert.match(descriptorText({ descriptor: { ...made, disputed: 'read once' } }),
+    /\[unconfirmed\]/);
 });
 
-// Nothing else in the table claims a military rung above +2.
-test('no other military rung exceeds +2', () => {
+// Two rungs reach +3 on a military structure and the rest stop at +2, so the
+// pair is pinned: a third would mean a row was read against the wrong building.
+test('exactly two military rungs exceed +2', () => {
   const military = new Set(['Training Ground', 'Target Range', 'Military Academy',
     'Jousting Yard', 'Assembly Yard']);
   const high = Object.entries(TERRAIN_DESCRIPTORS)
     .filter(([, d]) => military.has(d.building) && d.bonus > 2)
     .map(([i]) => Number(i));
-  assert.deepEqual(high, [71]);
+  assert.deepEqual(high, [68, 71]);
 });
 
 // Rivers were recorded as carrying two innate crafting bonuses. They carry
@@ -251,6 +251,17 @@ test('the summary is shown above the table when there are results', () => {
   assert.doesNotMatch(html, /No sites met/);
 });
 
+// The map markers report on this line, so it starts empty. A scan that lists no
+// site has no table and no markers, so it has no line either.
+test('a table gets an empty map line between the summary and the rows', () => {
+  const html = resultsHtml([{
+    x: 1, y: 2, tMax: 62, binding: 'food', sFood: 10, uRp: 3, goldNet: 400,
+  }], 'Centre 1|2.');
+  const line = html.indexOf('<p class="sov-legend sov-map-note"></p>');
+  assert.ok(line > html.indexOf('Centre 1|2.') && line < html.indexOf('<table>'));
+  assert.doesNotMatch(resultsHtml([], 'Centre 1|2.'), /sov-map-note/);
+});
+
 // Where the scan looked and what it found. Why the other tiles were dropped is
 // deliberately not here: it is a question about the tool, not about the map.
 test('the scan summary states the area covered and the count found', () => {
@@ -282,7 +293,7 @@ test('the Limited By column names the ceiling rather than its code', () => {
 test('Marsh and Wooded Land hold one rung between them', () => {
   assert.equal(descriptorFor(90).building, descriptorFor(55).building);
   assert.equal(descriptorFor(90).bonus, descriptorFor(55).bonus);
-  assert.ok(sharedRungs().includes('Poleturner +3%: i:55, i:68, i:90, i:119'));
+  assert.ok(sharedRungs().includes('Poleturner +3%: i:55, i:90, i:119'));
 });
 
 test('the wetland rows are read', () => {
@@ -322,13 +333,28 @@ test('the NPC terrain class is exactly 40-45', () => {
   }
 });
 
-// Four terrains hold Poleturner +3%. That was read as one-per-family for a
-// while; it is just the most-shared rung in the table.
-test('four terrains hold Poleturner +3%', () => {
+// Three terrains hold Poleturner +3%, which ties it with Farrier +3% and
+// Poleturner +1% as the most-shared rung in the table.
+test('three terrains hold Poleturner +3%', () => {
   const holders = Object.entries(TERRAIN_DESCRIPTORS)
     .filter(([, d]) => d.building === 'Poleturner' && d.bonus === 3)
     .map(([i]) => Number(i));
-  assert.deepEqual(holders.sort((a, b) => a - b), [55, 68, 90, 119]);
+  assert.deepEqual(holders.sort((a, b) => a - b), [55, 90, 119]);
+});
+
+// Three rows whose only source is the client's Sovereignty Bonuses table, no
+// tile reading agreeing with them. Pinned individually because a row sourced
+// that way is the kind a later reading would quietly overwrite.
+test('the rows the client table alone sources read as it has them', () => {
+  assert.match(descriptorText({ i: 15 }),
+    /Fertile Orchard: \+1% Beer per level of Brewer's Yard/);
+  assert.match(descriptorText({ i: 48 }),
+    /Wooded Quarry: \+1% Siege Units per level of Assembly Yard/);
+  assert.match(descriptorText({ i: 68 }),
+    /Barren Wastes: \+3% Spear Units per level of Training Ground/);
+  // The Engineering Yard is named by no descriptor at all.
+  const named = new Set(Object.values(TERRAIN_DESCRIPTORS).map((d) => d.building));
+  assert.ok(!named.has('Engineering Yard'));
 });
 
 // --- the client's own table -------------------------------------------------

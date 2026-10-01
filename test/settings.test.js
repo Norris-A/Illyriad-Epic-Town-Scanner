@@ -61,6 +61,13 @@ test('auto-minimise reads the World Map route, sub-paths included', () => {
   assert.equal(DEFAULT_SETTINGS.autoMinimizeOffMap, true, 'the folding is on by default');
 });
 
+test('the map markers are on by default, behind the gear', () => {
+  assert.equal(DEFAULT_SETTINGS.mapOverlay, true);
+  const field = SETTINGS_FIELDS.find((f) => f.key === 'mapOverlay');
+  assert.equal(field.type, 'checkbox');
+  assert.equal(field.menu, true);
+});
+
 // --- the spec is driven by DEFAULT_SETTINGS, not a second copy of the table ---
 
 test('every setting has exactly one control, and every control a setting', () => {

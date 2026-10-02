@@ -90,10 +90,12 @@ would I actually build on *this* one".
 |---|---|
 | One of Your Towns | Fills the coordinates from a town of yours on the map |
 | Coordinates, `x` and `y` | — |
+| Pick on map | Press it, then click a tile on the World Map: that tile fills the coordinates and is optimised. While it waits for the click it turns red and reads *Cancel*, and pressing it again cancels |
 | Sovereignty Radius | Blank, which follows the Claim Radius in City Configuration |
 | Starting Tax | 60%, then dragged on the same slider the results carry |
+| Preserve Existing Sovereignty | Off — on a town of yours, keeps the claims that town itself holds: their research and gold come off the top, and the plan builds on those squares for the cost of the levels it raises them by. A second city of yours nearby keeps its own, which stay as unavailable as a stranger's unless Treat Your Own Claims as Available is on. Left off on a town of yours, its claims are planned as empty ground at full price, for reworking a layout |
 | Use the Plot Allocation from City Configuration | On — plans the centre tile as you mean to terraform it, rather than on its ratings today |
-| Preserve Existing Sovereignty | Off — on a town of yours, keeps the claims that town itself holds: their research and gold come off the top, and the plan builds on those squares for the cost of the levels it raises them by. A second city of yours nearby keeps its own, which stay as unavailable as a stranger's. Left off on a town of yours, its claims are planned as empty ground at full price, for reworking a layout |
+| Settle Plot Allocation and Treat Your Own Claims as Available | City Configuration's own settings, shown here too in a section of their own: changing them in either tab changes both |
 
 Everything else comes from City Configuration.
 
@@ -101,7 +103,20 @@ Any tile can be examined here, including one already settled, already claimed, o
 too near a town — the result says which of those it is rather than hiding the
 tile. The tile must be on screen, and so must the whole radius around it: if the
 radius runs past the edge of the screen, it says how many tiles are missing
-instead of planning around ground it cannot see.
+instead of planning around ground it cannot see. Either way it offers a link,
+*Centre the map on x|y*, that moves the map over the tile, zoomed out far enough
+for the whole radius; press **Optimise** once the map has loaded. Once the map
+has moved, by the link or by hand, the message changes to say so.
+
+The plan is also drawn on the World Map itself: the tile outlined in blue, the
+radius as a dashed square, food claims shaded green and military claims amber,
+claims you keep in blue-grey, and crossed-out tiles marked with a red ✕. Where
+the tiles are big enough to read, each claim carries its level too. It is only
+a picture: clicking the map does what it always does in the game. The drawing
+follows the grid as you drag the tax slider or cross tiles out there. Moving
+the map clears it; press **Optimise** to draw it again. It shows only while this
+tab is open, as the numbers do for Site Search. Unticking *Mark sites on the
+World Map* under the gear turns all of this off.
 
 ## City Configuration
 
@@ -247,7 +262,7 @@ copy.
 | `src/worker.js` | Web Worker entry; bundled to a string and inlined |
 | `src/focus.js` | The Optimal Sovereignty calculator — one named tile, planned on the shared engine. No DOM |
 | `src/panel.js` | Side panel UI — the three tabs, the gear menu and the CSV writer |
-| `src/overlay.js` | The markers on the game's World Map — the numbered top ten, the selected row's outline, and a click on a tile opening its row. The geometry is DOM-free and tested |
+| `src/overlay.js` | What the panel draws on the game's World Map — Site Search's numbered top ten and selected row, and the optimiser's plan — and the clicks on it that open a row or pick a tile to plan. The geometry is DOM-free and tested |
 | `src/icons.js` | The app mark and the resource icons, as inline SVG and data URIs |
 | `src/settings-store.js` | Saving and restoring the City Configuration; sanitizes anything it loads |
 | `src/main.js` | Userscript entry; wires capture, panel and worker together |

@@ -72,7 +72,9 @@ const viewOf = (p) => p && { x: p.x, y: p.y, zoom: p.zoom };
 const overlay = createOverlay({
   getView: () => viewOf(getLatestPayload()),
   onPickSite: (x, y) => panel.selectSite(x, y),
-  onNote: (text, tooltip) => panel.setMapNote(text, tooltip),
+  onPickCentre: (x, y) => panel.planAt(x, y),
+  onPicking: (armed) => panel.setPicking(armed),
+  onNote: (pane, text, tooltip) => panel.setMapNote(pane, text, tooltip),
 });
 
 const mapOverlayOn = () => panel.getSettings().settings.mapOverlay;
@@ -81,7 +83,7 @@ const panel = createPanel({
   initialSettings: restored.settings ?? DEFAULT_SETTINGS,
   onSettingsChange: (s) => {
     // Turned off, the markers leave the map at once; turned on, they wait for
-    // the next Scan.
+    // the next Scan or Optimise.
     if (!s.mapOverlay) overlay.clear();
     saveSoon(s);
   },
@@ -89,7 +91,11 @@ const panel = createPanel({
   onSelect: (result) => {
     if (mapOverlayOn()) overlay.outline(result);
   },
-  onSiteSearchShown: (shown) => overlay.setShown(shown),
+  onPaneShown: (pane) => overlay.setPane(pane),
+  onFocusPlan: (plan, geom) => {
+    if (mapOverlayOn()) overlay.showPlan(plan, geom);
+  },
+  onPickOnMap: () => overlay.togglePick(),
   // Read afresh whenever the optimiser or its town picker needs it, cut to the
   // view on screen as a Scan's is.
   getPayload: getLatestPayload,
@@ -134,7 +140,7 @@ function runScan() {
 
   const view = viewOf(payload);
   // The markers belong to the table this Scan is about to replace.
-  overlay.clear();
+  overlay.clearTop();
   panel.setStatus('Scanning…');
   const worker = new Worker(workerUrl);
 

@@ -1,11 +1,14 @@
-// The map markers' geometry. mapGeometry, tileAt and tileBox are pure, so where
-// every tile lands on screen — and which way up — is testable here without the
-// game's map.
+// The map marks' geometry, and which tiles a plan marks. Both are pure, so
+// where every tile lands on screen — and which way up — is testable here
+// without the game's map.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { mapGeometry, tileAt, tileBox, parseCoords } from '../src/overlay.js';
+import {
+  mapGeometry, tileAt, tileBox, squareBox, planMarks, parseCoords,
+} from '../src/overlay.js';
+import { cellKey } from '../src/panel.js';
 
 const rect = (left, top, width, height) =>
   ({ left, top, width, height, right: left + width, bottom: top + height });
@@ -139,6 +142,48 @@ for (const zoom of [1, 9, 19]) {
     }
   });
 }
+
+// --- the plan --------------------------------------------------------------
+
+test('a radius square runs from its north-west tile to its south-east one', () => {
+  const geom = measured();
+  const { pitch } = geom;
+  const nw = tileBox(geom, VIEW.x - 2, VIEW.y + 2);
+  assert.deepEqual(squareBox(geom, VIEW.x, VIEW.y, 2),
+    { left: nw.left, top: nw.top, size: 5 * pitch });
+  // Placed whether or not it is in view, so a radius running off screen is still drawn.
+  assert.equal(squareBox(geom, VIEW.x - 9, VIEW.y, 2).left, -2 * pitch);
+});
+
+const kinds = (marks) => Object.fromEntries(marks.map((m) => [`${m.x}|${m.y}`,
+  m.level === undefined ? m.kind : `${m.kind} ${m.level}`]));
+
+test('a plan marks its claims on their own tiles, y running north', () => {
+  const plan = {
+    free: [{ dx: -1, dy: 0 }, { dx: 1, dy: 1, held: 2 }, { dx: 0, dy: -1 }],
+    tiles: [{ dx: 1, dy: 0, level: 3 }],
+    milsov: [{ dx: 0, dy: -1, sovLevel: 4 }],
+  };
+  assert.deepEqual(kinds(planMarks(plan, { x: 100, y: 200, radius: 1 })), {
+    '101|201': 'kept 2',
+    '101|200': 'food 3',
+    // A military claim sits on a free tile, and is marked as the claim.
+    '100|199': 'mil 4',
+  });
+});
+
+test('a crossed-out tile overrides the plan, and a kept claim fills only an empty square', () => {
+  const plan = { free: [{ dx: -1, dy: 0 }], tiles: [{ dx: 1, dy: 0, level: 3 }], milsov: [] };
+  const geom = {
+    x: 100,
+    y: 200,
+    radius: 1,
+    excluded: new Set([cellKey(1, 0)]),
+    kept: [{ dx: -1, dy: 0, level: 1 }, { dx: 0, dy: 1, level: 5 }],
+  };
+  // 99|200 is kept, but the plan left it free, so the grid draws it free and it is not marked.
+  assert.deepEqual(kinds(planMarks(plan, geom)), { '101|200': 'out', '100|201': 'kept 5' });
+});
 
 // --- the game's readout --------------------------------------------------------
 

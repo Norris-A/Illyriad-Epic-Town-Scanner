@@ -1,9 +1,11 @@
 // Side panel UI: the three tabs, the gear menu and the CSV writer. The panel
-// never touches the game's map. The map markers are overlay.js's, and main.js
-// relays between the two: a selection goes out through `onSelect`, a click on
-// the map comes back through `selectSite`, what the markers show is reported
-// through `setMapNote`, and `onSiteSearchShown` says when Site Search is open
-// on screen for them to show beside.
+// never touches the game's map. The map marks are overlay.js's, and main.js
+// relays between the two: a selection goes out through `onSelect`, the
+// optimiser's plan through `onFocusPlan`, and a press of Pick on map through
+// `onPickOnMap`; a click on the map comes back through `selectSite` or
+// `planAt`; whether a pick is armed is reported through `setPicking`, and what
+// the map shows through `setMapNote`; and `onPaneShown` says which pane is open
+// on screen for the marks to show beside.
 //
 // Coordinates are DISPLAYED as "x|y" to match in-game convention, even though
 // payload keys are "y|x". Convert at the boundary, never in the middle.
@@ -51,6 +53,7 @@ import {
   FOCUS_DEFAULT_TAX,
   FOCUS_TAX_FLOOR,
   parseFocus,
+  focusRadius,
   focusSite,
 } from './focus.js';
 
@@ -163,8 +166,16 @@ belongs to neither and activates nothing. */
   border-bottom:1px solid #444}
 .sov-tabs button{background:#2a2a2a;color:#b5b5b5;padding:5px 9px;border-bottom:2px solid transparent}
 .sov-tabs button.on{background:#333;color:#fff;border-bottom-color:#3a5}
-.sov-xy{display:flex;gap:4px}
-.sov-xy input{width:60px;text-align:right}
+.sov-xy{display:flex;align-items:center;gap:4px}
+.sov-f .sov-xy input{width:60px;text-align:right}
+/* Sized outright: the host page's own button rules carry a height and width of
+   their own, and in this row they would set its height for the inputs too. */
+.sov-panel .sov-xy button{width:auto;min-width:0;height:auto;min-height:0;margin:0;
+  padding:3px 8px;line-height:1.4;white-space:nowrap}
+.sov-xy .sov-or{color:#8a8a8a;font-size:11px}
+.sov-panel button.sov-picking{background:#a33}
+.sov-no-map .sov-map-only{display:none}
+.sov-panel a.sov-map-centre{color:#6bf;text-decoration:underline}
 .sov-focus-out h3{margin:8px 0 2px;font-size:12px;font-weight:600;color:#fff}
 .sov-note{color:#a9a9a9;font-size:11px;margin:2px 0}
 .sov-warn{color:#e66;font-weight:bold;font-size:11px;margin:2px 0}
@@ -239,6 +250,15 @@ export const WORLD_MAP_HASH = '#/World/Map';
  */
 export function isWorldMapHash(hash) {
   return String(hash ?? '').startsWith(WORLD_MAP_HASH);
+}
+
+/**
+ * The World Map route centred on x|y, which the game writes itself on every
+ * move. The zoom is the view's, or `radius` where that is further, so the whole
+ * radius fits.
+ */
+export function centredMapHash(x, y, zoom, radius) {
+  return `${WORLD_MAP_HASH}/${x}/${y}/${Math.max(zoom, radius)}`;
 }
 
 /** Keep the panel's top-left corner reachable after a drag or viewport resize. */
@@ -659,7 +679,14 @@ export const SETTINGS_FIELDS = [
   { key: 'dOther', group: 'Neighbours', label: 'Minimum Distance to Other Players', type: 'number', min: 0, max: 100 },
   { key: 'dOwn', group: 'Neighbours', label: 'Minimum Distance to Your Cities', type: 'number', min: 0, max: 100 },
   { key: 'dAlliance', group: 'Neighbours', label: 'Minimum Distance to Alliance Towns', type: 'number', min: 0, max: 100 },
-  { key: 'ownClaimsAvailable', group: 'Neighbours', label: 'Treat Your Own Claims as Available', type: 'checkbox' },
+  {
+    key: 'ownClaimsAvailable',
+    group: 'Neighbours',
+    label: 'Treat Your Own Claims as Available',
+    type: 'checkbox',
+    hint: 'On: tiles you already claim count as free ground, as if you gave them up. '
+      + 'Off: they are off limits, except to the town that holds them.',
+  },
 
   {
     key: 'autoMinimizeOffMap',
@@ -675,8 +702,9 @@ export const SETTINGS_FIELDS = [
     label: 'Mark sites on the World Map',
     type: 'checkbox',
     menu: true,
-    hint: 'After a Scan, numbers the top ten on the map and outlines the selected row’s tile. '
-      + 'It draws on the game’s own map, so it depends on that map’s layout.',
+    hint: 'After a Scan, numbers the top ten on the map and outlines the selected row’s tile; '
+      + 'after Optimise, draws the plan. It draws on the game’s own map, so it depends on '
+      + 'that map’s layout.',
   },
 ];
 
@@ -782,17 +810,24 @@ function checkboxFieldHtml(f, value) {
   });
 }
 
-function plotsFieldHtml(f, plots) {
+const PLOTS_TITLE = `How the settle tile's ${PLOT_TOTAL} plots are split. `
+  + 'Terraforming applies to the settle tile only.';
+
+/** The five plot inputs, each carrying `hook` with its plot as the value. */
+function plotInputsHtml(hook, idPrefix, plots) {
   const fields = PLOT_KEYS.map((p) => {
-    const id = `sov-in-plot-${p}`;
+    const id = `${idPrefix}-${p}`;
     return `<div class="sov-plot"><label for="${id}">${productionLabel(p)}</label>
-      <input type="number" data-plot="${p}" min="0" max="${PLOT_TOTAL}"
+      <input type="number" ${hook}="${p}" min="0" max="${PLOT_TOTAL}"
         step="1" value="${plots?.[p] ?? 0}" id="${id}"></div>`;
   }).join('');
-  return `<div class="sov-f-block" data-key="${f.key}"
-      title="How the settle tile's ${PLOT_TOTAL} plots are split. Terraforming applies to the settle tile only.">
+  return `<div class="sov-plot-fields">${fields}</div>`;
+}
+
+function plotsFieldHtml(f, plots) {
+  return `<div class="sov-f-block" data-key="${f.key}" title="${PLOTS_TITLE}">
       <p class="sov-hint">${escapeHtml(f.label)}</p>
-      <div class="sov-plot-fields">${fields}</div>
+      ${plotInputsHtml('data-plot', 'sov-in-plot', plots)}
       <div class="sov-plot-sum">
         <span class="sov-plot-total"></span>
         <button type="button" class="sov-prefill sec">Prefill from Selected Tile</button>
@@ -969,7 +1004,9 @@ function focusRadiusTitle(rClaim) {
 /**
  * The optimiser's own form — the four values focusSite takes beyond the saved
  * configuration. Anything added here has to be added to readFocus and parseFocus
- * too; there is no field spec driving this one.
+ * too; there is no field spec driving this one. The exception is the City
+ * Configuration section's shared controls, which stand for City Configuration's
+ * own and are read there.
  */
 export function focusFormHtml(focus, settings) {
   const f = { ...DEFAULT_FOCUS, ...focus };
@@ -982,10 +1019,13 @@ export function focusFormHtml(focus, settings) {
     control: '<select class="sov-town-pick" id="sov-in-town-pick"><option value="">—</option></select>',
     row: ' title="Fills the coordinates from a town of yours on the map."',
   })}
-        <div class="sov-f"><span>Coordinates — x | y</span>
+        <div class="sov-f"><span>Coordinates</span>
           <span class="sov-xy">
             <input type="number" data-focus="x" step="1" placeholder="x" aria-label="x"${attr('value', f.x)}>
             <input type="number" data-focus="y" step="1" placeholder="y" aria-label="y"${attr('value', f.y)}>
+            <span class="sov-or sov-map-only">or</span>
+            <button type="button" class="sov-map-pick sov-map-only sec"
+              title="Then click a tile on the World Map to fill these in and optimise it.">Pick on map</button>
           </span></div>
         ${fieldRowHtml({
     id: 'sov-in-focus-radius',
@@ -1003,23 +1043,36 @@ export function focusFormHtml(focus, settings) {
             value="${f.tax ?? FOCUS_DEFAULT_TAX}" id="sov-in-focus-tax">`,
   })}
         ${checkboxRowHtml({
-    id: 'sov-cb-focus-useConfiguredPlots',
-    label: 'Use the Plot Allocation from City Configuration',
-    checked: f.useConfiguredPlots,
-    hooks: ' data-focus="useConfiguredPlots"',
-    row: ` title="On: plan on your ${PLOT_TOTAL}-plot allocation, the tile as you will terraform it. Off: plan on the tile's ratings as they are today."`,
-  })}
-        ${checkboxRowHtml({
     id: 'sov-cb-focus-preserveSovereignty',
     label: 'Preserve Existing Sovereignty',
     checked: f.preserveSovereignty,
     hooks: ' data-focus="preserveSovereignty"',
-    row: ' title="On: keep the claims this town already holds, and pay only for the levels the plan adds. Off: lay its claims out afresh at full price, to rework a layout. Claims held by your other towns are never used."',
+    row: ' title="On: a town of yours keeps the claims it holds, and the plan pays only to raise them. Off: they are laid out afresh at full price."',
+  })}
+      </fieldset>
+      <fieldset><legend>City Configuration</legend>
+        ${checkboxRowHtml({
+    id: 'sov-cb-focus-useConfiguredPlots',
+    label: 'Use the Plot Allocation from City Configuration',
+    checked: f.useConfiguredPlots,
+    hooks: ' data-focus="useConfiguredPlots"',
+    row: ` title="On: plan on the allocation below, the tile as you will terraform it. Off: plan on the tile's ratings as they are today."`,
+  })}
+        <div class="sov-f-block" title="${PLOTS_TITLE}">
+          ${plotInputsHtml('data-mirror-plot', 'sov-in-focus-plot', settings?.plots)}
+          <div class="sov-plot-sum"><span class="sov-plot-total"></span></div>
+        </div>
+        ${checkboxRowHtml({
+    id: 'sov-cb-focus-ownClaimsAvailable',
+    label: 'Treat Your Own Claims as Available',
+    hooks: ' data-mirror-key="ownClaimsAvailable"',
+    row: attr('title', SETTINGS_FIELDS.find((s) => s.key === 'ownClaimsAvailable').hint),
   })}
       </fieldset>
       <p><button type="button" class="sov-focus-run">Optimise</button></p>
       <p class="sov-hint">Everything else comes from City Configuration.</p>
     </form>
+    <p class="sov-legend sov-map-note"></p>
     <div class="sov-focus-status"></div>
     <div class="sov-focus-out"></div>`;
 }
@@ -1073,12 +1126,18 @@ function capitalDerivedHtml(s) {
  *   already runs the same planner there.
  * @param {(result: object) => void} [o.onSelect] a result row was selected,
  *   from the table or through selectSite
- * @param {(shown: boolean) => void} [o.onSiteSearchShown] Site Search opened or
- *   closed on screen — switched to or away from, or the panel unfolded or
- *   folded. Called once at the start with how the panel opens.
+ * @param {(pane: string|null) => void} [o.onPaneShown] the pane open on screen
+ *   changed — by tab, or by the panel unfolding or folding, which shows none.
+ *   Called once at the start with how the panel opens.
+ * @param {(plan: object|null, geom: object) => void} [o.onFocusPlan] the
+ *   optimiser's claim grid was drawn from `plan` and `geom`; null when there is
+ *   no grid
+ * @param {() => void} [o.onPickOnMap] Pick on map was pressed, to arm a pick or
+ *   to cancel one
  */
 export function createPanel({
-  onScan, onExport, initialSettings, onSettingsChange, getPayload, onSelect, onSiteSearchShown,
+  onScan, onExport, initialSettings, onSettingsChange, getPayload, onSelect, onPaneShown,
+  onFocusPlan, onPickOnMap,
 }) {
   const style = document.createElement('style');
   style.textContent = CSS;
@@ -1202,9 +1261,9 @@ licence and full copyright notice.">ⓘ</a></span></span></h2>
   let manualCollapsed = loadPanelCollapsed();
   // A hand-expand riding over the off-map force-collapse; cleared on route change.
   let offMapExpandOverride = false;
-  // Whether Site Search was last reported open on screen. Null until the first
-  // report, so the opening state is reported too.
-  let siteSearchShown = null;
+  // The pane last reported open on screen. Undefined until the first report, so
+  // the opening state is reported too.
+  let paneShown;
 
   const autoMinimizeOn = () => !!readSettings().settings.autoMinimizeOffMap;
   const currentlyOnMap = () => isWorldMapHash(globalThis.location?.hash);
@@ -1224,16 +1283,16 @@ licence and full copyright notice.">ⓘ</a></span></span></h2>
       const rect = root.getBoundingClientRect();
       positionPanel(rect.left, rect.top);
     }
-    reportSiteSearch();
+    reportPane();
   }
 
-  /** Tell the caller when Site Search opens or closes on screen: by tab or by folding. */
-  function reportSiteSearch() {
-    const shown = !root.classList.contains('sov-collapsed')
-      && !root.querySelector('[data-pane="scan"]').hidden;
-    if (shown === siteSearchShown) return;
-    siteSearchShown = shown;
-    onSiteSearchShown?.(shown);
+  /** Tell the caller when the pane open on screen changes: by tab or by folding. */
+  function reportPane() {
+    const shown = root.classList.contains('sov-collapsed')
+      ? null : root.querySelector('[data-pane]:not([hidden])').dataset.pane;
+    if (shown === paneShown) return;
+    paneShown = shown;
+    onPaneShown?.(shown);
   }
 
   function toggleCollapsed() {
@@ -1295,7 +1354,7 @@ licence and full copyright notice.">ⓘ</a></span></span></h2>
     });
     root.querySelectorAll('[data-pane]').forEach((p) => { p.hidden = p.dataset.pane !== name; });
     if (name === 'focus') syncFocusRadiusHint();
-    reportSiteSearch();
+    reportPane();
   }
   root.querySelectorAll('.sov-tabs button').forEach((tab) => {
     tab.addEventListener('click', () => showTab(tab.dataset.tab));
@@ -1450,11 +1509,12 @@ licence and full copyright notice.">ⓘ</a></span></span></h2>
     // The running total and the K it produces, so the cost of an edit to the
     // food plots is visible while making it.
     const plots = validatePlots(plotInputs());
-    const total = form.querySelector('.sov-plot-total');
-    total.className = `sov-plot-total ${plots.ok ? 'sov-ok' : 'sov-bad'}`;
-    total.textContent = `Total ${plots.total} / ${PLOT_TOTAL}${
-      plots.ok ? '' : ` — ${plots.message}`} · ${
-      computeK(plots.plots.food).toFixed(2)} food/hr per production point`;
+    for (const total of root.querySelectorAll('.sov-plot-total')) {
+      total.className = `sov-plot-total ${plots.ok ? 'sov-ok' : 'sov-bad'}`;
+      total.textContent = `Total ${plots.total} / ${PLOT_TOTAL}${
+        plots.ok ? '' : ` — ${plots.message}`} · ${
+        computeK(plots.plots.food).toFixed(2)} food/hr per production point`;
+    }
 
     form.querySelector('.sov-derived').innerHTML = capitalDerivedHtml(s);
     const bOther = computeBOther(s);
@@ -1476,6 +1536,21 @@ licence and full copyright notice.">ⓘ</a></span></span></h2>
     // so there is nothing to score it against — block the scan outright.
     scanBtn.disabled = !plots.ok;
     scanBtn.title = plots.ok ? '' : 'Settle plot allocation must sum to 25';
+
+    root.classList.toggle('sov-no-map', !s.mapOverlay);
+    for (const el of root.querySelectorAll('[data-mirror-key], [data-mirror-plot]')) {
+      const own = mirrored(el);
+      if (el.type === 'checkbox') setChecked(el, own.checked);
+      // As typed, not as clamped, so a value part-way through being typed is left alone.
+      else if (el.value !== own.value) el.value = own.value;
+    }
+  }
+
+  /** The City Configuration control a shared control in the optimiser's form stands for. */
+  function mirrored(el) {
+    const { mirrorKey, mirrorPlot } = el.dataset;
+    if (mirrorKey) return form.querySelector(`input[data-key="${mirrorKey}"]`);
+    return mirrorPlot ? form.querySelector(`input[data-plot="${mirrorPlot}"]`) : null;
   }
 
   // Everything is bound here rather than with inline handlers, which the host
@@ -1597,6 +1672,7 @@ licence and full copyright notice.">ⓘ</a></span></span></h2>
   // --- Optimal Sovereignty ---
 
   const focusForm = $('.sov-focus-form');
+  let refusedAt = null;    // the tile an off-screen refusal below the form names
 
   function syncFocusRadiusHint() {
     const { settings: s } = readSettings();
@@ -1638,28 +1714,50 @@ licence and full copyright notice.">ⓘ</a></span></span></h2>
     return raw;
   }
 
+  /**
+   * An off-screen refusal answers for the view it was made on, so the first move
+   * of the map retires it. Asking about the new view is left to the next press,
+   * since the game loads that view's tiles after the move.
+   */
+  function retireRefusal() {
+    $('.sov-focus-status').textContent =
+      `The map has moved. Optimise again to check ${refusedAt.x}|${refusedAt.y} on this view.`;
+  }
+
   function runFocus() {
     const status = $('.sov-focus-status');
     const out = $('.sov-focus-out');
+    window.removeEventListener('hashchange', retireRefusal);
+    const fail = (message) => {
+      status.textContent = message;
+      out.innerHTML = '';
+      onFocusPlan?.(null);
+    };
     // Read at the moment of the press, as runScan does, so an edit left in the
     // config pane reaches this plan without needing to be committed first.
     const read = readSettings();
     if (read.errors.length) {
-      status.textContent = read.errors.join(' ');
-      out.innerHTML = '';
+      fail(read.errors.join(' '));
       return;
     }
     const { focus, errors } = parseFocus(readFocus());
     if (errors.length) {
-      status.textContent = errors.join(' ');
-      out.innerHTML = '';
+      fail(errors.join(' '));
       return;
     }
 
-    const result = focusSite({ payload: getPayload?.(), focus, settings: read.settings });
+    const payload = getPayload?.();
+    const result = focusSite({ payload, focus, settings: read.settings });
     if (!result.ok) {
-      status.textContent = result.message;
-      out.innerHTML = '';
+      fail(result.message);
+      if (result.reason === 'centre-missing' || result.reason === 'incomplete') {
+        refusedAt = focus;
+        window.addEventListener('hashchange', retireRefusal, { once: true });
+        // A relative link, so it stays on whichever of the game's hosts this is.
+        status.insertAdjacentHTML('beforeend', `<p class="sov-map-only"><a class="sov-map-centre"
+          href="${centredMapHash(focus.x, focus.y, payload.zoom, focusRadius(focus, read.settings))}"
+          >Centre the map on ${focus.x}|${focus.y}</a></p>`);
+      }
       return;
     }
     status.textContent = '';
@@ -1673,7 +1771,17 @@ licence and full copyright notice.">ⓘ</a></span></span></h2>
       floor: result.floor,
       geom: { radius: result.radius, x: result.x, y: result.y, kept: result.kept?.claims },
       tax: result.plan.tax,
+      onPlan: onFocusPlan,
     });
+  }
+
+  /** Fill in x|y and plan it. */
+  function planAt(x, y) {
+    focusForm.querySelector('[data-focus="x"]').value = x;
+    focusForm.querySelector('[data-focus="y"]').value = y;
+    // A tile named elsewhere, not whichever town the picker was left on.
+    townPick.value = '';
+    runFocus();
   }
 
   /**
@@ -1683,13 +1791,8 @@ licence and full copyright notice.">ⓘ</a></span></span></h2>
    * question continued rather than a new one.
    */
   function optimiseSite(result) {
-    focusForm.querySelector('[data-focus="x"]').value = result.x;
-    focusForm.querySelector('[data-focus="y"]').value = result.y;
     showTab('focus');
-    // showTab has rebuilt the list; the coordinates above are a scanned site,
-    // not whichever town the picker was left on.
-    focusForm.querySelector('.sov-town-pick').value = '';
-    runFocus();
+    planAt(result.x, result.y);
     // The answer is below the form, and the form is what the tab lands on. The
     // status is the higher of the two, so this lands on a refusal as well as a plan.
     $('.sov-focus-status').scrollIntoView({ block: 'start' });
@@ -1701,6 +1804,18 @@ licence and full copyright notice.">ⓘ</a></span></span></h2>
   // before any keyboard selection.
   townPick.addEventListener('pointerdown', syncTownPicker);
   townPick.addEventListener('focus', syncTownPicker);
+
+  // A shared control hands each edit to City Configuration's own, whose handlers
+  // clamp, total and save it, and whose refresh brings this one back in line.
+  for (const type of ['input', 'change']) {
+    focusForm.addEventListener(type, (e) => {
+      const own = mirrored(e.target);
+      if (!own) return;
+      if (own.type === 'checkbox') setChecked(own, e.target.checked);
+      else own.value = e.target.value;
+      own.dispatchEvent(new Event(type, { bubbles: true }));
+    });
+  }
 
   focusForm.addEventListener('change', (e) => {
     const el = e.target;
@@ -1718,6 +1833,7 @@ licence and full copyright notice.">ⓘ</a></span></span></h2>
   focusForm.addEventListener('submit', (e) => e.preventDefault());
   focusForm.addEventListener('click', (e) => {
     if (e.target.closest('.sov-focus-run')) runFocus();
+    else if (e.target.closest('.sov-map-pick')) onPickOnMap?.();
   });
 
   refresh({ save: false });
@@ -1737,11 +1853,11 @@ licence and full copyright notice.">ⓘ</a></span></span></h2>
       root.querySelector('.sov-status').innerHTML = html;
     },
     /**
-     * The line under the scan summary saying what the map markers show; ''
-     * clears it. The line exists only while the table lists a site.
+     * A pane's line saying what the map shows; '' clears it. Site Search's is
+     * under the scan summary, and exists only while the table lists a site.
      */
-    setMapNote(text, tooltip) {
-      const note = $('.sov-map-note');
+    setMapNote(pane, text, tooltip) {
+      const note = $(`[data-pane="${pane}"] .sov-map-note`);
       if (!note) return;
       note.textContent = text;
       note.title = tooltip ?? '';
@@ -1784,6 +1900,13 @@ licence and full copyright notice.">ⓘ</a></span></span></h2>
       }
       row.scrollIntoView({ block: 'nearest' });
       return true;
+    },
+    planAt,
+    /** Pick on map turns into its own cancel while a pick is armed. */
+    setPicking(armed) {
+      const button = focusForm.querySelector('.sov-map-pick');
+      button.classList.toggle('sov-picking', armed);
+      button.textContent = armed ? 'Click a tile · Cancel' : 'Pick on map';
     },
     renderIncomplete(list) {
       incomplete = list;
@@ -1892,10 +2015,11 @@ function planBlockHtml({ ctx, base, plan, floor, geom }) {
 
 /**
  * Make a rendered plan block live. Does nothing when there is no slider.
- * `onTax` records the rate the user dragged to, so redrawing the block after a
+ * `onPlan(tax, plan)` hears each re-plan, `plan` null where that tax holds
+ * none. The rate is the one the user dragged to, so redrawing the block after a
  * tile is crossed out can come back to it.
  */
-function bindPlanBlock(scope, ctx, base, geom, onTax) {
+function bindPlanBlock(scope, ctx, base, geom, onPlan) {
   const range = scope.querySelector('.sov-tax-range');
   if (!range) return;
   const at = scope.querySelector('.sov-tax-at');
@@ -1903,11 +2027,11 @@ function bindPlanBlock(scope, ctx, base, geom, onTax) {
   range.addEventListener('input', () => {
     const tax = Number(range.value);
     at.textContent = `${tax.toFixed(0)}%`;
-    onTax?.(tax);
     const plan = planSiteAt(ctx, tax);
     body.innerHTML = plan
       ? detailBodyHtml(plan, base, geom)
       : '<p class="sov-flag">This site cannot hold that tax.</p>';
+    onPlan(tax, plan);
   });
 }
 
@@ -1917,10 +2041,12 @@ function bindPlanBlock(scope, ctx, base, geom, onTax) {
  * it. Exclusions live here and nowhere else, so closing the block clears them.
  *
  * @param {Element} scope the element to own the block
- * @param {object} state `{neighbours, settings, ctx, base, floor, geom, tax}`.
- *   `ctx` and `base` are the caller's own, used while nothing is crossed out;
- *   `neighbours` is the site's claimable tiles unfiltered, and without them the
- *   block cannot re-plan, so it renders once and takes no clicks
+ * @param {object} state `{neighbours, settings, ctx, base, floor, geom, tax,
+ *   onPlan}`. `ctx` and `base` are the caller's own, used while nothing is
+ *   crossed out; `neighbours` is the site's claimable tiles unfiltered, and
+ *   without them the block cannot re-plan, so it renders once and takes no
+ *   clicks. `onPlan(plan, geom)`, if given, hears what each claim grid is drawn
+ *   from, and a null plan when the slider reaches a tax with none
  */
 function mountPlanBlock(scope, state) {
   const excluded = new Set();
@@ -1939,8 +2065,10 @@ function mountPlanBlock(scope, state) {
     const geom = { ...state.geom, excluded, pickable: !!state.neighbours };
 
     if (!base) {
+      const none = { tiles: [], free: [], milsov: [] };
       scope.innerHTML = `<p class="sov-flag">No plan holds with those tiles crossed out.</p>${
-        planGridHtml({ tiles: [], free: [], milsov: [] }, geom)}`;
+        planGridHtml(none, geom)}`;
+      state.onPlan?.(none, geom);
       return;
     }
     // A smaller neighbourhood may not hold the tax the user dragged to, and 0
@@ -1948,7 +2076,11 @@ function mountPlanBlock(scope, state) {
     tax = Math.max(0, Math.min(base.tMax, Math.max(Math.ceil(state.floor), tax)));
     const plan = (ctx ? planSiteAt(ctx, tax, { bestEffort: true }) : null) ?? base;
     scope.innerHTML = planBlockHtml({ ctx, base, plan, floor: state.floor, geom });
-    bindPlanBlock(scope, ctx, base, geom, (t) => { tax = t; });
+    bindPlanBlock(scope, ctx, base, geom, (t, p) => {
+      tax = t;
+      state.onPlan?.(p, geom);
+    });
+    state.onPlan?.(plan, geom);
   };
 
   // Delegated once, since every redraw replaces the grid inside `scope`.
@@ -2104,7 +2236,7 @@ function focusResultHtml(r) {
 }
 
 /** A sovereignty level as its numeral, or as the number itself if it is not 1-5. */
-function roman(level) {
+export function roman(level) {
   return SOV_LEVEL_ROMAN[level - 1] ?? String(level);
 }
 

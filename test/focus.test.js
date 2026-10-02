@@ -14,13 +14,15 @@ import {
   focusSite,
   keptClaims,
 } from '../src/focus.js';
-import { DEFAULT_SETTINGS, PLOT_TOTAL, FOOD_CLAIM_LEVEL } from '../src/constants.js';
+import { DEFAULT_SETTINGS, PLOT_KEYS, PLOT_TOTAL, FOOD_CLAIM_LEVEL } from '../src/constants.js';
 import {
   tileKey, indexPayload, townString, townRecord, neighbourhood, inWorld, isWaterTile,
   claimLevel,
 } from '../src/payload.js';
 import { scoreSite, claimUpkeep, distance } from '../src/scoring.js';
-import { focusFormHtml, ownTowns, planGridHtml, claimHolderText } from '../src/panel.js';
+import {
+  focusFormHtml, ownTowns, planGridHtml, claimHolderText, centredMapHash,
+} from '../src/panel.js';
 
 const settings = { ...DEFAULT_SETTINGS, tMin: -1000 };
 
@@ -68,10 +70,13 @@ test('the markup carries every hook the optimiser reads back out of it', () => {
   const html = focusFormHtml(DEFAULT_FOCUS, settings);
   const hooks = [
     'class="sov-focus-form"', 'class="sov-focus-run"', 'class="sov-town-pick"',
-    'class="sov-focus-status"', 'class="sov-focus-out"',
+    'class="sov-focus-status"', 'class="sov-focus-out"', 'class="sov-legend sov-map-note"',
+    'class="sov-map-pick sov-map-only sec"',
     'data-focus="x"', 'data-focus="y"', 'data-focus="radius"', 'data-focus="tax"',
     'type="checkbox" data-focus="useConfiguredPlots"',
     'type="checkbox" data-focus="preserveSovereignty"',
+    'type="checkbox" data-mirror-key="ownClaimsAvailable"', 'class="sov-plot-total"',
+    ...PLOT_KEYS.map((p) => `data-mirror-plot="${p}"`),
   ];
   for (const hook of hooks) assert.ok(html.includes(hook), `markup is missing ${hook}`);
   assert.ok(!/undefined|null|\[object Object\]/.test(html), 'a field rendered a stray value');
@@ -545,6 +550,12 @@ test('a radius reaching past the payload refuses, and says by how much', () => {
   assert.equal(r.ring, 80);
   assert.equal(r.missing, 80 - 48);
   assert.match(r.message, /radius 4/);
+});
+
+// The route the game itself writes on every move, so following it moves the map.
+test('the map is centred at its own zoom, or out far enough for the radius', () => {
+  assert.equal(centredMapHash(360, -3170, 9, 3), '#/World/Map/360/-3170/9');
+  assert.equal(centredMapHash(360, -3170, 2, 3), '#/World/Map/360/-3170/3');
 });
 
 test('no payload at all is a distinct answer from a missing tile', () => {

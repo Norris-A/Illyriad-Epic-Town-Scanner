@@ -26,10 +26,11 @@ export const CLAIM_GOLD_PER_LEVEL_DISTANCE = 100; // [V] gold is exactly 10x RP
 // diagonal costs five times the level 1 figure.
 export const CLAIM_DISTANCE_DECIMALS = 2;
 
-// [F] -40% at Chancery level 20.
+// [F] A level 20 Chancery of Estates takes 40% off the cost of a claim held at
+// level 1. [V] Only level 1 claims: one at level 2 or above pays in full, so
+// raising a claim past level 1 also gives up the discount it had.
 // [?] Whether the discount lands before or after the distance quantisation above
-// is unmeasured, as is whether it reaches claims above level 1 — sources describe
-// it through a level 1 example. Applied here to the finished cost.
+// is unmeasured. Applied here to the finished cost.
 export const CHANCERY_FACTOR = 0.6;
 
 // [F] Food sovereignty requires a level 5 claim carrying a level 5 building.

@@ -9,11 +9,11 @@ import {
   computeK, computeBOther, computeConsumption, computeResearch, researchAt,
   tFood, tRp, tMax, goldNet, claimUpkeep, distance, knapsack, recoverSet, scoreSite,
   milsovHeadroom, planMilsov, tRes, surplusAt, computeBasicYield,
-  prepareSite, planSiteAt, settableTax,
+  prepareSite, planSiteAt, settableTax, chanceryFactor,
 } from '../src/scoring.js';
 import {
   DEFAULT_SETTINGS, BASIC_YIELD_L20, BASIC_RESOURCES,
-  MILSOV_UPKEEP_BY_LEVEL, MILSOV_BONUS_PER_LEVEL, CHANCERY_FACTOR,
+  MILSOV_UPKEEP_BY_LEVEL, MILSOV_BONUS_PER_LEVEL,
   PRESTIGE_PRODUCTION_BONUS, PRESTIGE_KEYS, RESOURCE_BOOSTER_BONUS,
   CLAIM_RP_PER_LEVEL_DISTANCE, descriptorFor,
 } from '../src/constants.js';
@@ -149,35 +149,43 @@ test('the distance the claim is charged on is quantised to two decimals', () => 
 });
 
 test('claim upkeep matches the reference table', () => {
-  close(claimUpkeep(distance(1, 0), 5, false).rp, 50.0, 1e-9);
-  close(claimUpkeep(distance(1, 1), 5, false).rp, 70.5, 1e-9);
-  close(claimUpkeep(distance(2, 0), 5, false).rp, 100.0, 1e-9);
-  close(claimUpkeep(distance(2, 1), 5, false).rp, 112.0, 1e-9);
-  close(claimUpkeep(distance(2, 2), 5, false).rp, 141.5, 1e-9);
+  close(claimUpkeep(distance(1, 0), 5).rp, 50.0, 1e-9);
+  close(claimUpkeep(distance(1, 1), 5).rp, 70.5, 1e-9);
+  close(claimUpkeep(distance(2, 0), 5).rp, 100.0, 1e-9);
+  close(claimUpkeep(distance(2, 1), 5).rp, 112.0, 1e-9);
+  close(claimUpkeep(distance(2, 2), 5).rp, 141.5, 1e-9);
   // gold is exactly 10x RP
-  close(claimUpkeep(distance(1, 0), 5, false).gold, 500.0, 1e-9);
-  // Chancery of Estates: -40%
-  close(claimUpkeep(1, 1, true).rp, 6);
-  close(claimUpkeep(1, 1, true).gold, 60);
+  close(claimUpkeep(distance(1, 0), 5).gold, 500.0, 1e-9);
+});
+
+test('a Chancery discounts a level 1 claim and no other', () => {
+  const chancery = chanceryFactor({ chancery: true });
+  close(chancery, 0.6, 1e-12);
+  assert.equal(chanceryFactor({ chancery: false }), 1);
+  close(claimUpkeep(1, 1, chancery).rp, 6, 1e-9);
+  close(claimUpkeep(1, 1, chancery).gold, 60, 1e-9);
+  close(claimUpkeep(1, 5, chancery).rp, 50, 1e-9);
+  // Raising a discounted level 1 claim gives the discount up: 20 - 6.
+  close(claimUpkeep(1, 2, chancery, 1).rp, 14, 1e-9);
 });
 
 test('the readings the claim cost was measured from reproduce exactly', () => {
   // A diagonal at levels 1 and 5, read in game; and a (2,1) tile at level 2 from
   // the community guide, which is the reading that separates rounding the
   // distance from truncating it — 2.23 would charge 446.
-  close(claimUpkeep(distance(1, 1), 1, false).gold, 141, 1e-9);
-  close(claimUpkeep(distance(1, 1), 1, false).rp, 14.1, 1e-9);
-  close(claimUpkeep(distance(1, 1), 5, false).gold, 705, 1e-9);
-  close(claimUpkeep(distance(1, 1), 5, false).rp, 70.5, 1e-9);
-  close(claimUpkeep(distance(2, 1), 2, false).gold, 448, 1e-9);
-  close(claimUpkeep(distance(1, 0), 3, false).gold, 300, 1e-9);
+  close(claimUpkeep(distance(1, 1), 1).gold, 141, 1e-9);
+  close(claimUpkeep(distance(1, 1), 1).rp, 14.1, 1e-9);
+  close(claimUpkeep(distance(1, 1), 5).gold, 705, 1e-9);
+  close(claimUpkeep(distance(1, 1), 5).rp, 70.5, 1e-9);
+  close(claimUpkeep(distance(2, 1), 2).gold, 448, 1e-9);
+  close(claimUpkeep(distance(1, 0), 3).gold, 300, 1e-9);
 });
 
 test('level multiplies the claim cost exactly, with no rounding of its own', () => {
   for (const [dx, dy] of [[1, 0], [1, 1], [2, 1], [2, 2]]) {
-    const one = claimUpkeep(distance(dx, dy), 1, false);
+    const one = claimUpkeep(distance(dx, dy), 1);
     for (let level = 2; level <= 5; level += 1) {
-      close(claimUpkeep(distance(dx, dy), level, false).gold, one.gold * level, 1e-9);
+      close(claimUpkeep(distance(dx, dy), level).gold, one.gold * level, 1e-9);
     }
   }
 });
@@ -185,7 +193,7 @@ test('level multiplies the claim cost exactly, with no rounding of its own', () 
 test('the full inner ring of 8 at L5 costs 482 RP/hr', () => {
   let total = 0;
   for (const [dx, dy] of [[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]]) {
-    total += claimUpkeep(distance(dx, dy), 5, false).rp;
+    total += claimUpkeep(distance(dx, dy), 5).rp;
   }
   close(total, 482.0, 1e-9);
 });
@@ -373,14 +381,14 @@ test('several low-level buildings beat one high one when upkeep is what binds', 
   // 3x Sov I and 1x Sov III both cost 30 RP and both give +15%. The hourly bill
   // does tell them apart — 450 against 600 — so the spread plan is the answer.
   const tiles = [{ d: 1 }, { d: 1 }, { d: 1 }];
-  const spread = planMilsov({ tiles, headroom: { rp: 1000, upkeep: 450, slots: 3 }, chancery: false });
+  const spread = planMilsov({ tiles, headroom: { rp: 1000, upkeep: 450, slots: 3 } });
   assert.equal(spread.bonus, 15);
   assert.deepEqual(spread.levels, [1, 1, 1]);
   assert.equal(spread.upkeep, 450);
 
   // Take the tiles away and the same bonus has to be concentrated, at the
   // higher bill — which is why this is a property of the site, not a rule.
-  const squeezed = planMilsov({ tiles, headroom: { rp: 1000, upkeep: 600, slots: 1 }, chancery: false });
+  const squeezed = planMilsov({ tiles, headroom: { rp: 1000, upkeep: 600, slots: 1 } });
   assert.equal(squeezed.bonus, 15);
   assert.deepEqual(squeezed.levels, [3]);
   assert.equal(squeezed.upkeep, 600);
@@ -390,7 +398,7 @@ test('research pulls the other way: a nearer tile is worth more than a spread', 
   // One tile at d = 1 and one at d = 10. Spreading costs 110 RP for +10%;
   // stacking the near tile costs 20 for the same, and research is what is short.
   const tiles = [{ d: 1 }, { d: 10 }];
-  const plan = planMilsov({ tiles, headroom: { rp: 100, upkeep: 1e9, slots: 2 }, chancery: false });
+  const plan = planMilsov({ tiles, headroom: { rp: 100, upkeep: 1e9, slots: 2 } });
   assert.deepEqual(plan.levels, [5], 'the far tile is not worth reaching');
   assert.equal(plan.bonus, 25);
 });
@@ -406,7 +414,7 @@ test('the plan never outspends any of its three budgets', () => {
     const tiles = Array.from({ length: n }, () => ({ d: 1 + rnd(2000) / 1000 }))
       .sort((a, b) => a.d - b.d);
     const headroom = { rp: rnd(500), upkeep: rnd(6000), slots: rnd(n + 2) };
-    const chancery = trial % 3 === 0;
+    const chancery = [1, 0.6, 0.3][trial % 3];
     const plan = planMilsov({ tiles, headroom, chancery });
 
     assert.ok(plan.rp <= headroom.rp + 1e-9, `trial ${trial}: overspent research`);
@@ -414,10 +422,9 @@ test('the plan never outspends any of its three budgets', () => {
     assert.ok(plan.buildings <= headroom.slots, `trial ${trial}: broke the building cap`);
     assert.ok(plan.buildings <= n, `trial ${trial}: placed more buildings than tiles`);
     // The three figures are consistent with the levels they came back with.
-    const f = chancery ? CHANCERY_FACTOR : 1;
     close(plan.bonus, MILSOV_BONUS_PER_LEVEL * plan.levels.reduce((a, b) => a + b, 0), 1e-9);
     close(plan.upkeep, plan.levels.reduce((a, l) => a + MILSOV_UPKEEP_BY_LEVEL[l], 0), 1e-9);
-    close(plan.rp, plan.levels.reduce((a, l, i) => a + 10 * l * tiles[i].d * f, 0), 1e-6);
+    close(plan.rp, plan.levels.reduce((a, l, i) => a + claimUpkeep(tiles[i].d, l, chancery).rp, 0), 1e-6);
   }
 });
 
@@ -426,7 +433,6 @@ test('the plan is the best one those budgets can buy, not merely a good one', ()
   // handful of tiles — but it is the definition the layer decomposition claims
   // to compute exactly, so it is worth checking against directly.
   const brute = (tiles, headroom, chancery) => {
-    const f = chancery ? CHANCERY_FACTOR : 1;
     const n = Math.min(tiles.length, Math.floor(headroom.slots));
     let best = 0;
     const rec = (i, rp, up, bonus) => {
@@ -436,7 +442,7 @@ test('the plan is the best one those budgets can buy, not merely a good one', ()
         return;
       }
       for (let level = 0; level <= 5; level++) {
-        rec(i + 1, rp + 10 * level * tiles[i].d * f,
+        rec(i + 1, rp + claimUpkeep(tiles[i].d, level, chancery).rp,
           up + (level ? MILSOV_UPKEEP_BY_LEVEL[level] : 0),
           bonus + MILSOV_BONUS_PER_LEVEL * level);
       }
@@ -456,7 +462,7 @@ test('the plan is the best one those budgets can buy, not merely a good one', ()
     const tiles = Array.from({ length: n }, () => ({ d: 1 + rnd(2000) / 1000 }))
       .sort((a, b) => a.d - b.d);
     const headroom = { rp: rnd(400), upkeep: rnd(6000), slots: rnd(n + 2) };
-    const chancery = trial % 3 === 0;
+    const chancery = [1, 0.6, 0.3][trial % 3];
     const want = brute(tiles, headroom, chancery);
     close(planMilsov({ tiles, headroom, chancery }).bonus, want, 1e-9);
     if (want > 0) nonTrivial++;
@@ -700,7 +706,6 @@ test('the quoted price is what a point of tax actually buys', () => {
     headroom: milsovHeadroom({
       tax: plan.tMax - 1, settings, uRp: plan.spend, buildingsUsed: plan.tiles.length,
     }),
-    chancery: false,
   });
   assert.equal(plan.milsovPrice, cheaper.bonus - plan.milsovBonus);
   assert.ok(plan.milsovPrice >= 0, 'a lower tax can never buy less');
@@ -1159,7 +1164,7 @@ test('among equally good staircases the cheapest in research wins', () => {
   // search has to keep a branch that can only tie it, not just one that can
   // beat it.
   const tiles = [{ d: 1 }, { d: 5 }];
-  const plan = planMilsov({ tiles, headroom: { rp: 1000, upkeep: 300, slots: 2 }, chancery: false });
+  const plan = planMilsov({ tiles, headroom: { rp: 1000, upkeep: 300, slots: 2 } });
   assert.equal(plan.bonus, 10);
   assert.deepEqual(plan.levels, [2], 'the RP-cheaper staircase is the concentrated one');
   close(plan.rp, CLAIM_RP_PER_LEVEL_DISTANCE * 2 * 1, 1e-9);
@@ -1168,7 +1173,7 @@ test('among equally good staircases the cheapest in research wins', () => {
   // Give the far tile the same distance and the two are genuinely equal in RP,
   // so either answer is correct — but the bonus and the bill must not change.
   const level = planMilsov({
-    tiles: [{ d: 1 }, { d: 1 }], headroom: { rp: 1000, upkeep: 300, slots: 2 }, chancery: false,
+    tiles: [{ d: 1 }, { d: 1 }], headroom: { rp: 1000, upkeep: 300, slots: 2 },
   });
   assert.equal(level.bonus, 10);
   close(level.rp, 20, 1e-9);
@@ -1177,7 +1182,7 @@ test('among equally good staircases the cheapest in research wins', () => {
 test('the fast path is untouched: budgets that cover everything skip the search', () => {
   const tiles = [{ d: 1 }, { d: 1.414 }, { d: 2 }];
   const plan = planMilsov({
-    tiles, headroom: { rp: 1e9, upkeep: 1e9, slots: 3 }, chancery: false,
+    tiles, headroom: { rp: 1e9, upkeep: 1e9, slots: 3 },
   });
   assert.deepEqual(plan.levels, [5, 5, 5]);
   assert.equal(plan.bonus, 75);
@@ -1188,7 +1193,6 @@ test('the tie-break never costs bonus, and only ever lowers the research', () =>
   // The sweep the exhaustive check already runs, asked the second question too:
   // no plan may be beaten on RP by another plan of the same bonus.
   const cheapestAt = (tiles, headroom, chancery, bonus) => {
-    const f = chancery ? CHANCERY_FACTOR : 1;
     const n = Math.min(tiles.length, Math.floor(headroom.slots));
     let best = Infinity;
     const rec = (i, rp, up, b) => {
@@ -1198,7 +1202,7 @@ test('the tie-break never costs bonus, and only ever lowers the research', () =>
         return;
       }
       for (let level = 0; level <= 5; level++) {
-        rec(i + 1, rp + 10 * level * tiles[i].d * f,
+        rec(i + 1, rp + claimUpkeep(tiles[i].d, level, chancery).rp,
           up + (level ? MILSOV_UPKEEP_BY_LEVEL[level] : 0),
           b + MILSOV_BONUS_PER_LEVEL * level);
       }
@@ -1218,7 +1222,7 @@ test('the tie-break never costs bonus, and only ever lowers the research', () =>
     const tiles = Array.from({ length: n }, () => ({ d: 1 + rnd(2000) / 1000 }))
       .sort((a, b) => a.d - b.d);
     const headroom = { rp: rnd(400), upkeep: rnd(4000), slots: rnd(n + 2) };
-    const chancery = trial % 3 === 0;
+    const chancery = [1, 0.6, 0.3][trial % 3];
     const plan = planMilsov({ tiles, headroom, chancery });
     if (plan.bonus === 0) continue;
     close(plan.rp, cheapestAt(tiles, headroom, chancery, plan.bonus), 1e-9);

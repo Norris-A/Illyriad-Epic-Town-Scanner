@@ -184,32 +184,41 @@ export function distance(dx, dy) {
 }
 
 /**
- * Upkeep for one claim. Gold is exactly 10x RP.
+ * The factor the city's Chancery puts on the cost of a level 1 claim, and 1 for
+ * a city without one.
+ */
+export function chanceryFactor(s) {
+  return s.chancery ? CHANCERY_FACTOR : 1;
+}
+
+/**
+ * Hourly research a claim held at `level` costs: linear in level, except that
+ * the Chancery discount reaches a claim at level 1 and no other.
+ */
+function claimRp(d, level, chancery) {
+  if (level <= 0) return 0;
+  return CLAIM_RP_PER_LEVEL_DISTANCE * d * (level === 1 ? chancery : level);
+}
+
+/**
+ * Upkeep for raising a claim from `held` to `level`. Gold is exactly 10x RP.
+ * `chancery` is the chanceryFactor of the city paying.
  *
  * `d` arrives already quantised from distance(), and level multiplies it
  * exactly: the game rounds the distance, not the finished cost. What is left
  * here is exact float, rounded only at the knapsack weight, which is the one
  * place it has to be an integer.
- */
-export function claimUpkeep(d, level, chancery) {
-  const f = chancery ? CHANCERY_FACTOR : 1;
-  return {
-    rp: CLAIM_RP_PER_LEVEL_DISTANCE * level * d * f,
-    gold: CLAIM_GOLD_PER_LEVEL_DISTANCE * level * d * f,
-  };
-}
-
-/**
- * How many levels of a claim at `level` are still to be bought on a tile that
- * already stands at `held` of them.
  *
- * Zero where the standing claim is already at or above it. A tile carries
+ * Zero where the standing claim is already at or above `level`. A tile carries
  * `held` only where the plan is preserving what is there, and the whole of that
  * standing bill is charged once as a floor — so charging any of it here as well
- * would price those levels twice.
+ * would price those levels twice. Raising a discounted level 1 claim pays for
+ * the discount it gives up as well as for the levels it adds.
  */
-export function upgradeLevels(level, held = 0) {
-  return Math.max(0, level - (held ?? 0));
+export function claimUpkeep(d, level, chancery = 1, held) {
+  const from = held ?? 0;
+  const rp = level > from ? claimRp(d, level, chancery) - claimRp(d, from, chancery) : 0;
+  return { rp, gold: (rp * CLAIM_GOLD_PER_LEVEL_DISTANCE) / CLAIM_RP_PER_LEVEL_DISTANCE };
 }
 
 // --- Structure upkeep ------------------------------------------------------
@@ -594,36 +603,38 @@ function descriptorBonus(tile, structure) {
  * prefix of them. Two facts about the game's costs make this exact and cheap
  * rather than a search over 6^24 assignments.
  *
- * **Level cancels out of the research cost.** A claim costs 10 x level x
- * distance and the bonus is 5 x level, so research per point of bonus is 2 x
- * distance x chancery whatever level it is bought at. Cost is therefore a
- * question of WHICH TILES, not which levels — and by the rearrangement
- * inequality the cheapest arrangement always puts the highest levels nearest.
- * So the plan is a staircase: levels never rise with distance.
+ * **A claim's cost is distance times a rate that rises with level.** A claim
+ * costs 10 x level x distance, except that a Chancery discounts one held at
+ * level 1 to 10 x chancery x distance. Either way the rate rises with level and
+ * multiplies distance, so by the rearrangement inequality the cheapest
+ * arrangement always puts the highest levels nearest. So the plan is a
+ * staircase: levels never rise with distance.
  *
  * **That staircase decomposes into five independent layers.** Let `m[j]` be how
  * many tiles carry level j or better, and let D_j(m) be the summed distance of
  * the m nearest tiles, counting as zero any tile whose claim already stands at
  * level j — that layer is bought, and only the levels above it are still for
  * sale. Then, writing STEP[j] for what raising one building to level j adds to
- * its hourly bill:
+ * its hourly bill, and RATE[j] for what raising its claim to level j adds per
+ * unit of distance — chancery for level 1, 2 - chancery for level 2 since the
+ * claim gives up its discount there, and 1 above:
  *
  *     bonus  = 5 x SUM m[j]
- *     rp     = 10 x chancery x SUM D_j(m[j])
+ *     rp     = 10 x SUM RATE[j] x D_j(m[j])
  *     upkeep = SUM STEP[j] x m[j]
  *
  * All three are sums of per-layer terms, so the whole problem is five numbers,
- * m[1] >= m[2] >= ... >= m[5]. That ordering does not even need enforcing: a
- * lower layer is never dearer than a higher one for the same m, since a claim
- * standing at the higher level stands at the lower one too, while STEP rises
- * with j — so an out-of-order pair is always improvable by swapping it.
+ * m[1] >= m[2] >= ... >= m[5] — an ordering the search keeps by capping each
+ * layer at the one below it.
  *
  * **The two budgets pull opposite ways**, which is the whole content of the
  * answer. Research wants concentration, because reaching a further tile costs
  * more for the same bonus. Upkeep wants spreading, because STEP is convex —
  * 150, 150, 300, 600, 1,200 — so the same bonus split over more buildings runs
  * cheaper. Which wins is a property of the site, not a rule of thumb, and it is
- * why several low-level structures often beat one Sov V and sometimes do not.
+ * why several low-level structures often beat one Sov V and sometimes do not. A
+ * Chancery pulls research toward spreading as well, its discount making a level
+ * 1 claim the cheapest bonus there is.
  *
  * The search walks layers cheapest-first, taking the largest feasible count at
  * each, so its first descent is already a strong answer and the bound prunes the
@@ -654,14 +665,16 @@ function descriptorBonus(tile, structure) {
  * branches that can only TIE, and a tie is taken on lower RP. Cutting ties
  * instead handed the answer to whichever staircase the descent found first.
  *
+ * @param {number} [chancery] the paying city's chanceryFactor.
  * @param {string} [structure] the sovereignty structure key being placed. Tiles
  *   whose descriptor names it run at a higher rate per level — see
  *   descriptorBonus.
  */
-export function planMilsov({ tiles, headroom, chancery, structure }) {
+export function planMilsov({ tiles, headroom, chancery = 1, structure }) {
   const EPS = 1e-9;
-  const f = chancery ? CHANCERY_FACTOR : 1;
   const n = Math.min(tiles.length, Math.floor(headroom.slots));
+  // RATE[j], indexed from 0 for level 1, as the doc above defines it.
+  const RATE = [chancery, 2 - chancery, 1, 1, 1];
 
   // D[j][m] — summed distance of the m nearest free tiles for layer j, which is
   // level j+1. A tile whose claim already stands at that level or above adds
@@ -672,7 +685,7 @@ export function planMilsov({ tiles, headroom, chancery, structure }) {
     for (let i = 0; i < n; i++) pre.push(pre[i] + ((tiles[i].held ?? 0) > j ? 0 : tiles[i].d));
     D.push(pre);
   }
-  const rpOf = (j, m) => CLAIM_RP_PER_LEVEL_DISTANCE * f * D[j][m];
+  const rpOf = (j, m) => CLAIM_RP_PER_LEVEL_DISTANCE * RATE[j] * D[j][m];
 
   const empty = { counts: [0, 0, 0, 0, 0], levels: [], bonus: 0, rp: 0, upkeep: 0, buildings: 0 };
   if (n === 0) return empty;
@@ -760,7 +773,7 @@ function milsovClaims({ tiles, levels, structure, chancery }) {
       // where the plan wanted no more than a smaller building on it.
       sovLevel: Math.max(level, held),
       buildingLevel: level,
-      ...claimUpkeep(tiles[i].d, upgradeLevels(level, held), chancery),
+      ...claimUpkeep(tiles[i].d, level, chancery, held),
     };
   });
 }
@@ -777,7 +790,7 @@ function milsovBlockedBy({ hosts, free, headroom, chancery }) {
   if (headroom.slots < 1) return 'slots';
   if (headroom.upkeep + 1e-9 < MILSOV_UPKEEP_BY_LEVEL[1]) return 'upkeep';
   const nearest = hosts.reduce((d, t) => Math.min(d, (t.held ?? 0) > 0 ? 0 : t.d), Infinity);
-  const cheapest = CLAIM_RP_PER_LEVEL_DISTANCE * (chancery ? CHANCERY_FACTOR : 1) * nearest;
+  const cheapest = claimUpkeep(nearest, 1, chancery).rp;
   if (headroom.rp + 1e-9 < cheapest) return 'rp';
   return null;
 }
@@ -796,7 +809,7 @@ function milsovBlockedBy({ hosts, free, headroom, chancery }) {
  */
 export function prepareSite({ neighbours, settings }) {
   const s = settings;
-  const chancery = !!s.chancery;
+  const chancery = chanceryFactor(s);
   const maxBuildings = s.maxBuildings ?? 20;
 
   // Equal distances break toward the lower food rating, which only matters once
@@ -813,7 +826,7 @@ export function prepareSite({ neighbours, settings }) {
   const foodCandidates = byDistance
     .filter((t) => t.food > 0)
     .map((t) => {
-      const up = claimUpkeep(t.d, upgradeLevels(FOOD_CLAIM_LEVEL, t.held), chancery);
+      const up = claimUpkeep(t.d, FOOD_CLAIM_LEVEL, chancery, t.held);
       return { ...t, level: FOOD_CLAIM_LEVEL, ...up, weight: Math.round(up.rp) };
     });
   // The most research the city can produce, which is at 0 tax. The budget has to

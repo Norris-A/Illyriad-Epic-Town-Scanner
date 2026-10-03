@@ -167,7 +167,8 @@ of tax, so the military column never changes the ranking. You pick the structure
 the tool works out how many, at what levels, and on which tiles.
 
 That last part is a real trade rather than a rule of thumb. Research costs
-`2 × distance` per point of bonus at any level, so research wants the plan
+`2 × distance` per point of bonus at any level (less on a level 1 claim, where a
+Chancery's discount applies), so research wants the plan
 concentrated on near tiles — while hourly upkeep climbs steeply with level
 (150/300/600/1,200/2,400), so upkeep wants it spread over many low-level
 buildings. Which wins depends on the site, and each site says what it chose and

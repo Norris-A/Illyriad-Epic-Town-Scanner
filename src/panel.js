@@ -664,7 +664,7 @@ export const SETTINGS_FIELDS = [
     type: 'minimums',
   },
 
-  { key: 'chancery', group: 'Sovereignty', label: 'Chancery of Estates (×0.6 upkeep)', type: 'checkbox' },
+  { key: 'chancery', group: 'Sovereignty', label: 'Chancery of Estates (−40% on level 1 claims)', type: 'checkbox' },
   { key: 'rClaim', group: 'Sovereignty', label: 'Claim Radius', type: 'number', min: 1, max: 6, integer: true, fallback: 2 },
   { key: 'maxBuildings', group: 'Sovereignty', label: 'Maximum Buildings', type: 'number', min: 0, max: 200, integer: true, fallback: 20 },
   { key: 'milsovStructure', group: 'Sovereignty', label: 'Military Structure', type: 'milsov' },

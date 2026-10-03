@@ -200,7 +200,7 @@ test('only this town\'s own claims inside the radius are kept, and only readable
     centre: { x: 100, y: 100 },
     radius: 2,
     idx: indexPayload(payload),
-    chancery: false,
+    chancery: 1,
     town: [HOME, '1'],
   });
   assert.equal(kept.claims.length, 3, 'the alliance claim is not yours to keep');
@@ -208,7 +208,7 @@ test('only this town\'s own claims inside the radius are kept, and only readable
   assert.equal(kept.otherTown, 2, 'another town\'s claim, and one that names no town');
   // Level and distance are the whole of the bill, and both are known.
   const expected = [[1, 0], [0, 1], [-1, 0]]
-    .reduce((sum, [dx, dy]) => sum + claimUpkeep(distance(dx, dy), 3, false).rp, 0);
+    .reduce((sum, [dx, dy]) => sum + claimUpkeep(distance(dx, dy), 3).rp, 0);
   close(kept.rp, expected, 1e-9);
 });
 
@@ -260,7 +260,7 @@ test('a kept claim is ground the plan may still use, and is charged the upgrade 
     const t = held.base.tiles.find((c) => c.dx === k.dx && c.dy === k.dy);
     assert.ok(t, `${k.dx},${k.dy} was not claimed`);
     assert.equal(t.level, FOOD_CLAIM_LEVEL, 'food sovereignty is still a level 5 claim');
-    close(t.rp, claimUpkeep(distance(k.dx, k.dy), FOOD_CLAIM_LEVEL - 3, false).rp, 1e-9);
+    close(t.rp, claimUpkeep(distance(k.dx, k.dy), FOOD_CLAIM_LEVEL, 1, 3).rp, 1e-9);
   }
 });
 

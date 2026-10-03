@@ -21,7 +21,7 @@ import {
 } from '../src/payload.js';
 import { scoreSite, claimUpkeep, distance } from '../src/scoring.js';
 import {
-  focusFormHtml, ownTowns, planGridHtml, claimHolderText, centredMapHash,
+  focusFormHtml, ownTowns, planGridHtml, claimHolderText, centredView, mapHash,
 } from '../src/panel.js';
 
 const settings = { ...DEFAULT_SETTINGS, tMin: -1000 };
@@ -554,8 +554,8 @@ test('a radius reaching past the payload refuses, and says by how much', () => {
 
 // The route the game itself writes on every move, so following it moves the map.
 test('the map is centred at its own zoom, or out far enough for the radius', () => {
-  assert.equal(centredMapHash(360, -3170, 9, 3), '#/World/Map/360/-3170/9');
-  assert.equal(centredMapHash(360, -3170, 2, 3), '#/World/Map/360/-3170/3');
+  assert.equal(mapHash(centredView(360, -3170, 9, 3)), '#/World/Map/360/-3170/9');
+  assert.equal(mapHash(centredView(360, -3170, 2, 3)), '#/World/Map/360/-3170/3');
 });
 
 test('no payload at all is a distinct answer from a missing tile', () => {

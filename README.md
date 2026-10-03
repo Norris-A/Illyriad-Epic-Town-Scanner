@@ -105,8 +105,8 @@ tile. The tile must be on screen, and so must the whole radius around it: if the
 radius runs past the edge of the screen, it says how many tiles are missing
 instead of planning around ground it cannot see. Either way it offers a link,
 *Centre the map on x|y*, that moves the map over the tile, zoomed out far enough
-for the whole radius; press **Optimise** once the map has loaded. Once the map
-has moved, by the link or by hand, the message changes to say so.
+for the whole radius, and optimises it again once the map has loaded. Moving the
+map any other way changes the message to say so; press **Optimise** to ask again.
 
 The plan is also drawn on the World Map itself: the tile outlined in blue, the
 radius as a dashed square, food claims shaded green and military claims amber,

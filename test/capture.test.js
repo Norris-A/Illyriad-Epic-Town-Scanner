@@ -5,7 +5,7 @@
 import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { getLatestPayload, probeInPageData } from '../src/capture.js';
+import { getLatestPayload, probeInPageData, whenViewLoaded } from '../src/capture.js';
 
 /** A minimal object that passes looksLikeMapPayload, centred on the given tile. */
 function payload(x, y) {
@@ -14,6 +14,7 @@ function payload(x, y) {
 
 afterEach(() => {
   delete globalThis.window;
+  delete globalThis.document;
 });
 
 test('reads the client global as the current payload', () => {
@@ -62,4 +63,47 @@ test('probe reports the source without freezing what a later read sees', () => {
   // Probing has no side effect, so a later pan is still what a read returns.
   globalThis.window.mapData = payload(368, -3166);
   assert.equal(getLatestPayload().x, 368);
+});
+
+/** A page jQuery that keeps its `ajaxComplete` handlers, and fires them on demand. */
+function jQueryStub() {
+  const handlers = new Set();
+  const $ = () => ({
+    on: (type, fn) => handlers.add(fn),
+    off: (type, fn) => handlers.delete(fn),
+  });
+  $.complete = () => [...handlers].forEach((fn) => fn());
+  $.handlers = handlers;
+  return $;
+}
+
+test('a wait for a view ends at the first load that brings that view, and only then', () => {
+  const $ = jQueryStub();
+  globalThis.window = { jQuery: $, mapData: null };
+  globalThis.document = {};
+  let loaded = 0;
+  whenViewLoaded({ x: 361, y: -3168, zoom: 9 }, () => { loaded += 1; });
+  // The client empties its map data as the route changes, and other requests
+  // complete while the view is still on its way.
+  $.complete();
+  globalThis.window.mapData = payload(368, -3166);
+  $.complete();
+  assert.equal(loaded, 0);
+  globalThis.window.mapData = payload(361, -3168);
+  $.complete();
+  $.complete();
+  assert.equal(loaded, 1);
+  assert.equal($.handlers.size, 0, 'still listening after the view arrived');
+});
+
+test('a wait can be stopped, and there is none without jQuery', () => {
+  const $ = jQueryStub();
+  globalThis.window = { jQuery: $, mapData: null };
+  globalThis.document = {};
+  whenViewLoaded({ x: 361, y: -3168, zoom: 9 }, () => assert.fail('loaded after stopping'))();
+  globalThis.window.mapData = payload(361, -3168);
+  $.complete();
+  assert.equal($.handlers.size, 0);
+  globalThis.window = {};
+  assert.equal(whenViewLoaded({ x: 1, y: 1, zoom: 9 }, () => {}), null);
 });

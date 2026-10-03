@@ -3,7 +3,7 @@
 // __WORKER_SOURCE__ is replaced at build time by build.mjs with the bundled
 // worker code as a string literal.
 
-import { probeInPageData, getLatestPayload } from './capture.js';
+import { probeInPageData, getLatestPayload, whenViewLoaded } from './capture.js';
 import { createPanel, csvFile, csvFilename } from './panel.js';
 import { createOverlay } from './overlay.js';
 import { createSettingsStore, decodeSettings, STORAGE_KEY } from './settings-store.js';
@@ -99,6 +99,7 @@ const panel = createPanel({
   // Read afresh whenever the optimiser or its town picker needs it, cut to the
   // view on screen as a Scan's is.
   getPayload: getLatestPayload,
+  whenViewLoaded,
   onExport: () => {
     if (!lastResults.length) return;
     const blob = new Blob([csvFile(lastResults)], { type: 'text/csv;charset=utf-8' });

@@ -51,6 +51,27 @@ export function getLatestPayload() {
 }
 
 /**
+ * Call `onLoaded` once the client has loaded `view`: after the first of its
+ * requests to complete with that view in its map data. The client announces each
+ * completed request through jQuery's `ajaxComplete`, which is only listened to,
+ * from now until the view arrives or the returned function is called. Null, with
+ * nothing listened to, when the page has no jQuery to announce them.
+ */
+export function whenViewLoaded(view, onLoaded) {
+  const $ = window.jQuery;
+  if (typeof $ !== 'function') return null;
+  const stop = () => $(document).off('ajaxComplete', onLoad);
+  function onLoad() {
+    const p = readInPageData();
+    if (p?.x !== view.x || p.y !== view.y || p.zoom !== view.zoom) return;
+    stop();
+    onLoaded();
+  }
+  $(document).on('ajaxComplete', onLoad);
+  return stop;
+}
+
+/**
  * Which reachable globals currently hold a map payload. Backs the console probe
  * window.__sovScanner.probeInPageData(), for checking where the client keeps its
  * map data.

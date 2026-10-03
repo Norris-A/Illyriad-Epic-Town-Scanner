@@ -253,12 +253,16 @@ export function isWorldMapHash(hash) {
 }
 
 /**
- * The World Map route centred on x|y, which the game writes itself on every
- * move. The zoom is the view's, or `radius` where that is further, so the whole
- * radius fits.
+ * The view centred on x|y at `zoom`, or at `radius` where that is further, so the
+ * whole radius fits.
  */
-export function centredMapHash(x, y, zoom, radius) {
-  return `${WORLD_MAP_HASH}/${x}/${y}/${Math.max(zoom, radius)}`;
+export function centredView(x, y, zoom, radius) {
+  return { x, y, zoom: Math.max(zoom, radius) };
+}
+
+/** The World Map route to `view`, which the game writes itself on every move. */
+export function mapHash(view) {
+  return `${WORLD_MAP_HASH}/${view.x}/${view.y}/${view.zoom}`;
 }
 
 /** Keep the panel's top-left corner reachable after a drag or viewport resize. */
@@ -1124,6 +1128,9 @@ function capitalDerivedHtml(s) {
  *   afresh for each Optimise press and each rebuild of the town picker. The
  *   optimiser plans on the main thread: it is one site, and the tax slider
  *   already runs the same planner there.
+ * @param {(view: object, onLoaded: () => void) => (() => void)|null}
+ *   [o.whenViewLoaded] call `onLoaded` once the client has loaded `view`; returns
+ *   what stops the wait, or null where it cannot wait
  * @param {(result: object) => void} [o.onSelect] a result row was selected,
  *   from the table or through selectSite
  * @param {(pane: string|null) => void} [o.onPaneShown] the pane open on screen
@@ -1136,8 +1143,8 @@ function capitalDerivedHtml(s) {
  *   to cancel one
  */
 export function createPanel({
-  onScan, onExport, initialSettings, onSettingsChange, getPayload, onSelect, onPaneShown,
-  onFocusPlan, onPickOnMap,
+  onScan, onExport, initialSettings, onSettingsChange, getPayload, whenViewLoaded, onSelect,
+  onPaneShown, onFocusPlan, onPickOnMap,
 }) {
   const style = document.createElement('style');
   style.textContent = CSS;
@@ -1672,7 +1679,8 @@ licence and full copyright notice.">ⓘ</a></span></span></h2>
   // --- Optimal Sovereignty ---
 
   const focusForm = $('.sov-focus-form');
-  let refusedAt = null;    // the tile an off-screen refusal below the form names
+  let refusedView = null;  // the view centring an off-screen refusal's tile
+  let stopWaiting = null;  // ends a wait for that view to load
 
   function syncFocusRadiusHint() {
     const { settings: s } = readSettings();
@@ -1715,19 +1723,29 @@ licence and full copyright notice.">ⓘ</a></span></span></h2>
   }
 
   /**
-   * An off-screen refusal answers for the view it was made on, so the first move
-   * of the map retires it. Asking about the new view is left to the next press,
-   * since the game loads that view's tiles after the move.
+   * An off-screen refusal answers for the view it was made on, so a move of the
+   * map retires it. A move onto the view its link names is the link followed, and
+   * the tile is planned again once the game has loaded that view, which it does
+   * after the move; any other move leaves that to the next press.
    */
-  function retireRefusal() {
-    $('.sov-focus-status').textContent =
-      `The map has moved. Optimise again to check ${refusedAt.x}|${refusedAt.y} on this view.`;
+  function onRefusedMove() {
+    const { x, y } = refusedView;
+    stopWaiting?.();
+    stopWaiting = location.hash === mapHash(refusedView)
+      ? whenViewLoaded?.(refusedView, () => planAt(x, y))
+      : null;
+    if (!stopWaiting) window.removeEventListener('hashchange', onRefusedMove);
+    $('.sov-focus-status').textContent = stopWaiting
+      ? `Centring the map on ${x}|${y}; it is optimised once the map has loaded.`
+      : `The map has moved. Optimise again to check ${x}|${y} on this view.`;
   }
 
   function runFocus() {
     const status = $('.sov-focus-status');
     const out = $('.sov-focus-out');
-    window.removeEventListener('hashchange', retireRefusal);
+    window.removeEventListener('hashchange', onRefusedMove);
+    stopWaiting?.();
+    stopWaiting = null;
     const fail = (message) => {
       status.textContent = message;
       out.innerHTML = '';
@@ -1751,12 +1769,12 @@ licence and full copyright notice.">ⓘ</a></span></span></h2>
     if (!result.ok) {
       fail(result.message);
       if (result.reason === 'centre-missing' || result.reason === 'incomplete') {
-        refusedAt = focus;
-        window.addEventListener('hashchange', retireRefusal, { once: true });
+        const radius = focusRadius(focus, read.settings);
+        refusedView = centredView(focus.x, focus.y, payload.zoom, radius);
+        window.addEventListener('hashchange', onRefusedMove);
         // A relative link, so it stays on whichever of the game's hosts this is.
         status.insertAdjacentHTML('beforeend', `<p class="sov-map-only"><a class="sov-map-centre"
-          href="${centredMapHash(focus.x, focus.y, payload.zoom, focusRadius(focus, read.settings))}"
-          >Centre the map on ${focus.x}|${focus.y}</a></p>`);
+          href="${mapHash(refusedView)}">Centre the map on ${focus.x}|${focus.y}</a></p>`);
       }
       return;
     }

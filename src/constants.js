@@ -26,13 +26,15 @@ export const CLAIM_GOLD_PER_LEVEL_DISTANCE = 100; // [V] gold is exactly 10x RP
 // diagonal costs five times the level 1 figure.
 export const CLAIM_DISTANCE_DECIMALS = 2;
 
-// [F] A level 20 Chancery of Estates takes 40% off the cost of a claim's first
-// level. A claim held above level 1 keeps that discount on its first level and
-// pays in full for the levels above it — GM Stormcrow's release notes for the
-// building, 7 October 2011.
+// [F] A Chancery of Estates takes 2% per building level, so 40% at level 20, off
+// the cost of a claim's first level. A claim held above level 1 keeps that
+// discount on its first level and pays in full for the levels above it — GM
+// Stormcrow's release notes for the building, 7 October 2011. Each further
+// Chancery adds half the discount of the one before — 40%, 60%, 70% for one,
+// two, three.
 // [?] Whether the discount lands before or after the distance quantisation above
 // is unmeasured. Applied here to the finished cost.
-export const CHANCERY_FACTOR = 0.6;
+export const CHANCERY_DISCOUNT_L20 = 0.4;
 
 // [F] Food sovereignty requires a level 5 claim carrying a level 5 building.
 export const FOOD_CLAIM_LEVEL = 5;
@@ -825,6 +827,44 @@ export const RESOURCE_BOOSTERS = {
 };
 export const RESOURCE_BOOSTER_BONUS = 40;
 
+// [F] Every city building that consumes basic resources every hour, and what it
+// consumes of each at level 20 — Illypedia's consumption tables. Every other city
+// building consumes food alone, through its population, which the city's
+// consumption figure already counts; so do these, and that is not carried here
+// either. Only level 20 is modelled, the level a finished city runs them at.
+// Any of them can be built more than once, and every copy consumes the same as
+// the first even though it does half the good of the one before, so a city's
+// bill is count x rate. `group` is the heading the form shows it under, and
+// `hint` anything a building does beyond consuming.
+export const UPKEEP_BUILDINGS = [
+  { key: 'spearmensBillets', group: 'Military', name: "Spearmen's Billets", consumes: { clay: 2700, iron: 1100 } },
+  { key: 'archersField', group: 'Military', name: "Archers' Field", consumes: { wood: 2700, iron: 1100 } },
+  { key: 'infantryQuarters', group: 'Military', name: 'Infantry Quarters', consumes: { iron: 1100, stone: 2700 } },
+  { key: 'cavalryParadeGround', group: 'Military', name: 'Cavalry Parade Ground', consumes: { wood: 1100, clay: 2700 } },
+  { key: 'arcticWarfareCollege', group: 'Military', name: 'Arctic Warfare College', consumes: { iron: 1000, stone: 2300 } },
+  { key: 'desertWarfareCollege', group: 'Military', name: 'Desert Warfare College', consumes: { clay: 2300, stone: 1000 } },
+  { key: 'jungleWarfareCollege', group: 'Military', name: 'Jungle Warfare College', consumes: { wood: 2300, clay: 1000 } },
+  { key: 'scoutsLookout', group: 'Diplomacy', name: "Scouts' Lookout", consumes: { wood: 700, clay: 1500 } },
+  { key: 'spiesHideout', group: 'Diplomacy', name: "Spies' Hideout", consumes: { wood: 700, clay: 1100, stone: 1100 } },
+  { key: 'thievesDen', group: 'Diplomacy', name: "Thieves' Den", consumes: { wood: 1700, clay: 1100, iron: 1700 } },
+  { key: 'saboteursSanctuary', group: 'Diplomacy', name: "Saboteurs' Sanctuary", consumes: { wood: 2700, clay: 1500 } },
+  { key: 'assassinsAbode', group: 'Diplomacy', name: "Assassins' Abode", consumes: { iron: 3100, stone: 1900 } },
+  { key: 'foreignOffice', group: 'Diplomacy', name: 'Foreign Office', consumes: { clay: 400, iron: 800, stone: 1600 } },
+  { key: 'runemastersGrounding', group: 'Magic', name: "Runemasters' Grounding", consumes: { clay: 900, stone: 1700 } },
+  // A count of its own, apart from the Retreats Nature's Bounty is cast with:
+  // the spell can come from another city's Retreats, so the two need not agree.
+  { key: 'geomancersRetreat', group: 'Magic', name: "Geomancers' Retreat", consumes: { wood: 700, clay: 2300, stone: 1500 } },
+  {
+    key: 'chanceryOfEstates',
+    group: 'Sovereignty',
+    name: 'Chancery of Estates',
+    consumes: { wood: 800, clay: 3200, stone: 1600 },
+    hint: `Also takes ${CHANCERY_DISCOUNT_L20 * 100}% off the first level of every claim, `
+      + 'and each further one half as much again.',
+  },
+  { key: 'tradeOffice', group: 'Trade', name: 'Trade Office', consumes: { wood: 2800, clay: 690, stone: 1580 } },
+];
+
 // [V] Per-plot yield at L20, the same for all four basic resources. Multiplied
 // by the plot count and the production percentage to give hourly output.
 export const BASIC_YIELD_L20 = 2538;
@@ -916,6 +956,10 @@ export const DEFAULT_SETTINGS = {
   // Which of the four booster buildings the city has at level 20. Each is worth
   // RESOURCE_BOOSTER_BONUS points against that resource's ceiling.
   resourceBoosters: { wood: false, clay: false, iron: false, stone: false },
+  // How many of each UPKEEP_BUILDINGS entry the city has at level 20. What they
+  // consume is taken off production before sovereignty is paid for, and the
+  // Chancery count also sets the discount on each claim's first level.
+  upkeepBuildings: Object.fromEntries(UPKEEP_BUILDINGS.map((b) => [b.key, 0])),
   // Surplus per hour the plan may not touch, per resource. A city sitting exactly
   // on T_res puts its whole scarcest resource into upkeep and can never build or
   // trade in it again — this is where the user says how much to hold back. Zero
@@ -927,7 +971,6 @@ export const DEFAULT_SETTINGS = {
   prestige: {
     wood: false, clay: false, iron: false, stone: false, food: false, research: false,
   },
-  chancery: false,
   rClaim: 2,
   maxBuildings: 20,
   dOther: 10,

@@ -27,6 +27,7 @@ test('a round trip returns exactly what went in', () => {
     cityConsumption: 27500,
     milsovStructure: 'joustingYard',
     milsovMinBonus: 40,
+    upkeepBuildings: { ...DEFAULT_SETTINGS.upkeepBuildings, cavalryParadeGround: 3, chanceryOfEstates: 2 },
     resourceBoosters: { wood: true, clay: false, iron: true, stone: false },
     rpCalibration: { observedRpPerHour: 820, atTax: 30 },
   });
@@ -91,13 +92,15 @@ test('a blob written by this exact build says nothing', () => {
 
 // --- versions older and newer than this build's ---
 
-/** Run `fn` with one migration step registered, whatever it does. */
+/** Run `fn` with one migration step standing in for whatever is registered. */
 function withMigration(from, step, fn) {
+  const registered = MIGRATIONS[from];
   MIGRATIONS[from] = step;
   try {
     fn();
   } finally {
-    delete MIGRATIONS[from];
+    if (registered) MIGRATIONS[from] = registered;
+    else delete MIGRATIONS[from];
   }
 }
 
@@ -124,8 +127,16 @@ test('a migration that throws costs the user nothing it was holding', () => {
 });
 
 test('a version with no step still loads field-for-field', () => {
-  const stored = JSON.stringify({ version: STORAGE_VERSION - 1, settings: { tMin: 33 } });
+  // No build wrote version 0, so no step leads from it.
+  const stored = JSON.stringify({ version: 0, settings: { tMin: 33 } });
   assert.equal(decodeSettings(stored).settings.tMin, 33);
+});
+
+test('a ticked Chancery from version 1 arrives as one Chancery', () => {
+  const at = (chancery) => decodeSettings(JSON.stringify({ version: 1, settings: { chancery } }))
+    .settings.upkeepBuildings.chanceryOfEstates;
+  assert.equal(at(true), 1);
+  assert.equal(at(false), 0);
 });
 
 // Two builds on one machine: the older one must not silently strip what the

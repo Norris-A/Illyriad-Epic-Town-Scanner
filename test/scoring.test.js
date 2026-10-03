@@ -9,7 +9,7 @@ import {
   computeK, computeBOther, computeConsumption, computeResearch, researchAt,
   tFood, tRp, tMax, goldNet, claimUpkeep, distance, knapsack, recoverSet, scoreSite,
   milsovHeadroom, planMilsov, tRes, surplusAt, computeBasicYield,
-  prepareSite, planSiteAt, settableTax, chanceryFactor,
+  prepareSite, planSiteAt, settableTax, buildingUpkeep, chanceryFactor,
 } from '../src/scoring.js';
 import {
   DEFAULT_SETTINGS, BASIC_YIELD_L20, BASIC_RESOURCES,
@@ -159,15 +159,22 @@ test('claim upkeep matches the reference table', () => {
 });
 
 test('a Chancery discounts the first level of every claim, and no other', () => {
-  const chancery = chanceryFactor({ chancery: true });
-  close(chancery, 0.6, 1e-12);
-  assert.equal(chanceryFactor({ chancery: false }), 1);
-  close(claimUpkeep(1, 1, chancery).rp, 6, 1e-9);
-  close(claimUpkeep(1, 1, chancery).gold, 60, 1e-9);
+  const one = chanceryFactor({ upkeepBuildings: { chanceryOfEstates: 1 } });
+  close(one, 0.6, 1e-12);
+  close(claimUpkeep(1, 1, one).rp, 6, 1e-9);
+  close(claimUpkeep(1, 1, one).gold, 60, 1e-9);
   // A level 5 claim keeps the discount on its first level: 6 + 4 x 10.
-  close(claimUpkeep(1, 5, chancery).rp, 46, 1e-9);
+  close(claimUpkeep(1, 5, one).rp, 46, 1e-9);
   // Raising a level 1 claim pays for the new level alone, at full price.
-  close(claimUpkeep(1, 2, chancery, 1).rp, 10, 1e-9);
+  close(claimUpkeep(1, 2, one, 1).rp, 10, 1e-9);
+});
+
+test('each further Chancery adds half the discount of the one before', () => {
+  const at = (n) => chanceryFactor({ upkeepBuildings: { chanceryOfEstates: n } });
+  close(at(0), 1, 1e-12);
+  close(at(2), 0.4, 1e-12);
+  close(at(3), 0.3, 1e-12);
+  assert.equal(chanceryFactor({}), 1, 'no buildings recorded is no Chancery');
 });
 
 test('the readings the claim cost was measured from reproduce exactly', () => {
@@ -909,6 +916,96 @@ test('the minimum-bonus search reports a tax the user could set', () => {
   const ctx = prepareSite({ neighbours: spare, settings: withMil({ tMin: plan.tMax - 30 }) });
   const above = planSiteAt(ctx, roomy.milsovMinTax + 1);
   assert.ok(above.milsovBonus < roomy.milsovMinBonusAt, 'a higher tax must fall short');
+});
+
+// --- City buildings with resource upkeep -----------------------------------
+
+/** The worked settings with upkeep buildings built, as { key: count }. */
+const withBuildings = (built) => ({
+  ...worked, upkeepBuildings: { ...DEFAULT_SETTINGS.upkeepBuildings, ...built },
+});
+
+test('buildings consume count x rate, and types add up', () => {
+  // Three Cavalry Parade Grounds: 3 x 1,100 wood and 3 x 2,700 clay.
+  const cavalry = withBuildings({ cavalryParadeGround: 3 });
+  assert.equal(buildingUpkeep(cavalry, 'wood'), 3300);
+  assert.equal(buildingUpkeep(cavalry, 'clay'), 8100);
+  assert.equal(buildingUpkeep(cavalry, 'iron'), 0);
+  assert.equal(buildingUpkeep(cavalry, 'stone'), 0);
+
+  // Mixed with an Archers' Field, wood is drawn on by both.
+  const mixed = withBuildings({ cavalryParadeGround: 3, archersField: 1 });
+  assert.equal(buildingUpkeep(mixed, 'wood'), 3300 + 2700);
+  assert.equal(buildingUpkeep(mixed, 'iron'), 1100);
+  for (const res of BASIC_RESOURCES) assert.equal(buildingUpkeep(DEFAULT_SETTINGS, res), 0);
+});
+
+test('buildings lower T_res by exactly what they consume, with nothing built on the claims', () => {
+  const settings = withBuildings({ cavalryParadeGround: 3 });
+  const r = tRes({ milsovAssignments: [], plots: worked.plots, settings });
+  assert.equal(r.binding, 'clay');
+  close(r.ceiling, 125 - (100 * 8100) / (worked.plots.clay * BASIC_YIELD_L20), 1e-9);
+
+  // And on top of a military bill, the same points again.
+  const both = tRes({
+    milsovAssignments: [{ sovLevel: 5, buildingLevel: 5 }], plots: worked.plots, settings,
+  });
+  assert.equal(both.binding, 'clay');
+  close(both.ceiling, 125 - (100 * (2400 + 8100)) / (worked.plots.clay * BASIC_YIELD_L20), 1e-9);
+});
+
+test('military sovereignty is paid only from what the buildings leave', () => {
+  const at = (built) => scoreSite({
+    neighbours: spare,
+    settings: withMil({
+      tMin: -1000,
+      rpCalibration: { observedRpPerHour: 8000, atTax: 25 },
+      upkeepBuildings: withBuildings(built).upkeepBuildings,
+    }),
+  });
+  const free = at({});
+  const army = at({ cavalryParadeGround: 3, spearmensBillets: 2 });
+  assert.ok(free.milsovUpkeep > 0, 'precondition: something was affordable');
+  assert.ok(army.milsovUpkeep < free.milsovUpkeep, 'the buildings must leave less for sovereignty');
+
+  // At the tax the site is listed at, nothing runs a deficit, and the balance
+  // states the buildings' share of what was spent.
+  for (const res of BASIC_RESOURCES) {
+    assert.ok(army.surplus[res] >= -1e-6, `${res} runs a deficit`);
+    close(army.surplus.base[res] - army.surplus[res],
+      army.milsovUpkeep + army.surplus.buildingUpkeep[res], 1e-6);
+  }
+  assert.equal(army.surplus.buildingUpkeep.clay, 3 * 2700 + 2 * 2700);
+});
+
+test('across random cities the plan never spends what the buildings need', () => {
+  let seed = 31337;
+  const rnd = (n) => {
+    seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+    return seed % n;
+  };
+  // The four unit buildings and the Chancery, which also moves the claim costs.
+  const keys = [
+    'spearmensBillets', 'archersField', 'infantryQuarters', 'cavalryParadeGround', 'chanceryOfEstates',
+  ];
+  let placed = 0;
+  for (let trial = 0; trial < 60; trial++) {
+    const built = Object.fromEntries(keys.map((k) => [k, rnd(4)]));
+    const plan = scoreSite({
+      neighbours: ring((dx, dy) => (Math.abs(dx) <= 1 && Math.abs(dy) <= 1 ? rnd(12) : rnd(3))),
+      settings: withMil({
+        tMin: -1000,
+        rpCalibration: { observedRpPerHour: 1000 + rnd(8000), atTax: 25 },
+        upkeepBuildings: withBuildings(built).upkeepBuildings,
+      }),
+    });
+    if (!plan?.surplus || plan.resImpossible) continue;
+    for (const res of BASIC_RESOURCES) {
+      assert.ok(plan.surplus[res] >= -1e-6, `trial ${trial}: ${res} runs a deficit`);
+    }
+    if (plan.milsov.length) placed++;
+  }
+  assert.ok(placed > 0, 'the sweep never placed any military');
 });
 
 // --- Minimum resource surplus -----------------------------------------------

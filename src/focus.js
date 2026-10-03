@@ -12,7 +12,9 @@ import {
   indexPayload, tileKey, parseRs, collectNeighbourhood, isSettleable, claimLevel,
   townIdentity, isTownsClaim,
 } from './payload.js';
-import { prepareSite, planSiteAt, scoreSiteFrom, claimUpkeep, distance } from './scoring.js';
+import {
+  prepareSite, planSiteAt, scoreSiteFrom, claimUpkeep, chanceryFactor, distance,
+} from './scoring.js';
 
 /** Where the slider starts. Not a game constant — nothing derives from it. */
 export const FOCUS_DEFAULT_TAX = 60;
@@ -238,14 +240,14 @@ export function focusSite({ payload, focus, settings }) {
   // turns on it further down.
   const kept = preserveTown.length
     ? keptClaims({
-      payload, centre: focus, radius, idx, chancery: !!settings.chancery, town: preserveTown,
+      payload, centre: focus, radius, idx, chancery: chanceryFactor(settings), town: preserveTown,
     })
     : { claims: [], rp: 0, unknownLevel: 0, otherTown: 0 };
   // Counted only to be reported: claims the plan was told to ignore are free
   // ground, and none of their cost is charged.
   const released = homeTown.length && !preserveTown.length
     ? keptClaims({
-      payload, centre: focus, radius, idx, chancery: !!settings.chancery, town: homeTown,
+      payload, centre: focus, radius, idx, chancery: chanceryFactor(settings), town: homeTown,
     })
     : null;
   if (preserveTown.length) {

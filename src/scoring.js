@@ -9,7 +9,7 @@ import {
   GOLD_PER_TAX_POP,
   CLAIM_RP_PER_LEVEL_DISTANCE,
   CLAIM_GOLD_PER_LEVEL_DISTANCE,
-  CHANCERY_FACTOR,
+  CHANCERY_DISCOUNT_L20,
   FOOD_CLAIM_LEVEL,
   MILSOV_UPKEEP_BY_LEVEL,
   MILSOV_UPKEEP_STEP,
@@ -30,6 +30,7 @@ import {
   RESOURCE_BOOSTER_BONUS,
   PRESTIGE_PRODUCTION_BONUS,
   BASIC_YIELD_L20,
+  UPKEEP_BUILDINGS,
 } from './constants.js';
 
 // Float slack for comparisons on costs and ceilings, which are exact arithmetic
@@ -153,6 +154,19 @@ export function resourceMinimum(s, resource) {
 }
 
 /**
+ * What the city's buildings consume of one basic resource per hour. Fixed
+ * whatever the plan does, like a minimum — but spent, where a minimum is only
+ * kept: it comes off the balance as well as the budget.
+ */
+export function buildingUpkeep(s, resource) {
+  let sum = 0;
+  for (const b of UPKEEP_BUILDINGS) {
+    sum += (s.upkeepBuildings?.[b.key] ?? 0) * (b.consumes[resource] ?? 0);
+  }
+  return sum;
+}
+
+/**
  * Research produced per hour at a tax. Prestige is points on the same (125 - T)
  * percentage as every other production, so it is worth its face value in tax
  * headroom just as a booster is against a resource.
@@ -184,11 +198,13 @@ export function distance(dx, dy) {
 }
 
 /**
- * The factor the city's Chancery puts on the cost of a level 1 claim, and 1 for
- * a city without one.
+ * The factor a city's Chanceries put on the cost of a level 1 claim: 0.6 for
+ * one at level 20, and each further one adds half the discount of the one
+ * before. 1 for a city without one.
  */
 export function chanceryFactor(s) {
-  return s.chancery ? CHANCERY_FACTOR : 1;
+  const n = s.upkeepBuildings?.chanceryOfEstates ?? 0;
+  return 1 - 2 * CHANCERY_DISCOUNT_L20 * (1 - 0.5 ** n);
 }
 
 /**
@@ -279,24 +295,27 @@ export function tRp({ uRp, research, rpBonus = 0, minimum = 0 }) {
 }
 
 /**
- * T_res — per-resource ceiling from military sovereignty structure upkeep and
- * from the surplus the user asked to keep on top of it.
+ * T_res — per-resource ceiling from military sovereignty structure upkeep, from
+ * what the city's own buildings consume, and from the surplus the user asked to
+ * keep on top of both.
  *
  * Returns Infinity (non-binding, unflagged) whenever there is nothing to pay
- * for: no minimum set, and nothing placed that is charged hourly upkeep — no
- * military sovereignty at all, or Resource Structures, which pay only their
- * claims. A minimum alone is a ceiling on the same terms as an hourly bill,
- * being production the tax may not take, so it binds with nothing built.
+ * for: no minimum set, no building with upkeep, and nothing placed that is
+ * charged hourly upkeep — no military sovereignty at all, or Resource
+ * Structures, which pay only their claims. A minimum or a building alone is a
+ * ceiling on the same terms as an hourly bill, being production the tax may not
+ * take, so it binds with nothing built on the claims.
  *
  * `indicative` says the ceiling rests on a yield the engine cannot stand behind,
  * in which case scoreSite reports it without letting it into T_max. A measured
  * yield does not set it — see computeBasicYield for why the flag is carried.
  *
  * `impossible` marks a resource the settle tile has no plots of while something
- * is owed in it — a bill or a minimum, since no plots cannot leave 1,000/hr
- * standing either. It produces nothing at any tax, so the ceiling is genuinely
- * -Infinity rather than merely low, and it is reported as a flag because a
- * caller filtering on the number alone would drop the site unable to say why.
+ * is owed in it — a bill, a building or a minimum, since no plots cannot leave
+ * 1,000/hr standing either. It produces nothing at any tax, so the ceiling is
+ * genuinely -Infinity rather than merely low, and it is reported as a flag
+ * because a caller filtering on the number alone would drop the site unable to
+ * say why.
  *
  * All four resources are checked even once one has come back impossible, so
  * `binding` always names the worst of them rather than the first bad one.
@@ -304,17 +323,17 @@ export function tRp({ uRp, research, rpBonus = 0, minimum = 0 }) {
 export function tRes({ milsovAssignments, plots, settings = {} }) {
   const none = { ceiling: Infinity, indicative: false, binding: null, impossible: false };
   const upkeep = milsovUpkeep(milsovAssignments ?? []);
+  const fixed = (res) => resourceMinimum(settings, res) + buildingUpkeep(settings, res);
   // A zero bill covers nothing placed, Resource Structures, and the degenerate
   // case of a level with no entry in the upkeep table.
-  const fenced = BASIC_RESOURCES.some((res) => resourceMinimum(settings, res) > 0);
-  if (upkeep <= 0 && !fenced) return none;
+  if (upkeep <= 0 && !BASIC_RESOURCES.some((res) => fixed(res) > 0)) return none;
   const { yield: y, measured } = computeBasicYield(settings);
   let worst = Infinity;
   let binding = null;
   for (const res of BASIC_RESOURCES) {
-    // production(T) - upkeep >= minimum
-    //   =>  T <= 125 + bonus - 100*(upkeep + minimum)/(plots*Y)
-    const need = upkeep + resourceMinimum(settings, res);
+    // production(T) - upkeep - buildings >= minimum
+    //   =>  T <= 125 + bonus - 100*(upkeep + buildings + minimum)/(plots*Y)
+    const need = upkeep + fixed(res);
     const perPoint = plots[res] * y;
     // No plots owing nothing is not a constraint; no plots owing something is
     // one no tax rate satisfies.
@@ -354,7 +373,9 @@ export function tRes({ milsovAssignments, plots, settings = {} }) {
  * therefore reads at that minimum rather than at zero.
  *
  * `base` holds the same seven quantities before the plan is paid for, so each
- * figure can be shown as base minus what the plan takes.
+ * figure can be shown as base minus what the plan takes. What is taken includes
+ * the city's own buildings, which are not the plan's but are paid from the same
+ * production; `buildingUpkeep` holds their share of each basic resource.
  */
 export function surplusAt({ tax, settings, sFood, uRp, uGold, milsovAssignments }) {
   const s = settings;
@@ -374,13 +395,15 @@ export function surplusAt({ tax, settings, sFood, uRp, uGold, milsovAssignments 
     rp: base.rp - (uRp ?? 0),
     gold: base.gold - (uGold ?? 0),
     upkeep,
+    buildingUpkeep: {},
     indicative: !measured,
   };
   for (const res of BASIC_RESOURCES) {
     base[res] = basicProduction({
       plots: s.plots[res], yield: y, bonus: resourceBonus(s, res), tax,
     });
-    out[res] = base[res] - upkeep;
+    out.buildingUpkeep[res] = buildingUpkeep(s, res);
+    out[res] = base[res] - upkeep - out.buildingUpkeep[res];
   }
   out.base = base;
   return out;
@@ -540,8 +563,9 @@ export function recoverSet(candidates, dpResult, spend) {
  *           at the last food tile worth buying, and the change left over is too
  *           little for another one.
  *  - `upkeep` hourly production of the SCARCEST basic resource at `tax`, less
- *           any surplus of it the user asked to keep, which is the slack in
- *           T_res. Charged of each of the four, so the worst one is the budget.
+ *           what the city's buildings consume of it and any surplus of it
+ *           the user asked to keep, which is the slack in T_res. Charged of
+ *           each of the four, so the worst one is the budget.
  *  - `slots` the building cap, less what the food plan is already using.
  *
  * A research-bound site returns rp = 0, correctly: T_rp is what set the tax
@@ -563,14 +587,14 @@ export function milsovHeadroom({ tax, settings, uRp = 0, buildingsUsed = 0 }) {
     const produced = basicProduction({
       plots: s.plots[res], yield: y, bonus: resourceBonus(s, res), tax,
     });
-    upkeep = Math.min(upkeep, produced - resourceMinimum(s, res));
+    upkeep = Math.min(upkeep, produced - resourceMinimum(s, res) - buildingUpkeep(s, res));
   }
   return {
     rp: Math.max(0, researchAt({
       research: computeResearch(s), rpBonus: prestigeBonus(s, 'research'), tax,
     }) - uRp - resourceMinimum(s, 'research')),
-    // A minimum bigger than the production it protects leaves nothing to spend
-    // rather than a negative budget.
+    // Buildings or a minimum bigger than the production they draw on leave
+    // nothing to spend rather than a negative budget.
     upkeep: Math.max(0, upkeep),
     slots,
   };
@@ -1028,9 +1052,9 @@ export function milsovAtFloor(ctx, { required, floor, ceiling }) {
 /**
  * Walk the DP frontier for the site's own ceiling — the best tax any food plan
  * reaches, and the cheapest plan reaching it. No military building is placed
- * here, so nothing is charged hourly — but a minimum surplus is a ceiling all
- * the same, and it is fixed by the city rather than the food spend, so it is
- * solved once outside the walk.
+ * here — but the city's buildings and a minimum surplus are ceilings all
+ * the same, fixed by the city rather than the food spend, so they are solved
+ * once outside the walk.
  *
  * Split out for callers that already hold a context, since rebuilding one is the
  * whole cost of preparing a site.

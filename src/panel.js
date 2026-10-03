@@ -32,9 +32,12 @@ import {
   PLOT_KEYS,
   PLOT_TOTAL,
   PRODUCTION_LABEL,
+  UPKEEP_BUILDINGS,
   descriptorFor,
 } from './constants.js';
-import { ICONS, APP_ICON_SVG, PRODUCTION_ICONS, STRUCTURE_ICONS } from './icons.js';
+import {
+  ICONS, APP_ICON_SVG, PRODUCTION_ICONS, STRUCTURE_ICONS, UPKEEP_GROUP_ICONS,
+} from './icons.js';
 import { extractTowns, tileKey } from './payload.js';
 import {
   computeBOther,
@@ -159,6 +162,9 @@ belongs to neither and activates nothing. */
 .sov-panel img.sov-ico{width:12px;height:12px;vertical-align:-2px;margin-right:4px;
   image-rendering:pixelated}
 .sov-plot-fields label .sov-ico{display:block;margin:0 auto 1px}
+.sov-upkeep-group{display:flex;align-items:center;gap:6px;margin:8px 0 3px;padding-top:5px;
+  border-top:1px solid #333;color:#9c9;font-weight:bold}
+.sov-panel .sov-upkeep-group img{width:18px;height:18px}
 /* Outside the scrolling body and non-shrinking, so the tabs stay switchable
    while a long pane scrolls beneath them. The side padding aligns them with the
    header and the body, whose padding they no longer sit inside. */
@@ -546,6 +552,15 @@ export function parseResourceBoosters(raw) {
   return out;
 }
 
+/** Read how many of each upkeep building the city has. Blank is none. */
+export function parseUpkeepBuildings(raw) {
+  const out = {};
+  for (const b of UPKEEP_BUILDINGS) {
+    out[b.key] = clampNumber(raw?.[b.key], { min: 0, max: 99, integer: true, fallback: 0 });
+  }
+  return out;
+}
+
 /**
  * Read the minimum-surplus fields — one per production, food and research
  * included. Zero is off, and negative is refused rather than read as permission
@@ -646,6 +661,15 @@ export const SETTINGS_FIELDS = [
     type: 'boosters',
   },
 
+  // Its own group: what these buildings consume is a bill on the basic
+  // resources, and the Chancery among them is also the claim discount.
+  {
+    key: 'upkeepBuildings',
+    group: 'City Buildings',
+    label: 'How many of each — what they consume comes off production first',
+    type: 'upkeepBuildings',
+  },
+
   // Its own group because it spans everything the city produces — the four basic
   // resources, food and research — so it belongs under none of theirs.
   {
@@ -664,7 +688,6 @@ export const SETTINGS_FIELDS = [
     type: 'minimums',
   },
 
-  { key: 'chancery', group: 'Sovereignty', label: 'Chancery of Estates (−40% on level 1 claims)', type: 'checkbox' },
   { key: 'rClaim', group: 'Sovereignty', label: 'Claim Radius', type: 'number', min: 1, max: 6, integer: true, fallback: 2 },
   { key: 'maxBuildings', group: 'Sovereignty', label: 'Maximum Buildings', type: 'number', min: 0, max: 200, integer: true, fallback: 20 },
   { key: 'milsovStructure', group: 'Sovereignty', label: 'Military Structure', type: 'milsov' },
@@ -883,6 +906,33 @@ function boostersFieldHtml(f, boosters) {
 }
 
 /**
+ * One count per upkeep building, under the name the game uses and the
+ * resources it consumes, grouped as the game groups them.
+ */
+function upkeepBuildingsFieldHtml(f, buildings) {
+  const rows = UPKEEP_BUILDINGS.map((b, i) => {
+    const id = `sov-in-upkeep-${b.key}`;
+    const uses = Object.keys(b.consumes).map((res) => productionLabel(res)).join(' ');
+    const heading = b.group !== UPKEEP_BUILDINGS[i - 1]?.group
+      ? `<p class="sov-upkeep-group"><img src="${UPKEEP_GROUP_ICONS[b.group]}" alt="">${
+        escapeHtml(b.group)}</p>`
+      : '';
+    return heading + fieldRowHtml({
+      id,
+      label: `${escapeHtml(b.name)} <span class="sov-hint">${uses}</span>`,
+      row: ` data-upkeep-row="${b.key}"${attr('title', b.hint)}`,
+      control: `<input type="number" data-upkeep="${b.key}" min="0" step="1"
+        value="${buildings?.[b.key] ?? 0}" id="${id}">`,
+    });
+  }).join('');
+  return `<div class="sov-f-block" data-key="${f.key}"
+      title="Each copy consumes the same every hour as the first. That comes off production before sovereignty is paid for, so the plan never spends what these buildings need.">
+      <p class="sov-hint">${escapeHtml(f.label)}</p>
+      ${rows}
+    </div>`;
+}
+
+/**
  * The prestige toggles — one per production, food and research included, since
  * all of them are the same additive points on the same production percentage.
  * The food box feeds B_other, so the City Food total above accounts for it.
@@ -956,6 +1006,7 @@ function fieldHtml(f, settings) {
     case 'plots': return plotsFieldHtml(f, v);
     case 'calibration': return calibrationFieldHtml(f, v);
     case 'boosters': return boostersFieldHtml(f, v);
+    case 'upkeepBuildings': return upkeepBuildingsFieldHtml(f, v);
     case 'prestige': return prestigeFieldHtml(f, v);
     case 'minimums': return minimumsFieldHtml(f, v);
     case 'milsov': return milsovFieldHtml(f, v);
@@ -1414,6 +1465,14 @@ licence and full copyright notice.">ⓘ</a></span></span></h2>
           out.resourceBoosters = parseResourceBoosters(raw);
           break;
         }
+        case 'upkeepBuildings': {
+          const raw = {};
+          for (const el of form.querySelectorAll('[data-upkeep]')) {
+            raw[el.dataset.upkeep] = el.value;
+          }
+          out.upkeepBuildings = parseUpkeepBuildings(raw);
+          break;
+        }
         case 'prestige': {
           const raw = {};
           for (const key of PRESTIGE_KEYS) {
@@ -1465,6 +1524,11 @@ licence and full copyright notice.">ⓘ</a></span></span></h2>
         case 'boosters':
           for (const res of BASIC_RESOURCES) {
             setChecked(form.querySelector(`[data-booster="${res}"]`), v?.[res]);
+          }
+          break;
+        case 'upkeepBuildings':
+          for (const el of form.querySelectorAll('[data-upkeep]')) {
+            el.value = v?.[el.dataset.upkeep] ?? 0;
           }
           break;
         case 'prestige':
@@ -2581,6 +2645,13 @@ function detailBodyHtml(plan, base, geom) {
         r.value < 0 ? 'sov-bad' : 'sov-ok'}">${num(r.value)}</td>
         <td class="sov-hint">${r.note}</td></tr>`).join('')}</tbody></table>`
     : '';
+  // The Spent column carries the city's buildings too, which are not part of
+  // the plan, so their share of it is named here.
+  const buildings = BASIC_RESOURCES.filter((res) => plan.surplus?.buildingUpkeep?.[res] > 0)
+    .map((res) => `${num(plan.surplus.buildingUpkeep[res])} ${PRODUCTION_LABEL[res].toLowerCase()}`);
+  const buildingNote = buildings.length
+    ? `<p class="sov-hint">Spent includes ${buildings.join(', ')} per hour for your city's buildings.</p>`
+    : '';
 
   const milPlan = plan.milsov.length
     ? milsovPlanHtml(plan)
@@ -2613,7 +2684,7 @@ function detailBodyHtml(plan, base, geom) {
   // The balance goes first, directly under the slider, so dragging moves numbers
   // the eye is already on. The grid is the tallest block, so it goes last rather
   // than pushing the table off the screen.
-  return `${short}${balance}${milPlan}${res}${trade}${planGridHtml(plan, geom)}`;
+  return `${short}${balance}${buildingNote}${milPlan}${res}${trade}${planGridHtml(plan, geom)}`;
 }
 
 function escapeHtml(s) {

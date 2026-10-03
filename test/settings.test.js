@@ -16,6 +16,7 @@ import {
   MILSOV_BLOCKED_TEXT,
   parseRpCalibration,
   parseResourceBoosters,
+  parseUpkeepBuildings,
   surplusRows,
   productionLabel,
   settingsFormHtml,
@@ -25,7 +26,7 @@ import {
   isWorldMapHash,
 } from '../src/panel.js';
 import { DEFAULT_FOCUS } from '../src/focus.js';
-import { PRODUCTION_ICONS } from '../src/icons.js';
+import { PRODUCTION_ICONS, UPKEEP_GROUP_ICONS } from '../src/icons.js';
 import {
   DEFAULT_SETTINGS,
   BASIC_RESOURCES,
@@ -38,6 +39,7 @@ import {
   MILSOV_UPKEEP_STEP,
   SOV_STRUCTURE_BY_KEY,
   DEFAULT_SOV_STRUCTURE,
+  UPKEEP_BUILDINGS,
 } from '../src/constants.js';
 import { computeK, computeResearch, milsovUpkeep, computeBasicYield } from '../src/scoring.js';
 
@@ -121,6 +123,7 @@ test('the markup carries every hook createPanel reads back out of it', () => {
     'data-cal="observedRpPerHour"', 'data-cal="atTax"', 'data-cal="prestige"', 'sov-rp-read',
     ...BASIC_RESOURCES.map((r) => `data-booster="${r}"`),
     ...BASIC_RESOURCES.map((r) => `data-minimum="${r}"`),
+    ...UPKEEP_BUILDINGS.map((b) => `data-upkeep="${b.key}"`),
     ...PRESTIGE_KEYS.map((k) => `data-prestige="${k}"`),
     'select data-key="milsovStructure"',
     ...PLOT_KEYS.map((p) => `data-plot="${p}"`),
@@ -137,7 +140,7 @@ test('the markup carries every hook createPanel reads back out of it', () => {
       assert.ok(where.includes(`<input type="checkbox" data-key="${f.key}"`), `${f.key} is not a checkbox input`);
     } else if (f.type === 'select') {
       assert.ok(where.includes(`<select data-key="${f.key}"`), `${f.key} is not a select`);
-    } else if (!['plots', 'milsov', 'calibration', 'boosters', 'prestige',
+    } else if (!['plots', 'milsov', 'calibration', 'boosters', 'upkeepBuildings', 'prestige',
       'minimums'].includes(f.type)) {
       assert.ok(where.includes(`<input type="number" data-key="${f.key}"`), `${f.key} is not a number input`);
     }
@@ -512,4 +515,25 @@ test('a blank field means the default, not the minimum', () => {
   assert.equal(clampNumber('101', { min: 0, max: 100 }), 100);
   assert.equal(clampNumber('2.6', { integer: true }), 3);
   assert.equal(clampNumber('2.6', { integer: false }), 2.6);
+});
+
+// --- city buildings with resource upkeep ---
+
+test('every upkeep building consumes basic resources only, and has a count and an icon', () => {
+  // Their food is population, which the city's consumption figure already holds.
+  for (const b of UPKEEP_BUILDINGS) {
+    assert.ok(Object.keys(b.consumes).every((res) => BASIC_RESOURCES.includes(res)), b.name);
+    assert.ok(Object.values(b.consumes).every((v) => v > 0), b.name);
+    assert.equal(DEFAULT_SETTINGS.upkeepBuildings[b.key], 0, `${b.key} has no default count`);
+    assert.match(UPKEEP_GROUP_ICONS[b.group] ?? '', /^data:image\/png;base64,/, `${b.group} has no icon`);
+  }
+});
+
+test('an upkeep building count reads back as a whole number, blank as none', () => {
+  const parsed = parseUpkeepBuildings({ cavalryParadeGround: '3', archersField: '-2', spearmensBillets: '1.6' });
+  assert.equal(parsed.cavalryParadeGround, 3);
+  assert.equal(parsed.archersField, 0, 'clamped, not taken as typed');
+  assert.equal(parsed.spearmensBillets, 2);
+  assert.equal(parsed.infantryQuarters, 0, 'a missing row is none built');
+  assert.deepEqual(parseUpkeepBuildings(DEFAULT_SETTINGS.upkeepBuildings), DEFAULT_SETTINGS.upkeepBuildings);
 });

@@ -13,6 +13,7 @@ import {
   parseMilsovStructure,
   parseRpCalibration,
   parseResourceBoosters,
+  parseUpkeepBuildings,
   parseResourceMinimums,
   parsePrestige,
 } from './panel.js';
@@ -27,7 +28,7 @@ export const STORAGE_KEY = 'illyriad-sov-scanner.settings';
  * already keeps what still exists, drops what does not, and defaults what is
  * new.
  */
-export const STORAGE_VERSION = 1;
+export const STORAGE_VERSION = 2;
 
 /**
  * from-version -> that document one version newer. A stored blob is walked up
@@ -35,12 +36,19 @@ export const STORAGE_VERSION = 1;
  * arrives at the current schema still carrying its value instead of quietly
  * taking a default.
  *
- * Empty while every schema change is an addition or a removal: those need no
- * step, since sanitizeSettings already keeps, drops and defaults field by field.
- * A migration returns a settings object and is never asked to validate —
- * whatever it produces goes through sanitizeSettings after.
+ * An addition or a removal needs no step, since sanitizeSettings already keeps,
+ * drops and defaults field by field. A migration returns a settings object and
+ * is never asked to validate — whatever it produces goes through
+ * sanitizeSettings after.
  */
-export const MIGRATIONS = {};
+export const MIGRATIONS = {
+  // Version 1 kept the Chancery as a tick-box, which is one Chancery among the
+  // upkeep buildings.
+  1: ({ chancery, ...rest }) => ({
+    ...rest,
+    upkeepBuildings: { ...rest.upkeepBuildings, chanceryOfEstates: chancery ? 1 : 0 },
+  }),
+};
 
 /** Walk a stored settings object from the version it was written at to ours. */
 function migrate(body, from) {
@@ -96,6 +104,9 @@ export function sanitizeSettings(raw) {
         break;
       case 'boosters':
         out.resourceBoosters = parseResourceBoosters(v);
+        break;
+      case 'upkeepBuildings':
+        out.upkeepBuildings = parseUpkeepBuildings(v);
         break;
       case 'prestige':
         out.prestige = parsePrestige(v);

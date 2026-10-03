@@ -130,9 +130,10 @@ next Optimise.
 | City Food | Food consumed per hour, Flour Mill, Nature's Bounty and Geomancer Retreats, number of cities, and whether this one is the capital |
 | Research | Allembine Research, Overflowing Insight, and an override for reading your city's actual research output off the game |
 | Basic Resources | Which booster buildings you run at level 20 |
+| City Buildings | How many of each level 20 building that consumes basic resources every hour — the unit upkeep buildings, warfare colleges, diplomacy and magic buildings, Chancery of Estates and Trade Office. What they consume is taken off production before any sovereignty is paid for, and the Chancery count also sets the discount on level 1 claims |
 | Prestige | The production boost, per resource |
 | Minimum Surplus | A floor per hour on any of the six productions, so a plan cannot starve one |
-| Sovereignty | Chancery of Estates, claim radius, maximum buildings, which military structure to place, and the smallest military bonus worth having |
+| Sovereignty | Claim radius, maximum buildings, which military structure to place, and the smallest military bonus worth having |
 | Neighbours | Minimum distance to other players (10), to your own cities (3) and to alliance towns (3), and whether to treat tiles you have already claimed as available |
 
 The form saves itself in your browser as you edit it, under the game's own

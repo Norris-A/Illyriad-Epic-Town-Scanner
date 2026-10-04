@@ -1,18 +1,9 @@
-// Side panel UI: the three tabs, the gear menu and the CSV writer. The panel
-// never touches the game's map. The map marks are overlay.js's, and main.js
-// relays between the two: a selection goes out through `onSelect`, the
-// optimiser's plan through `onFocusPlan`, and a press of Pick on map through
-// `onPickOnMap`; a click on the map comes back through `selectSite` or
-// `planAt`; whether a pick is armed is reported through `setPicking`, and what
-// the map shows through `setMapNote`; and `onPaneShown` says which pane is open
-// on screen for the marks to show beside.
+// The side panel: the three tabs, the gear menu and the CSV writer. It never
+// touches the game's map; main.js relays between it and overlay.js.
 //
-// Coordinates are DISPLAYED as "x|y" to match in-game convention, even though
-// payload keys are "y|x". Convert at the boundary, never in the middle.
+// Coordinates are shown as "x|y", as in game, though payload keys are "y|x".
 //
-// Everything above createPanel is DOM-free on purpose: the settings spec, the
-// validators and the CSV writer are all importable (and tested) under Node.
-// createPanel is the only function in this file that touches `document`.
+// Everything above createPanel is DOM-free and tested under Node.
 
 import {
   DEFAULT_CITY_CONSUMPTION,
@@ -36,12 +27,11 @@ import {
   descriptorFor,
 } from './constants.js';
 import {
-  ICONS, APP_ICON_SVG, PRODUCTION_ICONS, STRUCTURE_ICONS, UPKEEP_GROUP_ICONS,
+  ICONS, APP_ICON_SVG, GLYPHS, PRODUCTION_ICONS, STRUCTURE_ICONS, UPKEEP_GROUP_ICONS,
 } from './icons.js';
 import { extractTowns, tileKey } from './payload.js';
 import {
   computeBOther,
-  computeK,
   computeResearch,
   prestigeBonus,
   researchAt,
@@ -61,187 +51,298 @@ import {
 } from './focus.js';
 
 const CSS = `
-/* The panel is injected into the host page, so its elements are also matched by
-   the game's own stylesheet. A colour inherited from the panel root loses to any
-   rule the host sets on h2, table or td, which is what turned the heading and the
-   results table dark red. Every element gets its own colour and font here, and
-   this block is first so the specific rules below still win. */
+/* The game's own stylesheet also matches the panel's elements, and beats any
+   colour or font they would inherit. So every element gets its own here, first,
+   and nested elements need explicit rules: they never inherit size, weight or
+   colour. */
 .sov-panel,.sov-panel *{color:#e6e6e6;background:transparent;text-shadow:none;
   text-transform:none;letter-spacing:normal;font:12px/1.4 system-ui,sans-serif}
-/* A flex column: the header and the tab bar hold their height while only the
-   body scrolls, so both stay put and reachable however long the open pane is. */
+.sov-panel,.sov-menu{--bg:#1b1b1b;--card:#222;--card-hi:#292929;--line:#333;--line2:#444;
+  --muted:#9a9a9a;--accent:#3a5;--accent-text:#8d8;--blue:#6bf;--amber:#eb8;--red:#e66}
+.sov-panel strong,.sov-panel b{font-weight:700}
+/* Lets a glyph's currentColor follow its button instead of the reset. */
+.sov-panel .sov-glyph,.sov-panel .sov-glyph *{color:inherit}
+.sov-glyph{flex:none;width:14px;height:14px}
+/* Only the body scrolls; the header and tabs stay put. */
 .sov-panel{position:fixed;top:0;right:0;width:420px;max-height:100vh;overflow:hidden;
-  display:flex;flex-direction:column;z-index:99999;background:#1b1b1b;
-  border-left:1px solid #444;box-shadow:-2px 0 8px rgba(0,0,0,.5)}
+  display:flex;flex-direction:column;z-index:99999;background:var(--bg);
+  border-left:1px solid var(--line2);box-shadow:-2px 0 8px rgba(0,0,0,.5)}
 .sov-panel h2{flex:none;margin:0;padding:8px 10px;font-size:13px;font-weight:600;
-  color:#fff;background:#2a2a2a;cursor:move;user-select:none}
-/* The flex row lives on an inner element the host page has no rules for: the host
-   restyles h2 itself (it forces the heading's own display), so laying the header
-   out on the h2 loses — laying it out one level in wins outright. */
+  color:#fff;background:#262626;cursor:move;user-select:none}
+/* Laid out on an inner element: the game's stylesheet forces the h2's display. */
 .sov-panel h2 .sov-h2-inner{display:flex;align-items:center;gap:8px}
-.sov-panel h2 .sov-title{min-width:0}
-/* The two icons ride together at the far right, pushed there by the auto margin. */
+.sov-panel h2 .sov-title{min-width:0;font-size:13px;font-weight:600;color:#fff}
 .sov-panel h2 .sov-h2-actions{margin-left:auto;flex:none;display:flex;align-items:center;gap:12px}
 .sov-panel.sov-dragging{cursor:grabbing}
 .sov-panel.sov-dragging h2{cursor:grabbing}
-.sov-panel h2 .sov-about{color:#8a8a8a;text-decoration:none;font-size:20px;line-height:1}
+.sov-panel h2 .sov-about{color:#8a8a8a;text-decoration:none;font-size:18px;line-height:1}
 .sov-panel h2 .sov-about:hover{color:#fff}
-/* Not a <button>: the host page's own button rules give one padding and width the
-   header cannot spare, which the ⓘ (an <a>) sidesteps. This matches it — a bare
-   glyph, sized to itself. */
-.sov-panel h2 .sov-gear{color:#8a8a8a;font-size:20px;line-height:1;cursor:pointer}
+/* Not a <button>: the game's button rules would give it padding and width. */
+.sov-panel h2 .sov-gear{color:#8a8a8a;font-size:18px;line-height:1;cursor:pointer}
 .sov-panel h2 .sov-gear:hover{color:#fff}
-.sov-panel h2 .sov-gear:focus-visible{outline:1px solid #6bf}
-/* Its own floating card, positioned in script and appended to the body so the
-   panel's overflow:hidden cannot clip it. Self-contained styling because it
-   lives outside .sov-panel, beyond that reset's reach. The reset comes first so
-   the card's own background below wins over the transparent it sets on itself. */
+.sov-panel h2 .sov-gear:focus-visible{outline:1px solid var(--blue)}
+.sov-panel h2 .sov-build{color:#777;font-size:10px;font-weight:normal}
+/* No pointer events, so the icon never takes the header's drag. */
+.sov-panel h2 .sov-app-icon{flex:none;width:18px;height:18px;pointer-events:none}
+/* The gear menu lives outside the panel, so the panel's overflow cannot clip
+   it, and needs its own reset. */
 .sov-menu,.sov-menu *{color:#e6e6e6;background:transparent;text-shadow:none;
   text-transform:none;letter-spacing:normal;font:12px/1.4 system-ui,sans-serif}
-.sov-menu{position:fixed;z-index:100000;width:250px;box-sizing:border-box;
-  background:#1b1b1b;border:1px solid #444;border-radius:6px;padding:8px 10px;
+.sov-menu{position:fixed;z-index:100000;width:260px;box-sizing:border-box;
+  background:var(--bg);border:1px solid var(--line2);border-radius:8px;padding:8px 10px;
   box-shadow:0 4px 12px rgba(0,0,0,.5)}
 .sov-menu h3{margin:0 0 6px;font-size:13px;font-weight:600;color:#fff}
 .sov-menu[hidden]{display:none}
-/* pointer-events off so the icon never hijacks the header's drag. */
-.sov-panel h2 .sov-app-icon{flex:none;width:18px;height:18px;pointer-events:none}
-/* The only scrolling region; min-height:0 lets it shrink inside the capped
-   column instead of forcing the header and tabs off the top. */
-.sov-body{flex:1 1 auto;min-height:0;overflow:auto;padding:8px 10px}
-.sov-panel table{width:100%;border-collapse:collapse}
-.sov-panel th,.sov-panel td{padding:2px 4px;border-bottom:1px solid #333;text-align:right}
-.sov-panel th{font-weight:600;color:#b9c4b9}
-.sov-panel th:first-child,.sov-panel td:first-child{text-align:left}
-.sov-panel button{background:#3a5;color:#fff;border:0;padding:5px 10px;cursor:pointer}
-.sov-panel button.sec{background:#444}
-.sov-panel button[disabled]{background:#333;color:#888;cursor:not-allowed}
-.sov-row{cursor:pointer}
-.sov-detail{background:#222;font-size:11px}
-.sov-detail-actions{margin:2px 0 6px}
-.sov-flag{color:#e94}
-/* Collapsed, the chip carries the background and shadow the root drops here. */
 .sov-collapsed{width:auto;max-height:none;overflow:visible;border-left:0;
   background:transparent;box-shadow:none}
 .sov-collapsed .sov-body,.sov-collapsed .sov-tabs{display:none}
 .sov-collapsed h2{padding:8px;border-radius:6px;box-shadow:-2px 0 8px rgba(0,0,0,.5)}
 .sov-collapsed h2 .sov-title,.sov-collapsed h2 .sov-h2-actions{display:none}
 .sov-collapsed h2 .sov-app-icon{width:48px;height:48px;margin:0;vertical-align:middle}
-.sov-selected>td{background:#243}
-.sov-form fieldset{border:1px solid #333;margin:0 0 8px;padding:4px 8px 6px}
-.sov-form legend{color:#9c9;padding:0 4px}
-.sov-form input,.sov-form select{background:#111;color:#ddd;border:1px solid #444;
-  padding:1px 3px;font:inherit}
-.sov-f{display:flex;align-items:center;justify-content:space-between;gap:6px;margin:3px 0}
+
+.sov-tabs{flex:none;display:flex;margin:0;padding:0 6px;background:#262626;
+  border-bottom:1px solid var(--line2)}
+.sov-panel .sov-tabs button{flex:1 1 auto;display:flex;align-items:center;justify-content:center;
+  gap:5px;background:transparent;color:#9a9a9a;padding:7px 6px 6px;border-radius:0;
+  border-bottom:2px solid transparent;white-space:nowrap}
+.sov-panel .sov-tabs button:hover{color:#fff}
+.sov-panel .sov-tabs button.on{color:#fff;border-bottom-color:var(--accent)}
+/* min-height:0 lets the body shrink, rather than push the header off screen. */
+.sov-body{flex:1 1 auto;min-height:0;overflow:auto;padding:10px}
+
+.sov-panel button{display:inline-flex;align-items:center;gap:5px;background:var(--accent);
+  color:#fff;border:0;border-radius:4px;padding:5px 11px;cursor:pointer;font-weight:600}
+.sov-panel button:hover{filter:brightness(1.12)}
+.sov-panel button.sec{background:#3a3a3a;font-weight:normal}
+.sov-panel button[disabled]{background:#2e2e2e;color:#777;cursor:not-allowed;filter:none}
+.sov-panel button.sov-picking{background:#a33}
+.sov-run{margin:8px 0 4px}
+.sov-panel .sov-run button{width:100%;justify-content:center;padding:7px 11px}
+.sov-toolbar{display:flex;align-items:center;gap:6px;margin:0 0 8px}
+.sov-toolbar .sov-export{margin-left:auto}
+
+.sov-panel input[type=number],.sov-panel select,.sov-menu select{background:#121212;color:#ddd;
+  border:1px solid var(--line2);border-radius:4px;padding:2px 5px;font:inherit;box-sizing:border-box}
+.sov-panel input[type=number]:focus,.sov-panel select:focus{outline:none;border-color:var(--accent)}
+.sov-panel input[type=number]::placeholder{color:#666}
+.sov-panel input[type=range]{accent-color:var(--accent)}
+/* Tick-boxes drawn as switches, with gradients: not every browser paints
+   pseudo-elements on an input. */
+.sov-panel input[type=checkbox],.sov-menu input[type=checkbox]{-webkit-appearance:none;
+  appearance:none;flex:none;box-sizing:border-box;width:28px;height:16px;margin:0;
+  border:1px solid var(--line2);border-radius:8px;cursor:pointer;
+  background:radial-gradient(circle at 7px 50%,#9a9a9a 4.5px,transparent 5px) #2b2b2b;
+  transition:background-color .12s}
+.sov-panel input[type=checkbox]:checked,.sov-menu input[type=checkbox]:checked{
+  border-color:var(--accent);
+  background:radial-gradient(circle at 19px 50%,#fff 4.5px,transparent 5px) var(--accent)}
+.sov-panel input[type=checkbox]:focus-visible,.sov-menu input[type=checkbox]:focus-visible{
+  outline:1px solid var(--blue)}
+.sov-panel input:disabled,.sov-panel select:disabled{cursor:not-allowed}
+
+.sov-f{display:flex;align-items:center;justify-content:space-between;gap:8px;
+  min-height:24px;margin:1px 0}
 .sov-f>span{flex:1}
-/* A row's label is its text and no more, so the gap between it and the control
-belongs to neither and activates nothing. */
-.sov-f>label{cursor:pointer;min-width:0}
-.sov-f input[type=number]{width:76px;text-align:right}
-.sov-f select{max-width:170px}
+/* The label is only as wide as its text, so a click in the gap toggles nothing. */
+.sov-f>label{cursor:pointer;min-width:0;color:#d4d4d4}
+.sov-f input[type=number]{width:70px;text-align:right}
+.sov-f select{max-width:180px}
 .sov-gated{opacity:.4}
+
+.sov-sec{margin:0 0 6px;background:var(--card);border:1px solid var(--line);border-radius:6px}
+.sov-sec>summary{display:flex;align-items:center;gap:8px;padding:6px 9px;cursor:pointer;
+  list-style:none;user-select:none;border-radius:6px}
+.sov-sec>summary::-webkit-details-marker{display:none}
+.sov-sec>summary:hover{background:var(--card-hi)}
+.sov-sec[open]>summary{border-bottom:1px solid var(--line);border-radius:6px 6px 0 0}
+/* A fixed width, so section names line up whatever the icons. */
+.sov-sec-ico{flex:none;width:40px;display:flex;align-items:center;justify-content:center}
+.sov-panel .sov-sec-ico img{width:22px;height:22px;margin:0;image-rendering:pixelated}
+.sov-panel .sov-sec-ico img:not(:only-child){width:16px;height:16px}
+.sov-panel .sov-sec-ico img+img{margin-left:-8px}
+.sov-panel .sov-sec-name{flex:none;font-weight:600;color:#fff}
+.sov-sum{margin-left:auto;min-width:0;display:flex;align-items:center;justify-content:flex-end;
+  gap:3px;color:var(--muted);font-size:11px;white-space:nowrap;overflow:hidden}
+.sov-panel .sov-sum *{font-size:11px;color:inherit}
+.sov-panel .sov-sum img{width:12px;height:12px;margin:0 0 0 4px;image-rendering:pixelated}
+.sov-panel .sov-sum .sov-bad{color:var(--red);font-weight:700}
+.sov-chev{flex:none;display:flex;color:#777;transition:transform .12s}
+.sov-sec[open]>summary .sov-chev{transform:rotate(90deg)}
+.sov-sec-body{padding:6px 9px 8px}
+.sov-card{margin:0 0 6px;padding:6px 9px;background:var(--card);border:1px solid var(--line);
+  border-radius:6px}
+
+.sov-panel img.sov-ico{width:12px;height:12px;vertical-align:-2px;margin-right:4px;
+  image-rendering:pixelated}
 .sov-plot-fields{display:flex;gap:4px;margin:2px 0}
 .sov-plot{flex:1;text-align:center}
 .sov-plot-fields label{display:block;font-size:10px;color:#b5b5b5;cursor:pointer}
-.sov-plot-fields input{width:100%;text-align:center}
-.sov-plot-sum{display:flex;justify-content:space-between;align-items:center;gap:6px}
-.sov-bad{color:#e66;font-weight:bold}
+.sov-plot-fields label .sov-ico{display:block;width:18px;height:18px;margin:0 auto 1px}
+.sov-panel .sov-plot-fields input{width:100%;text-align:center}
+.sov-plotbar{display:flex;gap:1px;height:7px;margin:5px 0 3px}
+.sov-plotbar>i{flex:1;border-radius:1px;background:#2e2e2e}
+.sov-plotbar>i.sov-p-wood{background:#9b7440}
+.sov-plotbar>i.sov-p-clay{background:#c2633b}
+.sov-plotbar>i.sov-p-iron{background:#5f9a86}
+.sov-plotbar>i.sov-p-stone{background:#a0a0a0}
+.sov-plotbar>i.sov-p-food{background:#d9b23f}
+.sov-plotbar>i.sov-p-over{background:var(--red)}
+.sov-plot-sum{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:4px 6px}
+.sov-plot-sum .sov-plot-total{font-size:11px}
+.sov-panel .sov-plot-sum button{padding:3px 8px;font-size:11px;white-space:nowrap}
+.sov-bad{color:var(--red);font-weight:bold}
 .sov-ok{color:#6c6}
-.sov-derived{margin:2px 0 0;padding-left:16px;font-size:11px}
-.sov-derived .sov-off{color:#888}
-.sov-derived .sov-on{color:#6c6}
-.sov-hint{color:#a9a9a9;font-size:11px;margin:2px 0}
-.sov-build{color:#888;font-size:10px;font-weight:normal}
-.sov-tax{margin:6px 0;padding-top:4px;border-top:1px solid #333}
-.sov-tax input[type=range]{width:190px}
-.sov-tax output{color:#6bf;font-variant-numeric:tabular-nums}
-.sov-desc{display:block;font-size:9px;line-height:1.15;opacity:.85;word-break:break-word}
-.sov-balance{margin:4px 0}
-.sov-balance td:nth-child(n+2){font-variant-numeric:tabular-nums}
-.sov-balance th,.sov-balance td{padding:2px 3px}
-/* Sized to the line rather than to the art, so a row's height stays its text's. */
-.sov-panel img.sov-ico{width:12px;height:12px;vertical-align:-2px;margin-right:4px;
+
+.sov-chip{display:inline-flex;align-items:center;gap:4px;padding:1px 7px;border-radius:10px;
+  background:#2a2a2a;border:1px solid var(--line2);font-size:11px;white-space:nowrap}
+.sov-panel .sov-chip img{width:12px;height:12px;margin:0;image-rendering:pixelated}
+.sov-panel .sov-chip b{font-size:11px}
+.sov-chip.sov-on{color:var(--accent-text);border-color:#2f5a3a;background:#1d2a20}
+.sov-chip.sov-off{color:#7d7d7d}
+.sov-derived{display:flex;flex-wrap:wrap;gap:4px;margin:6px 0 0}
+.sov-derived-food{margin:6px 0 0;color:var(--accent-text);font-size:11px}
+
+.sov-panel table.sov-matrix{width:100%;border-collapse:collapse}
+.sov-panel .sov-matrix th{padding:2px 4px 4px;border-bottom:1px solid var(--line2);
+  font-size:10px;font-weight:600;color:var(--muted);text-align:center;cursor:help}
+.sov-panel .sov-matrix td{padding:3px 4px;border-bottom:1px solid #2a2a2a;text-align:center}
+.sov-panel .sov-matrix th:first-child,.sov-panel .sov-matrix td:first-child{text-align:left}
+.sov-panel .sov-matrix tr:last-child td{border-bottom:0}
+.sov-panel .sov-matrix input[type=number]{width:72px;text-align:right}
+.sov-matrix .sov-none{color:#555}
+
+.sov-upkeep-group{display:flex;align-items:center;gap:6px;margin:10px 0 2px;padding-bottom:3px;
+  border-bottom:1px solid var(--line);color:var(--accent-text);font-weight:600}
+.sov-upkeep-group:first-child{margin-top:0}
+.sov-panel .sov-upkeep-group img{width:18px;height:18px;image-rendering:pixelated}
+.sov-f>.sov-uses{flex:none;display:inline-flex;gap:3px;margin-left:auto;cursor:help}
+.sov-panel .sov-uses img{width:12px;height:12px;image-rendering:pixelated}
+.sov-panel [data-upkeep-row] input[type=number]{width:52px}
+.sov-panel .sov-has>label{color:#fff;font-weight:600}
+
+/* Framed in red even when empty, as a warning that a reading here overrides
+   the settings above. */
+.sov-panel fieldset.sov-override{border:1px solid #6a2a2a;border-radius:6px;background:#211a1a;
+  margin:6px 0 2px;padding:2px 8px 6px}
+.sov-panel fieldset.sov-override.sov-override-on{border-color:#e55;background:#2a1b1b}
+.sov-panel .sov-override>legend{padding:0 4px;color:#e88;font-weight:600;font-size:11px}
+.sov-panel .sov-override.sov-override-on>legend{color:#f99}
+
+.sov-form-foot{display:flex;align-items:center;gap:8px;margin:10px 0 0}
+
+.sov-hint{color:var(--muted);font-size:11px;margin:2px 0}
+.sov-note{color:#b5b5b5;font-size:11px;margin:2px 0}
+.sov-warn{color:var(--red);font-weight:bold;font-size:11px;margin:2px 0}
+.sov-flag{color:#e94}
+.sov-legend{color:var(--muted);font-size:10px;margin:2px 0}
+.sov-meta{display:flex;align-items:center;gap:6px;margin:0 0 4px;color:#b5b5b5;font-size:11px}
+.sov-meta .sov-glyph{color:var(--muted)}
+
+.sov-panel table{width:100%;border-collapse:collapse}
+.sov-panel th,.sov-panel td{padding:3px 4px;border-bottom:1px solid #2a2a2a;text-align:right}
+.sov-panel th{font-size:11px;font-weight:600;color:var(--muted);border-bottom-color:var(--line2)}
+.sov-panel th:first-child,.sov-panel td:first-child{text-align:left}
+.sov-panel .sov-results td{font-variant-numeric:tabular-nums}
+.sov-panel .sov-results th img{width:14px;height:14px;vertical-align:-3px;image-rendering:pixelated}
+.sov-panel .sov-results td.sov-at{text-align:left;white-space:nowrap}
+.sov-row{cursor:pointer}
+.sov-row:hover>td{background:#252525}
+.sov-selected>td,.sov-selected:hover>td{background:#1f3326}
+.sov-panel td.sov-tax-cell,.sov-panel td.sov-mil-cell{white-space:nowrap}
+.sov-panel .sov-tax-cell b{font-size:12px;color:#fff}
+.sov-panel th{white-space:nowrap}
+.sov-panel .sov-mil-v{font-size:12px;color:var(--amber)}
+.sov-panel .sov-pill img{width:11px;height:11px;margin-right:3px;vertical-align:-2px;image-rendering:pixelated}
+.sov-panel .sov-tax-cell img{width:12px;height:12px;margin-left:4px;vertical-align:-2px;
   image-rendering:pixelated}
-.sov-plot-fields label .sov-ico{display:block;margin:0 auto 1px}
-.sov-upkeep-group{display:flex;align-items:center;gap:6px;margin:8px 0 3px;padding-top:5px;
-  border-top:1px solid #333;color:#9c9;font-weight:bold}
-.sov-panel .sov-upkeep-group img{width:18px;height:18px}
-/* Outside the scrolling body and non-shrinking, so the tabs stay switchable
-   while a long pane scrolls beneath them. The side padding aligns them with the
-   header and the body, whose padding they no longer sit inside. */
-.sov-tabs{flex:none;display:flex;gap:2px;margin:0;padding:8px 10px 0;
-  border-bottom:1px solid #444}
-.sov-tabs button{background:#2a2a2a;color:#b5b5b5;padding:5px 9px;border-bottom:2px solid transparent}
-.sov-tabs button.on{background:#333;color:#fff;border-bottom-color:#3a5}
+.sov-panel .sov-cap{margin-left:4px;font-size:9px;color:var(--muted)}
+/* Styled like the numbered markers on the World Map. */
+.sov-rank{display:inline-block;box-sizing:border-box;min-width:18px;height:18px;margin-right:6px;
+  border-radius:9px;text-align:center;font-size:10px;line-height:16px;font-weight:700;color:#777}
+.sov-rank.sov-rank-top{border:2px solid var(--accent);background:#141414;color:#fff;line-height:14px}
+.sov-pill{display:inline-block;margin:1px 0 1px 2px;padding:0 6px;border-radius:8px;font-size:10px;
+  line-height:15px;white-space:nowrap;background:#333;color:#ccc;cursor:help}
+.sov-pill.sov-pill-warn{background:#3a2e1a;color:var(--amber)}
+.sov-pill.sov-pill-bad{background:#3a1d1d;color:#f99}
+.sov-panel tr.sov-detail>td{background:#1f1f1f;padding:8px;border-bottom:2px solid var(--line2);
+  text-align:left}
+.sov-detail-actions{margin:0 0 6px}
+.sov-panel .sov-detail-actions button{padding:4px 9px}
+
 .sov-xy{display:flex;align-items:center;gap:4px}
-.sov-f .sov-xy input{width:60px;text-align:right}
-/* Sized outright: the host page's own button rules carry a height and width of
-   their own, and in this row they would set its height for the inputs too. */
+.sov-panel .sov-xy input{width:58px;text-align:right}
+/* Sized explicitly, overriding the game's own button height and width. */
 .sov-panel .sov-xy button{width:auto;min-width:0;height:auto;min-height:0;margin:0;
   padding:3px 8px;line-height:1.4;white-space:nowrap}
-.sov-xy .sov-or{color:#8a8a8a;font-size:11px}
-.sov-panel button.sov-picking{background:#a33}
+.sov-xy .sov-or{color:#777;font-size:11px}
 .sov-no-map .sov-map-only{display:none}
-.sov-panel a.sov-map-centre{color:#6bf;text-decoration:underline}
-.sov-focus-out h3{margin:8px 0 2px;font-size:12px;font-weight:600;color:#fff}
-.sov-note{color:#a9a9a9;font-size:11px;margin:2px 0}
-.sov-warn{color:#e66;font-weight:bold;font-size:11px;margin:2px 0}
-/* The claim grid. Cell colours are qualified with .sov-grid and the table width
-   with .sov-panel, because the panel's own table and td rules carry an element in
-   the selector and a bare class loses to them. */
+.sov-panel a.sov-map-centre{color:var(--blue);text-decoration:underline}
+
+.sov-result-h{display:flex;flex-wrap:wrap;align-items:center;gap:5px;margin:10px 0 4px;
+  padding-top:10px;border-top:1px solid var(--line)}
+.sov-panel .sov-xy-big{margin-right:4px;font-size:16px;font-weight:700;color:#fff}
+
+.sov-tax{display:flex;align-items:center;gap:8px;margin:2px 0 6px;padding:6px 8px;
+  background:#262626;border-radius:6px}
+.sov-panel .sov-tax-label{font-weight:600}
+.sov-panel .sov-tax input[type=range]{flex:1;min-width:0;margin:0}
+.sov-panel .sov-tax output{min-width:36px;text-align:right;font-size:15px;font-weight:700;
+  color:var(--blue);font-variant-numeric:tabular-nums}
+.sov-panel table.sov-balance{margin:4px 0}
+.sov-panel .sov-balance th,.sov-panel .sov-balance td{padding:3px 3px}
+.sov-panel .sov-balance td{font-variant-numeric:tabular-nums}
+.sov-panel .sov-balance td.sov-use{width:46%;text-align:left}
+.sov-panel .sov-balance .sov-use-txt{display:block;font-size:9px;color:#777;line-height:1.2}
+.sov-bar{position:relative;height:6px;margin-top:2px;border-radius:3px;background:#2e2e2e;overflow:hidden}
+.sov-bar>i{position:absolute;left:0;top:0;bottom:0;border-radius:3px;background:#4a8a5c}
+.sov-bar.sov-bar-full>i{background:#c9923e}
+.sov-bar.sov-bar-over>i{background:var(--red)}
+.sov-mil{margin:6px 0;padding:5px 8px;background:#221d15;border-left:3px solid #a83;border-radius:0 4px 4px 0}
+.sov-panel .sov-mil .sov-mil-bonus{font-size:17px;font-weight:700;color:var(--amber);
+  font-variant-numeric:tabular-nums}
+.sov-panel .sov-mil .sov-mil-what{color:var(--amber)}
+.sov-mil .sov-hint{display:block;margin:1px 0 0}
+.sov-desc{display:block;font-size:9px;line-height:1.15;opacity:.85;word-break:break-word}
+
+/* The claim grid. Selectors are qualified to outrank the panel's own table and
+   td rules. */
 .sov-grid-wrap{overflow-x:auto;margin:6px 0}
 .sov-panel table.sov-grid{width:auto;border-collapse:separate;border-spacing:2px}
-.sov-grid th{padding:0 2px;border:0;text-align:center;font-size:10px;font-weight:400;
-  color:#8a8a8a;font-variant-numeric:tabular-nums}
-.sov-grid td{width:46px;height:38px;padding:1px;border:1px solid #303030;text-align:center;
-  vertical-align:middle;background:#1e1e1e}
+.sov-panel .sov-grid th{padding:0 2px;border:0;text-align:center;font-size:10px;font-weight:400;
+  color:#777;font-variant-numeric:tabular-nums}
+.sov-panel .sov-grid td{width:46px;height:38px;padding:1px;border:1px solid #303030;
+  border-radius:3px;text-align:center;vertical-align:middle;background:#1e1e1e}
 .sov-grid img{width:12px;height:12px;vertical-align:-2px;image-rendering:pixelated}
 .sov-lv{display:block;font-size:10px;font-weight:700;letter-spacing:.5px;color:#8a8a8a}
 .sov-cv{display:block;font-size:11px;font-variant-numeric:tabular-nums}
-.sov-grid .sov-cell-town{background:#243;border-color:#6bf}
-.sov-grid .sov-cell-town .sov-lv{color:#6bf}
-.sov-grid .sov-cell-food{background:#1d2a1d;border-color:#3a5}
+.sov-panel .sov-grid .sov-cell-town{background:#243;border-color:var(--blue)}
+.sov-grid .sov-cell-town .sov-lv{color:var(--blue)}
+.sov-panel .sov-grid .sov-cell-food{background:#1d2a1d;border-color:#3a5}
 .sov-grid .sov-cell-food .sov-lv{color:#8d8}
-.sov-grid .sov-cell-mil{background:#2a241a;border-color:#a83}
-.sov-grid .sov-cell-mil .sov-lv{color:#eb8}
+.sov-panel .sov-grid .sov-cell-mil{background:#2a241a;border-color:#a83}
+.sov-grid .sov-cell-mil .sov-lv{color:var(--amber)}
 .sov-grid .sov-cell-free .sov-cv{color:#7d7d7d}
-.sov-grid .sov-cell-water{background:#16202a;border-color:#2a3a4a}
-/* Kept claims: neither a tile the plan chose nor one it could not have, so a
-   third colour rather than either of theirs. */
-.sov-grid .sov-cell-kept{background:#1b2430;border-color:#4a6a8a}
+.sov-panel .sov-grid .sov-cell-water{background:#16202a;border-color:#2a3a4a}
+.sov-panel .sov-grid .sov-cell-kept{background:#1b2430;border-color:#4a6a8a}
 .sov-grid .sov-cell-kept .sov-lv{color:#8ab}
 .sov-grid .sov-cell-kept .sov-cv{color:#7d8fa0}
-.sov-legend .sov-key-kept{color:#8ab}
-/* A tile the user crossed out and one the game never offered are both tiles the
-   plan cannot have, so they differ in weight, not in kind. */
-.sov-grid .sov-cell-out{background:#2b1a1a;border-color:#8a3a3a}
+.sov-panel .sov-grid .sov-cell-out{background:#2b1a1a;border-color:#8a3a3a}
 .sov-grid .sov-cell-out .sov-x{color:#e55}
-.sov-grid .sov-cell-none{background:#161616;border-color:#252525}
+.sov-panel .sov-grid .sov-cell-none{background:#161616;border-color:#252525}
 .sov-grid .sov-cell-none .sov-x{color:#3f3f3f}
 .sov-x{display:block;font-size:13px;line-height:1.3}
 .sov-grid .sov-pick{cursor:pointer}
-.sov-grid .sov-pick:hover{outline:1px solid #6bf}
-.sov-legend{color:#a9a9a9;font-size:10px;margin:2px 0 0}
-.sov-legend b{font-weight:600;font-size:10px}
-.sov-legend .sov-key-food{color:#8d8}
-.sov-legend .sov-key-mil{color:#eb8}
-.sov-legend .sov-key-free{color:#7d7d7d}
-.sov-legend .sov-key-out{color:#e55}
-/* The bonus is the return on the tax, so it is sized to be read at a glance, in
-   the amber the grid gives military claims. */
-.sov-mil{margin:6px 0;padding:4px 6px;background:#221d15;border-left:2px solid #a83}
-.sov-mil .sov-mil-bonus{font-size:17px;font-weight:700;color:#eb8;
-  font-variant-numeric:tabular-nums}
-.sov-mil .sov-mil-what{color:#eb8}
-.sov-mil .sov-hint{display:block;margin:1px 0 0}
-/* Drawn even while empty: the red frame is the warning that anything typed here
-   beats the settings above. The filled state deepens it rather than adding it. */
-.sov-form fieldset.sov-override{border-color:#a33;background:#231a1a;margin:6px 0 8px}
-.sov-form fieldset.sov-override.sov-override-on{border-color:#e55;background:#2a1b1b}
-.sov-form .sov-override>legend{color:#e88;font-weight:600}
-.sov-form .sov-override.sov-override-on>legend{color:#f99}
-/* The host page's own [hidden] handling cannot be relied on: an author rule like
-   .sov-f{display:flex} beats the user-agent one whatever its specificity, so
-   anything this panel hides needs a rule of its own, last so it wins on order. */
+.sov-grid .sov-pick:hover{outline:1px solid var(--blue)}
+.sov-keys{display:flex;flex-wrap:wrap;gap:3px 10px;margin:2px 0}
+.sov-keys>span{display:inline-flex;align-items:center;gap:4px;font-size:10px;color:#b5b5b5}
+.sov-sw{display:inline-block;box-sizing:border-box;width:11px;height:11px;border:1px solid;
+  border-radius:2px;font-size:9px;line-height:9px;text-align:center}
+.sov-sw.sov-sw-food{background:#1d2a1d;border-color:#3a5}
+.sov-sw.sov-sw-mil{background:#2a241a;border-color:#a83}
+.sov-sw.sov-sw-kept{background:#1b2430;border-color:#4a6a8a}
+.sov-sw.sov-sw-free{background:#1e1e1e;border-color:#3a3a3a}
+.sov-sw.sov-sw-out{background:#2b1a1a;border-color:#8a3a3a;color:#e55}
+/* Any display rule above beats the browser's own [hidden], so this one comes last. */
 .sov-panel [hidden]{display:none}
 `;
 
@@ -250,23 +351,17 @@ export const PANEL_COLLAPSED_KEY = 'illyriad-sov-scanner.panel-collapsed';
 
 export const WORLD_MAP_HASH = '#/World/Map';
 
-/**
- * Whether a location hash is the World Map, where window.mapData lives.
- * Prefix-matched so a tile deep-link like #/World/Map/500/500 still counts.
- */
+/** Whether a location hash is the World Map, including deep links to a tile. */
 export function isWorldMapHash(hash) {
   return String(hash ?? '').startsWith(WORLD_MAP_HASH);
 }
 
-/**
- * The view centred on x|y at `zoom`, or at `radius` where that is further, so the
- * whole radius fits.
- */
+/** The view centred on x|y, zoomed out at least far enough to show `radius`. */
 export function centredView(x, y, zoom, radius) {
   return { x, y, zoom: Math.max(zoom, radius) };
 }
 
-/** The World Map route to `view`, which the game writes itself on every move. */
+/** The World Map route to `view`, as the game writes it. */
 export function mapHash(view) {
   return `${WORLD_MAP_HASH}/${view.x}/${view.y}/${view.zoom}`;
 }
@@ -296,7 +391,26 @@ function savePanelPosition(position) {
   try {
     globalThis.localStorage?.setItem(PANEL_POSITION_KEY, JSON.stringify(position));
   } catch {
-    // Storage can be unavailable on restricted or private pages; dragging still works.
+    // Storage can be unavailable; ignore.
+  }
+}
+
+const OPEN_SECTIONS_KEY = 'illyriad-sov-scanner.open-sections';
+
+function loadOpenSections() {
+  try {
+    const names = JSON.parse(globalThis.localStorage?.getItem(OPEN_SECTIONS_KEY) ?? '[]');
+    return Array.isArray(names) ? names : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveOpenSections(names) {
+  try {
+    globalThis.localStorage?.setItem(OPEN_SECTIONS_KEY, JSON.stringify(names));
+  } catch {
+    // Storage can be unavailable; ignore.
   }
 }
 
@@ -312,27 +426,22 @@ function savePanelCollapsed(collapsed) {
   try {
     globalThis.localStorage?.setItem(PANEL_COLLAPSED_KEY, collapsed ? '1' : '0');
   } catch {
-    // Restricted pages have no storage; the collapse still toggles for the session.
+    // Storage can be unavailable; ignore.
   }
 }
 
 // --- Settings model ---------------------------------------------------------
 
-// Both live in constants.js so focus.js can read an allocation without importing
-// the UI module; re-exported here because this is where the form and its tests
-// have always reached for them.
+// Defined in constants.js; re-exported for the form and its tests.
 export { PLOT_KEYS, PLOT_TOTAL };
 
-/** Alt is empty because the icon is decoration over a name already beside it. */
+/** A production's name with its icon; alt is empty since the name is beside it. */
 export function productionLabel(key) {
   const icon = PRODUCTION_ICONS[key];
   return `${icon ? `<img class="sov-ico" src="${icon}" alt="">` : ''}${PRODUCTION_LABEL[key] ?? key}`;
 }
 
-/**
- * Read one number out of a form field. Blank (or unparseable) falls back rather
- * than clamping, so an empty box means "the default", not "the minimum".
- */
+/** Read one number out of a form field. Blank or unparseable gives `fallback`. */
 export function clampNumber(raw, { min = -Infinity, max = Infinity, integer = false, fallback = 0 } = {}) {
   const n = typeof raw === 'number' ? raw : Number(String(raw ?? '').trim());
   if (String(raw ?? '').trim() === '' || !Number.isFinite(n)) return fallback;
@@ -340,9 +449,8 @@ export function clampNumber(raw, { min = -Infinity, max = Infinity, integer = fa
 }
 
 /**
- * Validate a settle plot allocation. Each entry is clamped to an integer 0..25;
- * the total is reported rather than corrected, since rebalancing it would mean
- * choosing which of the other four plots to take from.
+ * Validate a settle plot allocation: each entry clamped to an integer 0..25,
+ * and the total reported rather than corrected.
  *
  * @param {object} raw the five plot values, as typed
  * @returns {{plots: object, total: number, ok: boolean, message: string}}
@@ -364,21 +472,13 @@ export function validatePlots(raw) {
   };
 }
 
-/**
- * Read the military structure choice. Blank is "none", which is a food-only
- * scan; anything the structure table does not know is refused rather than
- * silently charged as the default, since the only way to type one here is for
- * the picker and the table to have drifted apart.
- */
+/** Read the military structure choice: null for none or for an unknown key. */
 export function parseMilsovStructure(raw) {
   const key = String(raw ?? '').trim();
   return MILSOV_STRUCTURES.some((s) => s.key === key) ? key : null;
 }
 
-/**
- * What was placed, as "2× Sov II + 1× Sov I". Levels descend, since that is the
- * order the plan puts them on the tiles.
- */
+/** What was placed, as "2× Sov II + 1× Sov I", highest level first. */
 function milsovSplitText(plan) {
   const counts = new Map();
   for (const m of plan.milsov) counts.set(m.buildingLevel, (counts.get(m.buildingLevel) ?? 0) + 1);
@@ -388,11 +488,7 @@ function milsovSplitText(plan) {
     .join(' + ');
 }
 
-/**
- * The plan's military sovereignty, in one line — the level split, the bonus and
- * what it costs per hour. This is the CSV's phrasing, so it stays one flat
- * string; the panel has milsovPlanHtml, which ranks the same facts.
- */
+/** The plan's military sovereignty in one line, for the CSV. */
 export function milsovPlanText(plan) {
   if (!plan?.milsov?.length) return '';
   return `${milsovSplitText(plan)} — +${plan.milsovBonus}% military unit production, upkeep ${
@@ -400,9 +496,8 @@ export function milsovPlanText(plan) {
 }
 
 /**
- * The tax at which sovereignty upkeep stops being affordable, stated only when
- * the site could actually reach it — a plan capped at 78% learns nothing from
- * "161.1%". Silent above the ceiling; loud when no tax can pay it at all.
+ * The tax above which sovereignty upkeep is unaffordable, when it is below the
+ * site's ceiling, or a warning when no tax can pay it.
  *
  * @returns {string} markup, or '' when there is nothing to warn about
  */
@@ -416,10 +511,7 @@ export function upkeepLimitHtml(plan) {
     plan.resBinding} production no longer covers it.</p>`;
 }
 
-/**
- * The same plan for the screen. The bonus leads, since it is what the tax bought;
- * the composition and the bill follow in hint weight.
- */
+/** The plan's military sovereignty for the panel, the bonus first. */
 export function milsovPlanHtml(plan) {
   if (!plan?.milsov?.length) return '';
   return `<p class="sov-mil"><b class="sov-mil-bonus">+${plan.milsovBonus}%</b>
@@ -428,7 +520,6 @@ export function milsovPlanHtml(plan) {
   (plan.milsovUpkeep ?? 0).toLocaleString('en-GB')}/hr of wood, clay, iron and stone.</span></p>`;
 }
 
-/** Why a site got no military sovereignty, in the user's terms. */
 export const MILSOV_BLOCKED_TEXT = {
   tiles: 'every claimable tile went to the food plan',
   water: 'every tile the food plan left over is water, which takes no Production Structure',
@@ -438,21 +529,13 @@ export const MILSOV_BLOCKED_TEXT = {
 };
 
 /**
- * The per-hour balance of a plan, as rows of `{label, base, spent, value, note}`.
- * `base` is the row's production before the plan spends it and `spent` what the
- * plan takes out of it, so the three figures read across as base - spent = value.
- *
- * Everything is stated at the plan's own tax, so the ceiling that binds reads 0
- * — that is the arithmetic checking itself in front of the user, not a rounding
- * artefact. Zero is therefore the figure to read, not a deficit: while every
- * ceiling is applied nothing can go negative, since a lower tax only produces
- * more. The deficit note is kept for a ceiling that was reported but not
- * applied, which is the only way a plan can be shown outspending the city.
+ * A plan's per-hour balance as rows of `{label, base, spent, value, note}`,
+ * where base - spent = value. At the plan's own tax the binding ceiling reads 0;
+ * `note` names it ('binds'), a deficit, or an indicative figure.
  */
 export function surplusRows(surplus, binding) {
   if (!surplus) return [];
-  // `key` indexes the surplus; `icon` names the production, which differs for
-  // research — the surplus calls it rp and everything user-facing calls it that.
+  // `key` indexes the surplus; `icon` names the production (research is `rp` there).
   const rows = [
     { key: 'food', icon: 'food', label: PRODUCTION_LABEL.food },
     { key: 'rp', icon: 'research', label: PRODUCTION_LABEL.research },
@@ -468,8 +551,6 @@ export function surplusRows(surplus, binding) {
     const value = surplus[r.key] ?? 0;
     const base = surplus.base?.[r.key];
     const notes = [];
-    // The ceiling that set the tax is at 0 by construction; say which it was so
-    // a row of zero does not read as a failure to compute.
     if (binding === r.key || (binding === 'res' && r.basic && Math.abs(value) < 0.5)) {
       notes.push('binds');
     }
@@ -486,18 +567,9 @@ export function surplusRows(surplus, binding) {
 }
 
 /**
- * How a site's resource ceiling should read on its row, in the case where the
- * engine reported it without applying it.
- *
- * A ceiling left out of the ranking is the right call for ranking and the wrong
- * one for silence: a site whose military sovereignty is unaffordable would
- * otherwise sit in the table looking clean. So the row says so, and says that it
- * did not affect the ranking. An applied ceiling needs none of this — it is in
- * the tax the row shows, and the Limiter column already names it.
- *
- * Returns null when there is nothing to report — an applied ceiling, no
- * structure asked for, or one above the tax the site reaches, where the upkeep
- * is covered.
+ * A row's note for a resource ceiling the engine reported without applying,
+ * since it does not affect the ranking. Null when there is none, or when the
+ * upkeep is covered at the site's tax.
  *
  * @returns {{text: string, title: string} | null}
  */
@@ -521,19 +593,9 @@ export function resFlag(r) {
 }
 
 /**
- * Read the RP calibration override. A blank or zero reading means "not
- * calibrated" and returns null, leaving the library base on its measured
- * figure. The tax is clamped to 0..100 because the back-solve divides by
- * (125 - atTax).
- *
- * `prestige` describes the READING, not the city: the back-solve divides out
- * whatever multiplier produced the figure, so a boost that was running when it
- * was taken has to be declared here or it is fitted into the base instead.
- *
- * The reading is the city's whole research output. Allembine and Overflowing
- * Insight stay live alongside it rather than being overridden, because the
- * back-solve has to subtract the flat bonuses that were running when the figure
- * was read before it can divide out the multiplier.
+ * Read the research reading override; null when blank or zero. `prestige` is
+ * whether the boost was running when the reading was taken, so it can be
+ * divided out. Allembine and Overflowing Insight still apply alongside it.
  */
 export function parseRpCalibration(observed, atTax, prestige) {
   const rp = clampNumber(observed, { min: 0, fallback: 0 });
@@ -545,14 +607,12 @@ export function parseRpCalibration(observed, atTax, prestige) {
   };
 }
 
-/** Read the four booster tick-boxes, defaulting each to off. */
 export function parseResourceBoosters(raw) {
   const out = {};
   for (const res of BASIC_RESOURCES) out[res] = !!raw?.[res];
   return out;
 }
 
-/** Read how many of each upkeep building the city has. Blank is none. */
 export function parseUpkeepBuildings(raw) {
   const out = {};
   for (const b of UPKEEP_BUILDINGS) {
@@ -561,11 +621,7 @@ export function parseUpkeepBuildings(raw) {
   return out;
 }
 
-/**
- * Read the minimum-surplus fields — one per production, food and research
- * included. Zero is off, and negative is refused rather than read as permission
- * to run a resource into deficit.
- */
+/** Read the minimum-surplus fields. Negative counts as zero. */
 export function parseResourceMinimums(raw) {
   const out = {};
   for (const key of MINIMUM_KEYS) {
@@ -574,10 +630,6 @@ export function parseResourceMinimums(raw) {
   return out;
 }
 
-/**
- * Read the prestige tick-boxes — one per production, food included. Food is
- * the only one no call site reads directly: computeBOther totals it.
- */
 export function parsePrestige(raw) {
   const out = {};
   for (const key of PRESTIGE_KEYS) out[key] = !!raw?.[key];
@@ -585,22 +637,14 @@ export function parsePrestige(raw) {
 }
 
 /**
- * One control per setting, declared once. The keys here and the keys of
- * DEFAULT_SETTINGS must match exactly, which a test asserts, so constants.js
- * stays the single list of settings.
+ * One control per setting. The keys must match DEFAULT_SETTINGS', which a test
+ * checks.
  *
- * `enabledWhen` disables a control whose precondition is off, rather than
- * leaving it editable but ignored. `overriddenWhen` greys one out for the other
- * reason: it is still meaningful, but an override below it is answering the same
- * question and winning.
- *
- * `menu: true` moves a control out of the City Configuration form and into the
- * panel's own settings menu. It is still an ordinary setting — it saves and
- * restores like the rest.
+ * `enabledWhen` disables a control whose precondition is off; `overriddenWhen`
+ * greys out one that an override below is replacing. `menu: true` puts a
+ * setting in the gear menu instead of the City Configuration form.
  */
 export const SETTINGS_FIELDS = [
-  { key: 'tMin', group: 'Ranking', label: 'Minimum Tax (%)', type: 'number', min: 0, max: 100 },
-
   { key: 'plots', group: 'Settle Tile', label: 'Settle Plot Allocation', type: 'plots' },
 
   {
@@ -612,12 +656,6 @@ export const SETTINGS_FIELDS = [
     max: 1e6,
     integer: true,
     fallback: DEFAULT_CITY_CONSUMPTION,
-  },
-  {
-    key: 'flourMill',
-    group: 'City Food',
-    label: `Flour Mill at Level 20 (+${FLOUR_MILL_L20}%)`,
-    type: 'checkbox',
   },
   { key: 'naturesBounty', group: 'City Food', label: "Nature's Bounty", type: 'checkbox' },
   {
@@ -632,9 +670,8 @@ export const SETTINGS_FIELDS = [
   { key: 'cityCount', group: 'City Food', label: 'Number of Cities', type: 'number', min: 1, max: 999, integer: true, fallback: 1 },
   { key: 'isCapital', group: 'City Food', label: 'This City is the Capital', type: 'checkbox' },
 
-  // Only a level 20 Library is modelled, so there is no level to set. Both
-  // bonuses are flat additions the calibration reading contains rather than
-  // replaces, so neither is overridden by it.
+  // Both are flat additions the research reading contains, so it does not
+  // override them.
   {
     key: 'allembine',
     group: 'Research',
@@ -654,38 +691,37 @@ export const SETTINGS_FIELDS = [
     type: 'calibration',
   },
 
+  // Drawn as one table, a row per production. The Flour Mill is food's booster.
   {
     key: 'resourceBoosters',
-    group: 'Basic Resources',
+    group: 'Production',
     label: 'Booster Buildings at Level 20',
     type: 'boosters',
   },
-
-  // Its own group: what these buildings consume is a bill on the basic
-  // resources, and the Chancery among them is also the claim discount.
   {
-    key: 'upkeepBuildings',
-    group: 'City Buildings',
-    label: 'How many of each — what they consume comes off production first',
-    type: 'upkeepBuildings',
+    key: 'flourMill',
+    group: 'Production',
+    label: `Flour Mill at Level 20 (+${FLOUR_MILL_L20}%)`,
+    type: 'checkbox',
   },
-
-  // Its own group because it spans everything the city produces — the four basic
-  // resources, food and research — so it belongs under none of theirs.
   {
     key: 'prestige',
-    group: 'Prestige',
+    group: 'Production',
     label: 'Prestige Production Boost',
     type: 'prestige',
   },
-
-  // Its own group: a floor can be asked for on any of the six productions, so
-  // it belongs under no single one.
   {
     key: 'resourceMinimums',
-    group: 'Minimum Surplus',
+    group: 'Production',
     label: 'Minimum Surplus per Hour',
     type: 'minimums',
+  },
+
+  {
+    key: 'upkeepBuildings',
+    group: 'City Buildings',
+    label: 'How many of each at level 20',
+    type: 'upkeepBuildings',
   },
 
   { key: 'rClaim', group: 'Sovereignty', label: 'Claim Radius', type: 'number', min: 1, max: 6, integer: true, fallback: 2 },
@@ -703,12 +739,13 @@ export const SETTINGS_FIELDS = [
     enabledWhen: (s) => !!s.milsovStructure,
   },
 
-  { key: 'dOther', group: 'Neighbours', label: 'Minimum Distance to Other Players', type: 'number', min: 0, max: 100 },
-  { key: 'dOwn', group: 'Neighbours', label: 'Minimum Distance to Your Cities', type: 'number', min: 0, max: 100 },
-  { key: 'dAlliance', group: 'Neighbours', label: 'Minimum Distance to Alliance Towns', type: 'number', min: 0, max: 100 },
+  { key: 'tMin', group: 'Site Filters', label: 'Minimum Tax (%)', type: 'number', min: 0, max: 100 },
+  { key: 'dOther', group: 'Site Filters', label: 'Minimum Distance to Other Players', type: 'number', min: 0, max: 100 },
+  { key: 'dOwn', group: 'Site Filters', label: 'Minimum Distance to Your Cities', type: 'number', min: 0, max: 100 },
+  { key: 'dAlliance', group: 'Site Filters', label: 'Minimum Distance to Alliance Towns', type: 'number', min: 0, max: 100 },
   {
     key: 'ownClaimsAvailable',
-    group: 'Neighbours',
+    group: 'Site Filters',
     label: 'Treat Your Own Claims as Available',
     type: 'checkbox',
     hint: 'On: tiles you already claim count as free ground, as if you gave them up. '
@@ -742,17 +779,11 @@ function attr(name, v) {
 }
 
 /**
- * One control and its label, laid out as a row.
- *
- * The label holds only its text and names its control by id. A label's box is
- * its activation area, and a row is a full-width flex line, so one given the
- * row's own width would carry the empty gap between text and control with it: a
- * click landing there is a silent toggle on a checkbox, and on a number or a
- * select a focus nobody asked for that the next turn of the wheel edits.
+ * One control and its label, as a row. The label is a separate element sized
+ * to its text, so a click in the gap before the control does nothing.
  *
  * @param {object} o
- * @param {string} o.id unique in the document, and namespaced away from the
- *   game page the panel is injected into
+ * @param {string} o.id unique in the document, and prefixed to avoid the game's
  * @param {string} o.label label HTML, already escaped by the caller
  * @param {string} o.control the input or select, carrying that same id
  * @param {string} [o.row] attributes for the row itself
@@ -771,28 +802,21 @@ function checkboxRowHtml({ id, label, checked, hooks = '', row = '' }) {
   });
 }
 
-/** The native `checked` accessor, looked up on use: Node has no DOM to find it in. */
+/** Looked up on use, since Node has no DOM. */
 const nativeChecked = () => Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'checked');
 
-/** Set a guarded checkbox, which only this panel and the user may do. */
 function setChecked(el, value) {
   nativeChecked().set.call(el, !!value);
 }
 
 /**
- * Pin every checkbox under `container` to what the user and this panel set.
- *
- * The panel lives in the game's own document, so a page script that ticks
- * every checkbox on the page ticks these too. Setting `checked` fires no
- * event, so nothing notices until the next real edit reads the whole form back
- * and saves the stray ticks as settings. A user's click never goes through the
- * `checked` setter, so blocking it stops scripts and nobody else. The game's
- * own "Check All" is one such script: it sets every checkbox on the page.
+ * Make the checkboxes under `container` ignore scripted ticks. The game's own
+ * "Check All" sets every checkbox on the page, and the next edit would save
+ * those ticks as settings. A user's click does not go through the setter.
  */
 function guardCheckboxes(container) {
   for (const el of container.querySelectorAll('input[type="checkbox"]')) {
-    // A control whose property has been written ignores the `checked`
-    // attribute, which is the other way a script could tick it.
+    // Writing the property first stops the `checked` attribute from applying.
     setChecked(el, nativeChecked().get.call(el));
     Object.defineProperty(el, 'checked', {
       configurable: true,
@@ -840,7 +864,6 @@ function checkboxFieldHtml(f, value) {
 const PLOTS_TITLE = `How the settle tile's ${PLOT_TOTAL} plots are split. `
   + 'Terraforming applies to the settle tile only.';
 
-/** The five plot inputs, each carrying `hook` with its plot as the value. */
 function plotInputsHtml(hook, idPrefix, plots) {
   const fields = PLOT_KEYS.map((p) => {
     const id = `${idPrefix}-${p}`;
@@ -851,10 +874,18 @@ function plotInputsHtml(hook, idPrefix, plots) {
   return `<div class="sov-plot-fields">${fields}</div>`;
 }
 
+/** The allocation as one coloured cell per plot; cells past the 25th are red. */
+export function plotBarHtml(plots) {
+  const cells = PLOT_KEYS.flatMap((p) => Array(plots?.[p] ?? 0).fill(p))
+    .map((p, i) => `<i class="sov-p-${i < PLOT_TOTAL ? p : 'over'}"></i>`);
+  while (cells.length < PLOT_TOTAL) cells.push('<i></i>');
+  return cells.join('');
+}
+
 function plotsFieldHtml(f, plots) {
   return `<div class="sov-f-block" data-key="${f.key}" title="${PLOTS_TITLE}">
-      <p class="sov-hint">${escapeHtml(f.label)}</p>
       ${plotInputsHtml('data-plot', 'sov-in-plot', plots)}
+      <div class="sov-plotbar"></div>
       <div class="sov-plot-sum">
         <span class="sov-plot-total"></span>
         <button type="button" class="sov-prefill sec">Prefill from Selected Tile</button>
@@ -889,100 +920,70 @@ function calibrationFieldHtml(f, cal) {
     </fieldset>`;
 }
 
-/** One tick-box per booster, named after the building the user would recognise. */
-function boostersFieldHtml(f, boosters) {
-  const boxes = BASIC_RESOURCES.map((res) => checkboxRowHtml({
-    id: `sov-cb-booster-${res}`,
-    label: `${RESOURCE_BOOSTERS[res]} — ${productionLabel(res)} (+${RESOURCE_BOOSTER_BONUS}%)`,
-    checked: boosters?.[res],
-    hooks: ` data-booster="${res}"`,
-    row: ` data-booster-row="${res}"`,
-  })).join('');
-  return `<div class="sov-f-block" data-key="${f.key}"
-      title="Each adds ${RESOURCE_BOOSTER_BONUS}% to that resource's production: ${RESOURCE_BOOSTER_BONUS} points of tax headroom against its ceiling.">
-      <p class="sov-hint">${escapeHtml(f.label)}</p>
-      ${boxes}
-    </div>`;
-}
-
 /**
- * One count per upkeep building, under the name the game uses and the
- * resources it consumes, grouped as the game groups them.
+ * One count per upkeep building, grouped as the game groups them. What each
+ * consumes shows as resource icons, with the amounts on hover.
  */
 function upkeepBuildingsFieldHtml(f, buildings) {
   const rows = UPKEEP_BUILDINGS.map((b, i) => {
     const id = `sov-in-upkeep-${b.key}`;
-    const uses = Object.keys(b.consumes).map((res) => productionLabel(res)).join(' ');
+    const uses = Object.entries(b.consumes);
+    const usesTitle = `Consumes ${uses.map(([res, n]) =>
+      `${count(n)} ${PRODUCTION_LABEL[res].toLowerCase()}`).join(', ')} an hour`;
+    const icons = uses.map(([res]) => `<img src="${PRODUCTION_ICONS[res]}" alt="">`).join('');
     const heading = b.group !== UPKEEP_BUILDINGS[i - 1]?.group
       ? `<p class="sov-upkeep-group"><img src="${UPKEEP_GROUP_ICONS[b.group]}" alt="">${
         escapeHtml(b.group)}</p>`
       : '';
     return heading + fieldRowHtml({
       id,
-      label: `${escapeHtml(b.name)} <span class="sov-hint">${uses}</span>`,
+      label: escapeHtml(b.name),
       row: ` data-upkeep-row="${b.key}"${attr('title', b.hint)}`,
-      control: `<input type="number" data-upkeep="${b.key}" min="0" step="1"
+      control: `<span class="sov-uses" title="${usesTitle}">${icons}</span>
+        <input type="number" data-upkeep="${b.key}" min="0" step="1"
         value="${buildings?.[b.key] ?? 0}" id="${id}">`,
     });
   }).join('');
   return `<div class="sov-f-block" data-key="${f.key}"
       title="Each copy consumes the same every hour as the first. That comes off production before sovereignty is paid for, so the plan never spends what these buildings need.">
-      <p class="sov-hint">${escapeHtml(f.label)}</p>
       ${rows}
     </div>`;
 }
 
 /**
- * The prestige toggles — one per production, food and research included, since
- * all of them are the same additive points on the same production percentage.
- * The food box feeds B_other, so the City Food total above accounts for it.
+ * Boosters, prestige and minimum surplus as one table: a row per production, a
+ * column per setting. Each control carries its own aria-label, since no single
+ * <label> can name both its row and column.
  */
-function prestigeFieldHtml(f, prestige) {
-  const boxes = PRESTIGE_KEYS.map((key) => checkboxRowHtml({
-    id: `sov-cb-prestige-${key}`,
-    label: `${productionLabel(key)} (+${PRESTIGE_PRODUCTION_BONUS}%)`,
-    checked: prestige?.[key],
-    hooks: ` data-prestige="${key}"`,
-    row: ` data-prestige-row="${key}"`,
-  })).join('');
-  return `<div class="sov-f-block" data-key="${f.key}"
-      title="Each adds ${PRESTIGE_PRODUCTION_BONUS}% to that production: ${PRESTIGE_PRODUCTION_BONUS} points of tax headroom. Tick only what the boost is running on.">
-      ${boxes}
-    </div>`;
-}
-
-/**
- * The minimum surplus per production — the difference between a city that can
- * pay its sovereignty and one that can also build. At T_res the whole of the
- * scarcest resource goes to upkeep: affordable, and useless.
- */
-function minimumsFieldHtml(f, minimums) {
-  const boxes = MINIMUM_KEYS.map((key) => {
-    const id = `sov-in-min-${key}`;
-    return fieldRowHtml({
-      id,
-      label: `${productionLabel(key)} — keep at least`,
-      row: ` data-minimum-row="${key}"`,
-      control: `<input type="number" data-minimum="${key}" min="0" step="1"
-        value="${minimums?.[key] ?? 0}" id="${id}">`,
-    });
+function productionMatrixHtml(settings) {
+  const { resourceBoosters: boosters, prestige, resourceMinimums: minimums } = settings;
+  const rows = MINIMUM_KEYS.map((key) => {
+    const name = PRODUCTION_LABEL[key];
+    const boosterBox = (hook, building, bonus, on) => `<input type="checkbox" ${hook}${
+      on ? ' checked' : ''} aria-label="${building}" title="${building} (+${bonus}% ${name})">`;
+    let booster = '<span class="sov-none">—</span>';
+    if (BASIC_RESOURCES.includes(key)) {
+      booster = boosterBox(`data-booster="${key}"`, RESOURCE_BOOSTERS[key], RESOURCE_BOOSTER_BONUS,
+        boosters?.[key]);
+    } else if (key === 'food') {
+      booster = boosterBox('data-key="flourMill"', 'Flour Mill', FLOUR_MILL_L20, settings.flourMill);
+    }
+    return `<tr><td>${productionLabel(key)}</td><td>${booster}</td>
+      <td><input type="checkbox" data-prestige="${key}"${prestige?.[key] ? ' checked' : ''}
+        aria-label="Prestige on ${name}"></td>
+      <td><input type="number" data-minimum="${key}" min="0" step="1"
+        value="${minimums?.[key] ?? 0}" aria-label="Keep at least this much ${name} per hour"></td></tr>`;
   }).join('');
-  return `<div class="sov-f-block" data-key="${f.key}"
-      title="How much of each must still be free once the plan is paid for: resources after upkeep, food after the town eats, research after the claims. Zero spends it all, leaving nothing to build, grow or trade with.">
-      <p class="sov-hint">${escapeHtml(f.label)}</p>
-      ${boxes}
-    </div>`;
+  return `<table class="sov-matrix"><thead><tr><th></th>
+      <th data-key="resourceBoosters" title="A booster building at level 20 — the Flour Mill, for food — adds ${RESOURCE_BOOSTER_BONUS}% to its production: ${RESOURCE_BOOSTER_BONUS} points of tax headroom against its ceiling.">Booster +${RESOURCE_BOOSTER_BONUS}%</th>
+      <th data-key="prestige" title="The prestige boost adds ${PRESTIGE_PRODUCTION_BONUS}% to each production it runs on: ${PRESTIGE_PRODUCTION_BONUS} points of tax headroom. Tick only what it is running on.">Prestige +${PRESTIGE_PRODUCTION_BONUS}%</th>
+      <th data-key="resourceMinimums" title="How much of each must still be free once the plan is paid for: resources after upkeep, food after the town eats, research after the claims. Zero spends it all, leaving nothing to build, grow or trade with.">Keep per hour</th>
+    </tr></thead><tbody>${rows}</tbody></table>`;
 }
 
 /**
- * Which military structure to place — the only thing about military sovereignty
- * the user still sets. How many, at what levels and on which squares is the
- * engine's answer, since it depends on what the food plan left behind and that
- * differs at every site.
- *
- * Only Production Structures are offered. A Resource Structure has no hourly
- * upkeep, so nothing would stop the search claiming every spare tile with one,
- * while the host tile's resource rating that would justify it is not scored.
+ * Which military structure to place. Only the five military Production
+ * Structures are offered; the engine decides how many, at what levels and where.
  */
 function milsovFieldHtml(f, structure) {
   const opts = MILSOV_STRUCTURES.map((s) =>
@@ -1005,16 +1006,78 @@ function fieldHtml(f, settings) {
     case 'select': return selectFieldHtml(f, v);
     case 'plots': return plotsFieldHtml(f, v);
     case 'calibration': return calibrationFieldHtml(f, v);
-    case 'boosters': return boostersFieldHtml(f, v);
     case 'upkeepBuildings': return upkeepBuildingsFieldHtml(f, v);
-    case 'prestige': return prestigeFieldHtml(f, v);
-    case 'minimums': return minimumsFieldHtml(f, v);
     case 'milsov': return milsovFieldHtml(f, v);
     default: return numberFieldHtml(f, v ?? f.fallback);
   }
 }
 
-/** The whole form, grouped in declaration order. Menu settings are not in it. */
+const SECTION_ICONS = {
+  'Settle Tile': [ICONS.caravan],
+  'City Food': [ICONS.food],
+  Research: [ICONS.research],
+  Production: BASIC_RESOURCES.map((res) => ICONS[res]),
+  'City Buildings': [ICONS.troops, ICONS.mana],
+  Sovereignty: [ICONS.sovereignty],
+  'Site Filters': [ICONS.diplomacy],
+};
+
+/** A section that folds to a header; the panel fills its `sum` summary from the settings. */
+function sectionHtml({ name, icons, sum, body }) {
+  return `<details class="sov-sec" data-sec="${escapeHtml(name)}"><summary>
+      <span class="sov-sec-ico">${icons.map((src) => `<img src="${src}" alt="">`).join('')}</span>
+      <span class="sov-sec-name">${escapeHtml(name)}</span>
+      <span class="sov-sum" data-sum="${escapeHtml(sum)}"></span>
+      <span class="sov-chev">${GLYPHS.chevron}</span>
+    </summary><div class="sov-sec-body">${body}</div></details>`;
+}
+
+/** The research claims are bought out of: the output at 0% tax. */
+function researchInUse(s) {
+  return researchAt({ research: computeResearch(s), rpBonus: prestigeBonus(s, 'research'), tax: 0 });
+}
+
+/** A section's one-line summary for its folded header, as markup. */
+export function sectionSummaryHtml(name, s) {
+  const plural = (n, one) => `${n} ${one}${n === 1 ? '' : 's'}`;
+  switch (name) {
+    case 'Settle Tile': {
+      const r = validatePlots(s.plots);
+      return PLOT_KEYS.map((p) => `<img src="${PRODUCTION_ICONS[p]}" alt="">${r.plots[p]}`).join('')
+        + (r.ok ? '' : ` <b class="sov-bad">${r.message}</b>`);
+    }
+    case 'City Food': {
+      const b = computeBOther(s);
+      return `${b >= 0 ? '+' : ''}${b}% · eats ${count(s.cityConsumption)}/hr`;
+    }
+    case 'Research':
+      return `${count(Math.round(researchInUse(s)))}/hr${s.rpCalibration ? ' · measured' : ''}`;
+    case 'Production': {
+      const on = (o) => Object.values(o ?? {}).filter(Boolean).length;
+      const [prestige, minimums] = [s.prestige, s.resourceMinimums].map(on);
+      const boosters = on(s.resourceBoosters) + (s.flourMill ? 1 : 0);
+      return [
+        boosters && plural(boosters, 'booster'),
+        prestige && `prestige ×${prestige}`,
+        minimums && plural(minimums, 'minimum'),
+      ].filter(Boolean).join(' · ') || 'none set';
+    }
+    case 'City Buildings': {
+      const n = Object.values(s.upkeepBuildings ?? {}).reduce((a, v) => a + v, 0);
+      return n ? plural(n, 'building') : 'none';
+    }
+    case 'Sovereignty': {
+      const structure = MILSOV_STRUCTURES.find((m) => m.key === s.milsovStructure);
+      return `radius ${s.rClaim} · ${escapeHtml(structure?.name ?? 'food only')}`;
+    }
+    case 'Site Filters':
+      return `tax ≥ ${s.tMin}% · apart ${s.dOther}/${s.dOwn}/${s.dAlliance}`;
+    default:
+      return '';
+  }
+}
+
+/** The City Configuration form; menu settings are not in it. */
 export function settingsFormHtml(settings) {
   const groups = [];
   for (const f of SETTINGS_FIELDS) {
@@ -1023,28 +1086,27 @@ export function settingsFormHtml(settings) {
     groups.at(-1).fields.push(f);
   }
   const body = groups.map((g) => {
-    const extra = g.fields.some((f) => f.key === 'isCapital') ? '<ul class="sov-derived"></ul>' : '';
-    return `<fieldset><legend>${escapeHtml(g.name)}</legend>
-      ${g.fields.map((f) => fieldHtml(f, settings)).join('')}${extra}</fieldset>`;
+    const fields = g.name === 'Production'
+      ? productionMatrixHtml(settings)
+      : g.fields.map((f) => fieldHtml(f, settings)).join('');
+    const extra = g.fields.some((f) => f.key === 'isCapital')
+      ? '<div class="sov-derived"></div><p class="sov-derived-food"></p>'
+      : '';
+    return sectionHtml({
+      name: g.name, icons: SECTION_ICONS[g.name] ?? [], sum: g.name, body: fields + extra,
+    });
   }).join('');
-  // `autocomplete="off"` is not about autofill: it is what stops the browser
-  // restoring control values of its own across a reload. A restored value is
-  // read back as though the user had set it, and saved.
+  // autocomplete="off" stops the browser restoring values on reload, which would
+  // be read back and saved as the user's.
   return `<form class="sov-form" autocomplete="off">
       ${body}
-      <p class="sov-hint sov-derived-food"></p>
-      <p><button type="button" class="sov-reset sec">Reset to Defaults</button></p>
-      <p class="sov-hint">Saved in this browser as you edit.</p>
+      <div class="sov-form-foot"><button type="button" class="sov-reset sec">Reset to Defaults</button>
+        <span class="sov-hint">Saved in this browser as you edit.</span></div>
       <p class="sov-hint sov-store-note"></p>
     </form>`;
 }
 
-/**
- * The gear menu: the settings that belong to the panel itself rather than to a
- * city's configuration, so they live behind the header's gear instead of in the
- * form. Each is an ordinary field with `menu: true`, read and written the same
- * way — this only lays them out somewhere else.
- */
+/** The gear menu: the `menu: true` settings, which belong to the panel rather than the city. */
 export function settingsMenuHtml(settings) {
   const fields = SETTINGS_FIELDS.filter((f) => f.menu);
   const rows = fields.map((f) =>
@@ -1057,17 +1119,14 @@ function focusRadiusTitle(rClaim) {
 }
 
 /**
- * The optimiser's own form — the four values focusSite takes beyond the saved
- * configuration. Anything added here has to be added to readFocus and parseFocus
- * too; there is no field spec driving this one. The exception is the City
- * Configuration section's shared controls, which stand for City Configuration's
- * own and are read there.
+ * The optimiser's form. Its own inputs are read by readFocus and parseFocus;
+ * the City Configuration section's controls mirror that tab's and are read there.
  */
 export function focusFormHtml(focus, settings) {
   const f = { ...DEFAULT_FOCUS, ...focus };
   const rClaim = Math.round(settings?.rClaim ?? 2);
   return `<form class="sov-focus-form" autocomplete="off">
-      <fieldset><legend>Tile</legend>
+      <div class="sov-card">
         ${fieldRowHtml({
     id: 'sov-in-town-pick',
     label: 'One of Your Towns',
@@ -1089,8 +1148,6 @@ export function focusFormHtml(focus, settings) {
             placeholder="${rClaim}"${attr('value', f.radius)} id="sov-in-focus-radius">`,
     row: ` data-radius-row title="${focusRadiusTitle(rClaim)}"`,
   })}
-      </fieldset>
-      <fieldset><legend>Plan</legend>
         ${fieldRowHtml({
     id: 'sov-in-focus-tax',
     label: 'Starting Tax (%)',
@@ -1104,28 +1161,32 @@ export function focusFormHtml(focus, settings) {
     hooks: ' data-focus="preserveSovereignty"',
     row: ' title="On: a town of yours keeps the claims it holds, and the plan pays only to raise them. Off: they are laid out afresh at full price."',
   })}
-      </fieldset>
-      <fieldset><legend>City Configuration</legend>
-        ${checkboxRowHtml({
-    id: 'sov-cb-focus-useConfiguredPlots',
-    label: 'Use the Plot Allocation from City Configuration',
-    checked: f.useConfiguredPlots,
-    hooks: ' data-focus="useConfiguredPlots"',
-    row: ` title="On: plan on the allocation below, the tile as you will terraform it. Off: plan on the tile's ratings as they are today."`,
-  })}
+      </div>
+      ${sectionHtml({
+    name: 'City Configuration',
+    icons: SECTION_ICONS['Settle Tile'],
+    sum: 'Settle Tile',
+    body: `${checkboxRowHtml({
+      id: 'sov-cb-focus-useConfiguredPlots',
+      label: 'Use the Plot Allocation from City Configuration',
+      checked: f.useConfiguredPlots,
+      hooks: ' data-focus="useConfiguredPlots"',
+      row: ` title="On: plan on the allocation below, the tile as you will terraform it. Off: plan on the tile's ratings as they are today."`,
+    })}
         <div class="sov-f-block" title="${PLOTS_TITLE}">
           ${plotInputsHtml('data-mirror-plot', 'sov-in-focus-plot', settings?.plots)}
+          <div class="sov-plotbar"></div>
           <div class="sov-plot-sum"><span class="sov-plot-total"></span></div>
         </div>
         ${checkboxRowHtml({
-    id: 'sov-cb-focus-ownClaimsAvailable',
-    label: 'Treat Your Own Claims as Available',
-    hooks: ' data-mirror-key="ownClaimsAvailable"',
-    row: attr('title', SETTINGS_FIELDS.find((s) => s.key === 'ownClaimsAvailable').hint),
+      id: 'sov-cb-focus-ownClaimsAvailable',
+      label: 'Treat Your Own Claims as Available',
+      hooks: ' data-mirror-key="ownClaimsAvailable"',
+      row: attr('title', SETTINGS_FIELDS.find((s) => s.key === 'ownClaimsAvailable').hint),
+    })}
+        <p class="sov-hint">These are City Configuration's own, as is everything else the plan uses.</p>`,
   })}
-      </fieldset>
-      <p><button type="button" class="sov-focus-run">Optimise</button></p>
-      <p class="sov-hint">Everything else comes from City Configuration.</p>
+      <div class="sov-run"><button type="button" class="sov-focus-run">${GLYPHS.target}Optimise</button></div>
     </form>
     <p class="sov-legend sov-map-note"></p>
     <div class="sov-focus-status"></div>
@@ -1133,13 +1194,9 @@ export function focusFormHtml(focus, settings) {
 }
 
 /**
- * Your own towns in a payload, named and sorted, for the optimiser's picker.
- *
- * Deduplicated on position: the `t` block is keyed off claiming towns rather
- * than the viewport, so one town can appear under more than one key. A town is
- * offered only where the payload also carries its tile, since the optimiser
- * refuses a centre it has no tile for — the `t` block reaches further than the
- * tile data, so the two do not agree on their own.
+ * Your own towns on screen, deduplicated and sorted, for the optimiser's picker.
+ * Only towns whose tile the payload carries are offered, since the optimiser
+ * needs it.
  */
 export function ownTowns(payload) {
   const seen = new Map();
@@ -1152,7 +1209,7 @@ export function ownTowns(payload) {
   return [...seen.values()].sort((a, b) => a.label.localeCompare(b.label));
 }
 
-/** The two capital bonuses are derived, not stored — show why each is off. */
+/** The two capital bonuses, which follow from other settings, as on/off chips. */
 function capitalDerivedHtml(s) {
   return [
     ['Famine Management', FAMINE_MANAGEMENT, 10],
@@ -1160,8 +1217,8 @@ function capitalDerivedHtml(s) {
   ].map(([name, bonus, need]) => {
     const active = s.isCapital && (s.cityCount ?? 1) >= need;
     const why = !s.isCapital ? 'capital only' : `needs ${need} cities`;
-    return `<li class="${active ? 'sov-on' : 'sov-off'}">${name} +${bonus}% — ${
-      active ? 'active' : `inactive (${why})`}</li>`;
+    return `<span class="sov-chip ${active ? 'sov-on' : 'sov-off'}" title="${
+      active ? 'Active' : `Inactive: ${why}`}">${name} +${bonus}%</span>`;
   }).join('');
 }
 
@@ -1169,29 +1226,20 @@ function capitalDerivedHtml(s) {
 
 /**
  * @param {object} o
- * @param {object} [o.initialSettings] what to open the form with, already
- *   sanitized by the caller. Defaults on first run.
- * @param {(s: object) => void} [o.onSettingsChange] fired on every committed
- *   edit with the settings as read back out of the form, including edits that
- *   fail validation — a half-finished allocation should come back as the user
- *   left it rather than be discarded.
+ * @param {object} [o.initialSettings] already sanitized; defaults on first run
+ * @param {(s: object) => void} [o.onSettingsChange] every committed edit, with
+ *   the settings as read from the form, invalid ones included
  * @param {() => object|null} [o.getPayload] the map payload on screen, read
- *   afresh for each Optimise press and each rebuild of the town picker. The
- *   optimiser plans on the main thread: it is one site, and the tax slider
- *   already runs the same planner there.
+ *   afresh for each Optimise and town picker rebuild
  * @param {(view: object, onLoaded: () => void) => (() => void)|null}
- *   [o.whenViewLoaded] call `onLoaded` once the client has loaded `view`; returns
- *   what stops the wait, or null where it cannot wait
- * @param {(result: object) => void} [o.onSelect] a result row was selected,
- *   from the table or through selectSite
- * @param {(pane: string|null) => void} [o.onPaneShown] the pane open on screen
- *   changed — by tab, or by the panel unfolding or folding, which shows none.
- *   Called once at the start with how the panel opens.
+ *   [o.whenViewLoaded] call `onLoaded` once the client has loaded `view`;
+ *   returns what stops the wait, or null where it cannot wait
+ * @param {(result: object) => void} [o.onSelect] a result row was selected
+ * @param {(pane: string|null) => void} [o.onPaneShown] the pane on screen
+ *   changed, null when folded; called once at the start
  * @param {(plan: object|null, geom: object) => void} [o.onFocusPlan] the
- *   optimiser's claim grid was drawn from `plan` and `geom`; null when there is
- *   no grid
- * @param {() => void} [o.onPickOnMap] Pick on map was pressed, to arm a pick or
- *   to cancel one
+ *   optimiser's claim grid was drawn; null when there is none
+ * @param {() => void} [o.onPickOnMap] Pick on map was pressed
  */
 export function createPanel({
   onScan, onExport, initialSettings, onSettingsChange, getPayload, whenViewLoaded, onSelect,
@@ -1215,14 +1263,16 @@ export function createPanel({
 the icon art are the intellectual property of Illyriad Games Limited — click for the
 licence and full copyright notice.">ⓘ</a></span></span></h2>
     <nav class="sov-tabs">
-      <button type="button" data-tab="scan" class="on">Site Search</button>
-      <button type="button" data-tab="focus">Optimal Sovereignty</button>
-      <button type="button" data-tab="config">City Configuration</button>
+      <button type="button" data-tab="scan" class="on">${GLYPHS.search}Site Search</button>
+      <button type="button" data-tab="focus">${GLYPHS.target}Optimal Sovereignty</button>
+      <button type="button" data-tab="config">${GLYPHS.city}City Configuration</button>
     </nav>
     <div class="sov-body">
       <section data-pane="scan">
-        <p><button class="sov-scan">Scan</button>
-           <button class="sov-export sec">Export CSV</button></p>
+        <div class="sov-toolbar"><button class="sov-scan"
+            title="Rank every tile on screen you could settle">${GLYPHS.search}Scan</button>
+          <button class="sov-export sec"
+            title="Every site the last scan found, as a spreadsheet">${GLYPHS.download}Export CSV</button></div>
         <div class="sov-status"></div>
         <div class="sov-results"></div>
         <div class="sov-diagnostics"></div>
@@ -1230,17 +1280,26 @@ licence and full copyright notice.">ⓘ</a></span></span></h2>
       <section data-pane="focus" hidden>${focusFormHtml(DEFAULT_FOCUS, opening)}</section>
       <section data-pane="config" hidden>${settingsFormHtml(opening)}</section>
     </div>`;
-  // Which build is actually running. Tampermonkey keeps its own copy of an
-  // installed script, so a rebuilt file is not a reinstalled one — without this
-  // there is no way to tell from inside the game which code is live, and an old
-  // build looks exactly like a change that did not work.
+  // Shows which build is running, since Tampermonkey keeps its own copy.
   root.querySelector('.sov-build').textContent =
     typeof __BUILD_VERSION__ === 'undefined' ? 'dev' : __BUILD_VERSION__;
   document.body.appendChild(root);
 
-  // The title bar remains the collapse control, but also acts as a compact
-  // drag handle. Position is stored separately from settings so resetting the
-  // scanner configuration never moves the panel unexpectedly.
+  // Which sections are open is the viewer's own arrangement, not part of the
+  // City Configuration, so it has a key of its own that Reset to Defaults
+  // leaves alone.
+  const openSections = new Set(loadOpenSections());
+  for (const sec of root.querySelectorAll('.sov-sec')) sec.open = openSections.has(sec.dataset.sec);
+  // `toggle` does not bubble, so it is caught on the way down.
+  root.addEventListener('toggle', (e) => {
+    if (!e.target.classList?.contains('sov-sec')) return;
+    if (e.target.open) openSections.add(e.target.dataset.sec);
+    else openSections.delete(e.target.dataset.sec);
+    saveOpenSections([...openSections]);
+  }, true);
+
+  // The title bar is both the collapse control and the drag handle. Position
+  // is stored apart from the settings, so Reset to Defaults never moves it.
   const savedPosition = loadPanelPosition();
   let dragged = false;
   let dragPointerId = null;
@@ -1251,13 +1310,11 @@ licence and full copyright notice.">ⓘ</a></span></span></h2>
   function positionPanel(x, y, persist = false) {
     const viewportHeight = window.innerHeight;
     if (root.classList.contains('sov-collapsed')) {
-      // The chip sizes itself; the stylesheet's max-height:none has to win.
+      // Let the stylesheet's max-height:none apply.
       root.style.maxHeight = '';
     } else {
-      // Cap the panel to the room below its top so a long tab scrolls inside it
-      // instead of trailing past the viewport bottom. This also bounds the
-      // measured height, so the clamp below can place the panel anywhere down
-      // the page — left uncapped a tall tab measures at 100vh and pins it to 0.
+      // Cap the height to the room below the panel's top, so a long tab scrolls
+      // inside it and the position clamp below works anywhere down the page.
       const minVisible = header.offsetHeight || 34;
       const top = Math.min(
         Math.max(0, Number.isFinite(y) ? y : 0), Math.max(0, viewportHeight - minVisible),
@@ -1315,12 +1372,12 @@ licence and full copyright notice.">ⓘ</a></span></span></h2>
 
   // --- collapse / auto-minimise ---
 
-  // The persisted preference, shown while on the map.
+  // The saved collapse state, used on the map.
   let manualCollapsed = loadPanelCollapsed();
-  // A hand-expand riding over the off-map force-collapse; cleared on route change.
+  // Set when the user opens the panel while it is auto-folded off the map;
+  // cleared on the next route change.
   let offMapExpandOverride = false;
-  // The pane last reported open on screen. Undefined until the first report, so
-  // the opening state is reported too.
+  // Undefined until the first report, so the opening state is reported too.
   let paneShown;
 
   const autoMinimizeOn = () => !!readSettings().settings.autoMinimizeOffMap;
@@ -1334,9 +1391,9 @@ licence and full copyright notice.">ⓘ</a></span></span></h2>
   function applyCollapsed() {
     const collapsed = shouldCollapse();
     root.classList.toggle('sov-collapsed', collapsed);
-    // Collapsed, the gear that opens the menu is hidden, so its card cannot stay up.
+    // The gear is hidden when collapsed, so its menu closes.
     if (collapsed) setMenuOpen?.(false);
-    // Width changes with the state, so re-clamp a dragged panel; a docked one keeps right:0.
+    // The width changes, so re-clamp a dragged panel.
     if (root.style.left) {
       const rect = root.getBoundingClientRect();
       positionPanel(rect.left, rect.top);
@@ -1344,7 +1401,6 @@ licence and full copyright notice.">ⓘ</a></span></span></h2>
     reportPane();
   }
 
-  /** Tell the caller when the pane open on screen changes: by tab or by folding. */
   function reportPane() {
     const shown = root.classList.contains('sov-collapsed')
       ? null : root.querySelector('[data-pane]:not([hidden])').dataset.pane;
@@ -1373,10 +1429,9 @@ licence and full copyright notice.">ⓘ</a></span></span></h2>
   const form = $('.sov-form');
   const scanBtn = $('.sov-scan');
 
-  // Menu settings live in their own floating card behind the header's gear, but
-  // are otherwise ordinary fields: read and written the same way, just out of a
-  // different container. Appended to the body so the panel's overflow cannot clip
-  // it. Anything driving both form and menu resolves the container through here.
+  // The gear menu is appended to the body so the panel's overflow cannot clip
+  // it. Its fields are read and written like the form's; containerFor picks
+  // which of the two holds a field.
   const gear = $('.sov-gear');
   const menu = document.createElement('div');
   menu.className = 'sov-menu';
@@ -1390,9 +1445,8 @@ licence and full copyright notice.">ⓘ</a></span></span></h2>
   let selected = null;     // the row Prefill copies `rs` from
   let incomplete = [];     // sites the last scan could not see all of
 
-  // The ⓘ is the fansite kit's required link to the copyright notice — the
-  // panel is where the kit's icons render. Following it must not also collapse
-  // the panel, or the page comes back to a bar that looks like it broke.
+  // The ⓘ is the fansite kit's required copyright link; following it must not
+  // also collapse the panel.
   header.addEventListener('click', (e) => {
     if (e.target.closest('.sov-about')) return;
     if (dragged) {
@@ -1404,8 +1458,7 @@ licence and full copyright notice.">ⓘ</a></span></span></h2>
   scanBtn.addEventListener('click', onScan);
   $('.sov-export').addEventListener('click', onExport);
 
-  // One pane at a time. The radius placeholder was baked in at build time from
-  // the settings as they were then, so entering the optimiser re-reads them.
+  // Opening the optimiser re-reads the radius placeholder from the settings.
   function showTab(name) {
     root.querySelectorAll('.sov-tabs button').forEach((t) => {
       t.classList.toggle('on', t.dataset.tab === name);
@@ -1498,8 +1551,8 @@ licence and full copyright notice.">ⓘ</a></span></span></h2>
 
   // --- writing the form ---
 
-  // `save` is off for settings that arrived from the store rather than from an
-  // edit here — writing them back would echo between tabs without end.
+  // `save` is off for settings loaded from storage, or two tabs would echo
+  // each other's saves forever.
   function writeSettings(s, { save = true } = {}) {
     for (const f of SETTINGS_FIELDS) {
       const v = s[f.key];
@@ -1553,17 +1606,15 @@ licence and full copyright notice.">ⓘ</a></span></span></h2>
     for (const p of PLOT_KEYS) form.querySelector(`[data-plot="${p}"]`).value = plots?.[p] ?? 0;
   }
 
-  // --- live dependencies, running total, derived read-outs ---
+  // --- live dependencies and read-outs ---
 
-  // `save` is off for the refresh that lays the form out at startup — nothing
-  // has been edited yet.
+  // `save` is off for the first layout, when nothing has been edited.
   function refresh({ save = true } = {}) {
     const { settings: s } = readSettings();
     if (save) onSettingsChange?.(s);
 
-    // A control is live only while its precondition holds and nothing below it
-    // is overriding it. Disabled inputs still read back, so greying one out
-    // costs the user nothing if they clear the override again.
+  // Disable controls whose precondition is off or that an override replaces.
+  // Disabled inputs still read back, so nothing is lost.
     for (const f of SETTINGS_FIELDS) {
       if (!f.enabledWhen && !f.overriddenWhen) continue;
       const on = (f.enabledWhen?.(s) ?? true) && !f.overriddenWhen?.(s);
@@ -1572,39 +1623,33 @@ licence and full copyright notice.">ⓘ</a></span></span></h2>
       wrap.querySelectorAll('input,select').forEach((el) => { el.disabled = !on; });
     }
 
-    // The override frame lights up while it holds a figure, so "this is winning"
-    // and "this is available" never look the same.
     form.querySelector('.sov-override[data-key="rpCalibration"]')
       .classList.toggle('sov-override-on', !!s.rpCalibration);
 
-    // The running total and the K it produces, so the cost of an edit to the
-    // food plots is visible while making it.
     const plots = validatePlots(plotInputs());
     for (const total of root.querySelectorAll('.sov-plot-total')) {
       total.className = `sov-plot-total ${plots.ok ? 'sov-ok' : 'sov-bad'}`;
-      total.textContent = `Total ${plots.total} / ${PLOT_TOTAL}${
-        plots.ok ? '' : ` — ${plots.message}`} · ${
-        computeK(plots.plots.food).toFixed(2)} food/hr per production point`;
+      total.textContent = `${plots.total} / ${PLOT_TOTAL} plots${plots.ok ? '' : ` — ${plots.message}`}`;
+    }
+    for (const bar of root.querySelectorAll('.sov-plotbar')) bar.innerHTML = plotBarHtml(plots.plots);
+    for (const sum of root.querySelectorAll('.sov-sum')) {
+      sum.innerHTML = sectionSummaryHtml(sum.dataset.sum, s);
+    }
+    for (const el of form.querySelectorAll('[data-upkeep]')) {
+      el.closest('.sov-f').classList.toggle('sov-has', Number(el.value) > 0);
     }
 
     form.querySelector('.sov-derived').innerHTML = capitalDerivedHtml(s);
     const bOther = computeBOther(s);
     form.querySelector('.sov-derived-food').textContent =
-      `City food bonuses total ${bOther >= 0 ? '+' : ''}${bOther}% on food production.`;
+      `Food production bonuses total ${bOther >= 0 ? '+' : ''}${bOther}%.`;
 
-    // The research the plan will actually spend against, shown as the override is
-    // typed — a reading that produces an implausible figure is far easier to spot
-    // here than in a results row. Stated at 0% tax because that is the figure every
-    // claim is bought out of, whatever tax the site ends up holding.
-    const rp = Math.round(researchAt({
-      research: computeResearch(s), rpBonus: prestigeBonus(s, 'research'), tax: 0,
-    })).toLocaleString('en-GB');
+    // Shown as the override is typed, so an implausible reading is easy to spot.
+    const rp = Math.round(researchInUse(s)).toLocaleString('en-GB');
     form.querySelector('.sov-rp-read').textContent = s.rpCalibration
       ? `In use: ${rp} research per hour at 0% tax, from your reading.`
       : `In use: ${rp} research per hour at 0% tax, from the settings above.`;
 
-    // An allocation that is not 25 plots is not a tile the game can produce,
-    // so there is nothing to score it against — block the scan outright.
     scanBtn.disabled = !plots.ok;
     scanBtn.title = plots.ok ? '' : 'Settle plot allocation must sum to 25';
 
@@ -1612,25 +1657,24 @@ licence and full copyright notice.">ⓘ</a></span></span></h2>
     for (const el of root.querySelectorAll('[data-mirror-key], [data-mirror-plot]')) {
       const own = mirrored(el);
       if (el.type === 'checkbox') setChecked(el, own.checked);
-      // As typed, not as clamped, so a value part-way through being typed is left alone.
+      // Compare as typed, so a value part-way through being typed is left alone.
       else if (el.value !== own.value) el.value = own.value;
     }
   }
 
-  /** The City Configuration control a shared control in the optimiser's form stands for. */
+  /** The City Configuration control that a mirrored optimiser control stands for. */
   function mirrored(el) {
     const { mirrorKey, mirrorPlot } = el.dataset;
     if (mirrorKey) return form.querySelector(`input[data-key="${mirrorKey}"]`);
     return mirrorPlot ? form.querySelector(`input[data-plot="${mirrorPlot}"]`) : null;
   }
 
-  // Everything is bound here rather than with inline handlers, which the host
-  // page's CSP may block. Nothing submits — the form has nowhere to submit to.
+  // Handlers are bound here, not inline, since the game's CSP may block inline
+  // ones. The form never submits.
   form.addEventListener('submit', (e) => e.preventDefault());
   form.addEventListener('input', () => refresh());
   form.addEventListener('change', (e) => {
-    // Clamp on blur/commit rather than on every keystroke — clamping mid-typing
-    // turns "12" into "1" before the second digit lands.
+    // Clamp on commit, not per keystroke, which would turn "12" into "1" mid-typing.
     const el = e.target;
     if (el.dataset.plot) {
       el.value = validatePlots(plotInputs()).plots[el.dataset.plot];
@@ -1648,11 +1692,8 @@ licence and full copyright notice.">ⓘ</a></span></span></h2>
 
   // --- settings menu (the gear) ---
 
-  // Committing a menu edit re-reads and saves the whole set, menu fields included.
-  // Turning auto-minimise on off the map must not fold the panel out from under
-  // the user mid-edit: the setting governs the next navigation, not this view. So
-  // the current state is pinned as an off-map hand-expand, which the next route
-  // change clears — leaving the new setting to take effect then.
+  // Turning auto-minimise on while off the map must not fold the panel mid-edit,
+  // so the current state is kept until the next route change.
   menu.addEventListener('change', () => {
     const wasCollapsed = root.classList.contains('sov-collapsed');
     refresh();
@@ -1662,7 +1703,7 @@ licence and full copyright notice.">ⓘ</a></span></span></h2>
 
   function setMenuOpen(open) {
     if (open) {
-      // Placed each time it opens: the panel drags, and the header moves with it.
+      // Placed each time, since the panel can have been dragged.
       const g = gear.getBoundingClientRect();
       const p = root.getBoundingClientRect();
       menu.hidden = false;
@@ -1686,7 +1727,6 @@ licence and full copyright notice.">ⓘ</a></span></span></h2>
     setMenuOpen(menu.hidden);
   });
 
-  // A click anywhere off the menu and its gear closes it; Escape does too.
   document.addEventListener('pointerdown', (e) => {
     if (menu.hidden || e.target.closest('.sov-menu') || e.target.closest('.sov-gear')) return;
     setMenuOpen(false);
@@ -1695,10 +1735,7 @@ licence and full copyright notice.">ⓘ</a></span></span></h2>
     if (e.key === 'Escape' && !menu.hidden) setMenuOpen(false);
   });
 
-  /**
-   * Copy the selected result's actual `rs` into the five plot fields, as a
-   * starting point to edit from. Nothing is committed until the next Scan.
-   */
+  /** Copy the selected result's own plots into the allocation fields. */
   function prefill() {
     const src = $('.sov-prefill-src');
     if (!selected || !selected.rs) {
@@ -1725,13 +1762,8 @@ licence and full copyright notice.">ⓘ</a></span></span></h2>
     }
   }
 
-  // --- what the scan could not see ---
 
-  /**
-   * Sites whose claim radius runs off screen. This is the one thing a scan
-   * withholds that the user can act on: the answer is to pan and run it again.
-   * Why the other tiles were dropped is the tool's business, not theirs.
-   */
+  /** Say how many sites were skipped because their claim radius runs off screen. */
   function drawIncomplete() {
     $('.sov-diagnostics').innerHTML = incomplete.length
       ? `<p class="sov-hint">${incomplete.length} ${
@@ -1755,11 +1787,8 @@ licence and full copyright notice.">ⓘ</a></span></span></h2>
   }
 
   /**
-   * The towns of yours on screen. Rebuilt immediately before the list can be
-   * read rather than held, because panning the map changes the answer and a
-   * stale list would offer a town that has been panned off screen.
-   * The control stays enabled even with nothing to offer, so opening it is what
-   * asks the map again.
+   * Rebuild the list of your towns on screen. Called as the picker is opened,
+   * since the map may have moved.
    */
   function syncTownPicker() {
     const sel = focusForm.querySelector('.sov-town-pick');
@@ -1770,8 +1799,6 @@ licence and full copyright notice.">ⓘ</a></span></span></h2>
       ? `<option value="">—</option>${towns.map((t) =>
         `<option value="${t.x}|${t.y}">${escapeHtml(t.label)}</option>`).join('')}`
       : `<option value="">${payload ? 'none on screen' : 'no map data yet'}</option>`;
-    // A town still on screen keeps the selection; one panned away drops it
-    // rather than leaving a label the list no longer holds.
     if (was && towns.some((t) => `${t.x}|${t.y}` === was)) sel.value = was;
   }
 
@@ -1787,10 +1814,9 @@ licence and full copyright notice.">ⓘ</a></span></span></h2>
   }
 
   /**
-   * An off-screen refusal answers for the view it was made on, so a move of the
-   * map retires it. A move onto the view its link names is the link followed, and
-   * the tile is planned again once the game has loaded that view, which it does
-   * after the move; any other move leaves that to the next press.
+   * After a refusal for a tile off screen, any move of the map retires it. A move
+   * to the view its "Centre the map" link names plans the tile again once the
+   * view has loaded.
    */
   function onRefusedMove() {
     const { x, y } = refusedView;
@@ -1815,8 +1841,6 @@ licence and full copyright notice.">ⓘ</a></span></span></h2>
       out.innerHTML = '';
       onFocusPlan?.(null);
     };
-    // Read at the moment of the press, as runScan does, so an edit left in the
-    // config pane reaches this plan without needing to be committed first.
     const read = readSettings();
     if (read.errors.length) {
       fail(read.errors.join(' '));
@@ -1836,7 +1860,7 @@ licence and full copyright notice.">ⓘ</a></span></span></h2>
         const radius = focusRadius(focus, read.settings);
         refusedView = centredView(focus.x, focus.y, payload.zoom, radius);
         window.addEventListener('hashchange', onRefusedMove);
-        // A relative link, so it stays on whichever of the game's hosts this is.
+        // Relative, so it stays on whichever of the game's hosts this is.
         status.insertAdjacentHTML('beforeend', `<p class="sov-map-only"><a class="sov-map-centre"
           href="${mapHash(refusedView)}">Centre the map on ${focus.x}|${focus.y}</a></p>`);
       }
@@ -1846,7 +1870,7 @@ licence and full copyright notice.">ⓘ</a></span></span></h2>
     out.innerHTML = focusResultHtml(result);
     mountPlanBlock(out.querySelector('.sov-plan-block'), {
       neighbours: result.neighbours,
-      // What the plan on screen was made with, which is not what the form holds.
+      // The settings the plan was made with, which can differ from the form's.
       settings: result.settings,
       ctx: result.ctx,
       base: result.base,
@@ -1857,38 +1881,29 @@ licence and full copyright notice.">ⓘ</a></span></span></h2>
     });
   }
 
-  /** Fill in x|y and plan it. */
   function planAt(x, y) {
     focusForm.querySelector('[data-focus="x"]').value = x;
     focusForm.querySelector('[data-focus="y"]').value = y;
-    // A tile named elsewhere, not whichever town the picker was left on.
+    // Clear the town picker: this tile came from elsewhere.
     townPick.value = '';
     runFocus();
   }
 
-  /**
-   * Take a scanned site over to the optimiser and plan it there. The scan ranks
-   * on food at each site's own ceiling; this is where the tax comes down and the
-   * trade against military sovereignty becomes visible, so it is the same
-   * question continued rather than a new one.
-   */
+  /** Open a scanned site in the optimiser and plan it there. */
   function optimiseSite(result) {
     showTab('focus');
     planAt(result.x, result.y);
-    // The answer is below the form, and the form is what the tab lands on. The
-    // status is the higher of the two, so this lands on a refusal as well as a plan.
     $('.sov-focus-status').scrollIntoView({ block: 'start' });
   }
 
   const townPick = focusForm.querySelector('.sov-town-pick');
-  // The map moves under an open panel, so the list is rebuilt as it is reached
-  // for. Both events cover it: pointerdown fires before the popup opens, focus
-  // before any keyboard selection.
+  // Rebuild the town list as the picker is reached for: pointerdown fires before
+  // its popup opens, focus before keyboard selection.
   townPick.addEventListener('pointerdown', syncTownPicker);
   townPick.addEventListener('focus', syncTownPicker);
 
-  // A shared control hands each edit to City Configuration's own, whose handlers
-  // clamp, total and save it, and whose refresh brings this one back in line.
+  // A mirrored control hands each edit to City Configuration's own, whose
+  // refresh brings it back in line.
   for (const type of ['input', 'change']) {
     focusForm.addEventListener(type, (e) => {
       const own = mirrored(e.target);
@@ -1902,7 +1917,7 @@ licence and full copyright notice.">ⓘ</a></span></span></h2>
   focusForm.addEventListener('change', (e) => {
     const el = e.target;
     if (el.dataset.focus === 'x' || el.dataset.focus === 'y') {
-      // Coordinates typed by hand are no longer the town the picker names.
+      // Typed coordinates no longer match the town in the picker.
       townPick.value = '';
       return;
     }
@@ -1924,20 +1939,17 @@ licence and full copyright notice.">ⓘ</a></span></span></h2>
 
   return {
     root,
-    /** How the last load or save went, in the user's terms; '' clears it. */
+    /** How the last load or save went; '' clears it. */
     setStoreNote(text) {
       $('.sov-store-note').textContent = text ?? '';
     },
-    /** Returns `{ settings, errors }`; a scan is refused while errors is non-empty. */
+    /** Returns `{ settings, errors }`; a scan is refused while there are errors. */
     getSettings: readSettings,
     setSettings: writeSettings,
     setStatus(html) {
       root.querySelector('.sov-status').innerHTML = html;
     },
-    /**
-     * A pane's line saying what the map shows; '' clears it. Site Search's is
-     * under the scan summary, and exists only while the table lists a site.
-     */
+    /** Set a pane's line saying what the map shows; '' clears it. */
     setMapNote(pane, text, tooltip) {
       const note = $(`[data-pane="${pane}"] .sov-map-note`);
       if (!note) return;
@@ -1946,8 +1958,7 @@ licence and full copyright notice.">ⓘ</a></span></span></h2>
     },
     /**
      * @param {object[]} results ranked sites
-     * @param {object} scan `{x, y, zoom, scanned}` — the facts of the run. The
-     *   wording is the panel's, not the caller's.
+     * @param {object} scan `{x, y, zoom, scanned}`
      */
     renderResults(results, scan) {
       const el = root.querySelector('.sov-results');
@@ -1959,18 +1970,14 @@ licence and full copyright notice.">ⓘ</a></span></span></h2>
 
       el.querySelectorAll('.sov-row').forEach((row) => {
         row.addEventListener('click', () => {
-          // Selecting and expanding are one gesture; Prefill needs a selection
-          // the user can see they made.
           select(Number(row.dataset.n));
           toggleDetail(row, results[Number(row.dataset.n)], readSettings().settings, optimiseSite);
         });
       });
     },
     /**
-     * Select the listed site at x|y and open its plan, as a click on its row does.
-     * A plan already open stays open. False, with nothing changed, when no row
-     * lists that tile. The map takes clicks only while Site Search is open on
-     * screen, so the row is already in view to scroll to.
+     * Select the listed site at x|y and open its plan, as a row click does. False
+     * when no row lists that tile.
      */
     selectSite(x, y) {
       const n = rendered.findIndex((r) => r.x === x && r.y === y);
@@ -1984,7 +1991,7 @@ licence and full copyright notice.">ⓘ</a></span></span></h2>
       return true;
     },
     planAt,
-    /** Pick on map turns into its own cancel while a pick is armed. */
+    /** While a pick is armed, Pick on map becomes its cancel button. */
     setPicking(armed) {
       const button = focusForm.querySelector('.sov-map-pick');
       button.classList.toggle('sov-picking', armed);
@@ -1997,11 +2004,7 @@ licence and full copyright notice.">ⓘ</a></span></span></h2>
   };
 }
 
-/**
- * The ceiling that set a site's tax, named for the reader. The engine's codes
- * stay as they are — the CSV exports them, and a spreadsheet filters on a stable
- * token rather than on prose.
- */
+/** Display names for the engine's binding codes, which the CSV keeps as they are. */
 const BINDING_LABEL = {
   cap: 'Tax cap',
   food: 'Food',
@@ -2015,10 +2018,7 @@ export function bindingLabel(binding) {
 
 const count = (v) => Number(v ?? 0).toLocaleString('en-GB');
 
-/**
- * What the scan looked at and what it found. Said whether or not it found a site:
- * a region with no candidate is where the area covered matters most.
- */
+/** What the scan covered and how many sites it found. */
 export function scanSummaryText(scan) {
   const side = 2 * scan.zoom + 1;
   return `Centred on ${scan.x}|${scan.y}, ${side}×${side} tiles. Checked ${
@@ -2027,79 +2027,75 @@ export function scanSummaryText(scan) {
 }
 
 
-/** The last column: whatever the row has to warn about, space-separated. */
-function flagsHtml(r) {
+/** The Military column: the free bonus, then warning pills, each led by an icon. */
+function militaryCellHtml(r) {
+  const troops = `<img src="${ICONS.troops}" alt="">`;
   const flags = [];
   const res = resFlag(r);
-  if (res) flags.push({ cls: 'sov-flag', ...res });
+  if (res) {
+    const icon = PRODUCTION_ICONS[r.resBinding] ? `<img src="${PRODUCTION_ICONS[r.resBinding]}" alt="">` : '';
+    flags.push({
+      cls: 'sov-pill-bad',
+      html: `${icon}${r.resImpossible ? 'no plots' : `${r.resCeiling.toFixed(1)}%`}`,
+      title: res.title,
+    });
+  }
   if (r.milsovBlocked) {
     flags.push({
-      cls: 'sov-flag',
-      text: 'no military',
+      cls: 'sov-pill-bad',
+      html: `${troops}none`,
       title: `No military sovereignty fits here for free — ${
         MILSOV_BLOCKED_TEXT[r.milsovBlocked] ?? 'nothing was left over'}.`,
     });
   }
-  // The minimum is not met for free, but is met somewhere the user said they
-  // would accept. Saying where is the whole point — dropping the site was what
-  // made this invisible.
+  // The minimum bonus is not met for free, but is at a lower tax.
   if (r.milsovMinTax != null) {
     flags.push({
-      cls: 'sov-advice',
-      text: `minimum at ${r.milsovMinTax.toFixed(0)}%`,
+      cls: 'sov-pill-warn',
+      html: `${troops}min at ${r.milsovMinTax.toFixed(0)}%`,
       title: `This site reaches your minimum military bonus (+${r.milsovMinBonusAt}%) `
         + `at ${r.milsovMinTax.toFixed(0)}% tax, against the ${r.tMax.toFixed(0)}% it holds `
         + `on food alone. Open the row and drag the tax slider to see the trade.`,
     });
   }
-  // Descriptor bonuses riding on a building the structure table does not carry.
-  // Nothing does today — every building the descriptors name is a Production
-  // Structure — so this is dormant rather than dead: the table is read off the
-  // game, and a row naming something unknown must not pass silently.
+  // Terrain bonuses tied to a building SOV_STRUCTURES does not know. None are
+  // today, but the descriptor table comes from the game.
   const conditional = conditionalDescriptors(r);
   if (conditional.size) {
     flags.push({
-      cls: 'sov-advice',
-      text: 'conditional bonus',
+      cls: 'sov-pill-warn',
+      html: 'conditional',
       title: `${[...conditional].map(([b, n]) => `${n}× ${b}`).join(', ')} — these tiles carry a `
         + `terrain bonus that only pays if the city has that building. Not scored either way.`,
     });
   }
-  return flags
-    .map((f) => `<span class="${f.cls}" title="${escapeHtml(f.title)}">${escapeHtml(f.text)}</span>`)
-    .join(' ');
+  return `${r.milsovBonus ? `<b class="sov-mil-v">+${r.milsovBonus}%</b>` : ''}${flags
+    .map((f) => `<span class="sov-pill ${f.cls}" title="${escapeHtml(f.title)}">${f.html}</span>`)
+    .join('')}`;
 }
 
 /**
- * The tax control and the plan under it, shared by the results detail row and
- * the optimiser.
- *
- * `plan` is what to show now; `base` is the plan at the site's own ceiling, which
- * detailBodyHtml diffs against. The detail row opens with the two the same; the
- * optimiser opens at whatever tax was asked for, so they differ from the start.
- *
- * `geom` is the square the claim grid draws and the centre it draws it around.
+ * The tax slider and the plan under it, shared by a result row and the
+ * optimiser. `base` is the plan at the site's ceiling, which `plan` is compared
+ * against; `geom` is the grid's square and centre.
  */
 function planBlockHtml({ ctx, base, plan, floor, geom }) {
-  // Whole points only, because that is all the game accepts — a half-point drag
-  // would report a plan at a tax the user cannot set.
+  // Whole points only, as the game accepts.
   const lowest = Math.max(0, Math.ceil(floor));
   const slider = ctx && Number.isFinite(base.tMax) && base.tMax - lowest >= 1
-    ? `<div class="sov-tax">
-        <div class="sov-f"><span>Tax <output class="sov-tax-at">${plan.tax.toFixed(0)}%</output>
-          <span class="sov-hint">— drag to trade tax for sovereignty</span></span>
-          <input type="range" class="sov-tax-range" min="${lowest}" max="${base.tMax}"
-            step="1" value="${plan.tax}"></div>
+    ? `<div class="sov-tax" title="Drag to trade tax for sovereignty">
+        <span class="sov-tax-label">Tax</span>
+        <input type="range" class="sov-tax-range" min="${lowest}" max="${base.tMax}"
+          step="1" value="${plan.tax}" aria-label="Tax">
+        <output class="sov-tax-at">${plan.tax.toFixed(0)}%</output>
       </div>`
     : '';
   return `${slider}<div class="sov-body-at">${detailBodyHtml(plan, base, geom)}</div>`;
 }
 
 /**
- * Make a rendered plan block live. Does nothing when there is no slider.
- * `onPlan(tax, plan)` hears each re-plan, `plan` null where that tax holds
- * none. The rate is the one the user dragged to, so redrawing the block after a
- * tile is crossed out can come back to it.
+ * Make a rendered plan block's slider live. `onPlan(tax, plan)` hears each
+ * re-plan; `plan` is null where that tax holds none.
  */
 function bindPlanBlock(scope, ctx, base, geom, onPlan) {
   const range = scope.querySelector('.sov-tax-range');
@@ -2120,23 +2116,20 @@ function bindPlanBlock(scope, ctx, base, geom, onPlan) {
 /**
  * Render the plan block into `scope` and keep it live: the slider re-plans at a
  * new tax, and clicking a grid cell crosses that tile out and re-plans without
- * it. Exclusions live here and nowhere else, so closing the block clears them.
+ * it. Closing the block clears the cross-outs.
  *
  * @param {Element} scope the element to own the block
  * @param {object} state `{neighbours, settings, ctx, base, floor, geom, tax,
- *   onPlan}`. `ctx` and `base` are the caller's own, used while nothing is
- *   crossed out; `neighbours` is the site's claimable tiles unfiltered, and
- *   without them the block cannot re-plan, so it renders once and takes no
- *   clicks. `onPlan(plan, geom)`, if given, hears what each claim grid is drawn
- *   from, and a null plan when the slider reaches a tax with none
+ *   onPlan}`. `ctx` and `base` are used while nothing is crossed out. Without
+ *   `neighbours` the block cannot re-plan, so it takes no clicks. `onPlan(plan,
+ *   geom)` hears each grid drawn, with a null plan when a tax holds none
  */
 function mountPlanBlock(scope, state) {
   const excluded = new Set();
   let tax = state.tax;
 
   const draw = () => {
-    // Rebuilding the knapsack with nothing crossed out would only reproduce the
-    // ctx the caller handed over, and it is the expensive part of the plan.
+    // Only re-prepare (the expensive part) when tiles are crossed out.
     let ctx = state.ctx;
     let base = state.base;
     if (excluded.size) {
@@ -2153,8 +2146,7 @@ function mountPlanBlock(scope, state) {
       state.onPlan?.(none, geom);
       return;
     }
-    // A smaller neighbourhood may not hold the tax the user dragged to, and 0
-    // is a floor under both: below it there is no tax to plan at.
+    // Fewer tiles may not hold the tax dragged to; 0 is the lowest tax.
     tax = Math.max(0, Math.min(base.tMax, Math.max(Math.ceil(state.floor), tax)));
     const plan = (ctx ? planSiteAt(ctx, tax, { bestEffort: true }) : null) ?? base;
     scope.innerHTML = planBlockHtml({ ctx, base, plan, floor: state.floor, geom });
@@ -2165,7 +2157,7 @@ function mountPlanBlock(scope, state) {
     state.onPlan?.(plan, geom);
   };
 
-  // Delegated once, since every redraw replaces the grid inside `scope`.
+  // Delegated, since every redraw replaces the grid.
   scope.addEventListener('click', (e) => {
     const cell = e.target.closest('.sov-pick');
     if (!cell || !scope.contains(cell)) return;
@@ -2185,19 +2177,16 @@ function toggleDetail(row, result, settings, onOptimise) {
   const tr = document.createElement('tr');
   tr.className = 'sov-detail';
 
-  // The food knapsack is built ONCE here and reused for every tax the slider
-  // visits. Rebuilding it per drag event is what made this crawl: at a real
-  // research budget the DP is some 3,000 spend levels against 24 tiles, and the building
-  // cap puts it on the count-limited path, which is another factor of twenty.
+  // Prepared once and reused for every tax the slider visits; preparing per
+  // drag is far too slow.
   const ctx = result.neighbours ? prepareSite({ neighbours: result.neighbours, settings }) : null;
 
   const cell = document.createElement('td');
-  cell.colSpan = 8;
-  // The button sits outside the plan block, which rewrites its own innerHTML on
-  // every redraw — inside it, the first tax drag would take the button with it.
+  cell.colSpan = 6;
+  // Outside the plan block, which replaces its own contents on every redraw.
   const actions = document.createElement('p');
   actions.className = 'sov-detail-actions';
-  actions.innerHTML = `<button type="button" class="sov-optimise sec">Optimise ${
+  actions.innerHTML = `<button type="button" class="sov-optimise sec">${GLYPHS.target}Optimise ${
     result.x}|${result.y} →</button>`;
   actions.querySelector('.sov-optimise').addEventListener('click', () => onOptimise?.(result));
   const block = document.createElement('div');
@@ -2216,10 +2205,8 @@ function toggleDetail(row, result, settings, onOptimise) {
 }
 
 /**
- * What the plan did with the town's existing sovereignty: what keeping it cost
- * and which claims it reached, or how many claims it laid out afresh. Buildings
- * on a kept claim are costed as if new, so the plan errs toward caution, and
- * the reader still has to be told which way it leans.
+ * What the plan did with the town's existing claims: what keeping them costs,
+ * or how many were laid out afresh. Kept claims' buildings are costed as new.
  */
 function keptNote(r) {
   if (!r?.preserving) {
@@ -2230,8 +2217,7 @@ function keptNote(r) {
       + 'planned as empty ground and priced in full, as though given up and laid out again. '
       + 'Turn it on to plan around them instead.';
   }
-  // Sovereignty is a town's, so a tile carrying no town of yours has none of
-  // its own however many of your claims surround it.
+  // Sovereignty belongs to a town: a tile with no town of yours has none to keep.
   if (!r.preserveTown) {
     return 'Preserve Existing Sovereignty is on, but this tile carries no town of yours — '
       + 'sovereignty belongs to a town, so there is none here to keep and the plan is drawn '
@@ -2260,12 +2246,7 @@ function keptNote(r) {
   return parts.join(' ');
 }
 
-/**
- * One focusSite result. The notes come first because the allocation and the
- * radius are inputs a reader would otherwise assume, and both move every figure
- * below them.
- */
-/** Who holds sovereignty on a tile, from its claim's `rd`, which reads "Confed " with a trailing space. */
+/** Who holds sovereignty on a tile, from its claim's `rd` ("Confed " has a trailing space). */
 export function claimHolderText(rd) {
   const holder = {
     Yours: 'One of your towns',
@@ -2275,16 +2256,11 @@ export function claimHolderText(rd) {
   return `${holder} holds sovereignty on this tile.`;
 }
 
+/** One focusSite result: its headline chips, warnings and notes, then the plan. */
 function focusResultHtml(r) {
-  const notes = [
-    r.plotNote,
-    `Radius ${r.radius}${r.radiusFromConfig ? ', from City Configuration' : ''}. `
-      + `${r.claimable} of the ${r.ring} surrounding tiles are claimable.`,
-    keptNote(r),
-  ].filter(Boolean);
-  // Loud, but still not enforced — the plan below is rendered either way. A
-  // town's own tile is the settled case this tool plans on purpose, so it is
-  // not warned about, although it reads as unsettleable and claimed.
+  const notes = [r.plotNote, keptNote(r)].filter(Boolean);
+  // Warnings only; the plan is still shown. A town's own tile is planned on
+  // purpose, so it is not warned about.
   const warnings = [];
   if (!r.centre.isTown) {
     if (!r.centre.settleable) {
@@ -2293,14 +2269,19 @@ function focusResultHtml(r) {
     if (r.centre.claimedBy) warnings.push(claimHolderText(r.centre.claimedBy));
   }
 
-  // The settable rate, which is the one the user types into the game. The
-  // fraction behind it is on the plan's own tax instead, where it is a hover.
   const ceiling = r.holdsNoTax
-    ? `<p class="sov-note">This tile holds no tax — its ceiling is <strong>${
-      r.ceiling.toFixed(0)}%</strong>, limited by ${
+    ? `<p class="sov-warn">This tile holds no tax — its ceiling is ${
+      r.ceiling.toFixed(0)}%, limited by ${
       escapeHtml(bindingLabel(r.base.binding).toLowerCase())}.</p>`
-    : `<p class="sov-note">Highest tax this tile holds on food alone: <strong>${
-      r.base.tMax.toFixed(0)}%</strong>, limited by ${escapeHtml(bindingLabel(r.base.binding).toLowerCase())}.</p>`;
+    : '';
+  const chips = [
+    r.holdsNoTax ? '' : `<span class="sov-chip" title="Highest tax this tile holds on food alone">max <b>${
+      r.base.tMax.toFixed(0)}%</b>${limitHtml(r.base)}</span>`,
+    `<span class="sov-chip" title="${r.radiusFromConfig ? 'From City Configuration' : 'As set above'}">radius ${
+      r.radius}</span>`,
+    `<span class="sov-chip" title="How many of the ${r.ring} surrounding tiles are claimable">${
+      r.claimable}/${r.ring} claimable</span>`,
+  ].join('');
   const asked = r.holdsNoTax
     ? ''
     : r.aboveCeiling
@@ -2308,12 +2289,11 @@ function focusResultHtml(r) {
         + `is at its ceiling of ${r.ceiling.toFixed(0)}%.</p>`
       : '';
 
-  // The plan block owns state, so the caller mounts it into the empty div rather
-  // than it being rendered into this string.
-  return `<h3>${r.x}|${r.y}</h3>
+  // The caller mounts the plan block into the empty div.
+  return `<div class="sov-result-h"><span class="sov-xy-big">${r.x}|${r.y}</span>${chips}</div>
     ${warnings.map((w) => `<p class="sov-warn">${escapeHtml(w)}</p>`).join('')}
-    ${notes.map((n) => `<p class="sov-note">${escapeHtml(n)}</p>`).join('')}
-    ${ceiling}${asked}
+    ${ceiling}${notes.map((n) => `<p class="sov-note">${escapeHtml(n)}</p>`).join('')}
+    ${asked}
     <div class="sov-plan-block"></div>`;
 }
 
@@ -2325,15 +2305,13 @@ export function roman(level) {
 const FOOD_ICON = `<img src="${ICONS.food}" alt="food">`;
 const CROSS = '<span class="sov-x">✕</span>';
 
-/** How a grid cell and an exclusion name the same tile. */
 export function cellKey(dx, dy) {
   return `${dx},${dy}`;
 }
 
 /**
- * One cell's markup. `body` is icon HTML or already-escaped text; `badge` is the
- * terrain descriptor line, already markup. `pick` makes the cell clickable and
- * carries the offsets the click handler reads back.
+ * One grid cell. `body` and `badge` are markup; `pick` makes the cell
+ * clickable, carrying the offsets the click handler reads.
  */
 function gridCell({ cls, title, level, body, badge, dx, dy, pick }) {
   return `<td class="sov-cell ${cls}${pick ? ' sov-pick' : ''}"${
@@ -2343,26 +2321,15 @@ function gridCell({ cls, title, level, body, badge, dx, dy, pick }) {
 }
 
 /**
- * A tile's terrain descriptor, as the tail of its hover text.
- *
- * Three outcomes, and they have to read differently. A descriptor that grants
- * something names it. A terrain known to grant nothing says so — that is an
- * answer, not a blank. An `i` nothing identifies says THAT, so the user can
- * tell "this tile is plain" from "the tool does not know this tile".
- *
- * A bonus is marked only when it rides on a building the structure table has no
- * entry for, which nothing does today — see descriptorFor.
+ * A tile's terrain, as the end of its hover text: its bonus, "no sovereignty
+ * bonus", "bonus not read yet", or "unidentified".
  */
 export function descriptorText(tile) {
-  // No `i` is not an unidentified `i`: there is nothing to say, so say nothing.
-  // Only a value the table has no row for is worth flagging.
+  // A tile without `i` gets nothing; an unknown `i` is flagged.
   if (typeof tile?.i !== 'number' && !tile?.descriptor) return '';
   const d = tile?.descriptor ?? descriptorFor(tile.i);
   if (!d) return `, terrain ${tile.i} — unidentified`;
   const varies = d.nodeClass ? ' (rating varies; not a fixed terrain)' : '';
-  // Named by the client but never read on a tile. Distinct from "grants
-  // nothing", which is an answer, and from an unidentified `i`, which the game
-  // itself does not know either.
   if (d.bonusUnread) return `, ${d.name}${varies} — bonus not read yet`;
   if (d.nodeClass) return `, ${d.name}${varies}`;
   if (!d.building) return `, ${d.name} — no sovereignty bonus`;
@@ -2372,45 +2339,61 @@ export function descriptorText(tile) {
 }
 
 /**
- * The results pane, summary and all.
- *
- * Separate from `renderResults` because that one needs a document and this is
- * where the mistakes are. The summary belongs to the scan, not to the table, so
- * it is shown even when no site met the minimum: a region with no candidate is
- * exactly where the tile count is worth the most. Under it, a table gets an empty
- * line for what the map markers show, filled once they are drawn.
+ * The ceiling that set a row's tax, as the icon of what ran out. The tax cap has
+ * no icon, so it is a word.
+ */
+function limitHtml(r) {
+  const label = bindingLabel(r.binding);
+  const icon = r.binding === 'res'
+    ? PRODUCTION_ICONS[r.resBinding] ?? ICONS.stone
+    : { food: ICONS.food, rp: ICONS.research }[r.binding];
+  const title = `Limited by ${(r.binding === 'res' && PRODUCTION_LABEL[r.resBinding]
+    ? PRODUCTION_LABEL[r.resBinding] : label).toLowerCase()}`;
+  return icon
+    ? `<img src="${icon}" alt="${escapeHtml(label)}" title="${escapeHtml(title)}">`
+    : `<span class="sov-cap" title="${escapeHtml(title)}">${escapeHtml(label.toLowerCase())}</span>`;
+}
+
+/** A column heading drawn as an icon, named in its alt and hover text. */
+function iconHeading(icon, name, title) {
+  return `<th title="${escapeHtml(title)}"><img src="${icon}" alt="${escapeHtml(name)}"></th>`;
+}
+
+/**
+ * The results pane: the scan summary, shown even when nothing was found, an
+ * empty line for the map markers' note, and the table. The first ten rows are
+ * numbered as on the map.
  */
 export function resultsHtml(results, summary) {
-  const head = `<p>${summary}</p>`;
-  if (!results?.length) return `${head}<p>No available sites met the minimum tax.</p>`;
+  const head = `<p class="sov-meta">${GLYPHS.target}${summary}</p>`;
+  if (!results?.length) return `${head}<p class="sov-note">No available sites met the minimum tax.</p>`;
   const rows = results.slice(0, 200).map((r, n) => `
         <tr class="sov-row" data-n="${n}">
-          <td>${r.x}|${r.y}</td>
-          <td${Number.isFinite(r.tMaxExact)
+          <td class="sov-at"><span class="sov-rank${n < 10 ? ' sov-rank-top' : ''}">${n + 1}</span>${
+  r.x}|${r.y}</td>
+          <td class="sov-tax-cell"${Number.isFinite(r.tMaxExact)
     ? ` title="The arithmetic reaches ${r.tMaxExact.toFixed(2)}%, but tax is whole numbers only, so the plan is made at this rate."`
-    : ''}>${Number.isFinite(r.tMax) ? r.tMax.toFixed(0) : r.tMax}%</td>
-          <td>${bindingLabel(r.binding)}</td>
+    : ''}><b>${Number.isFinite(r.tMax) ? r.tMax.toFixed(0) : r.tMax}%</b>${limitHtml(r)}</td>
           <td>${r.sFood.toFixed(0)}</td>
           <td>${r.uRp.toFixed(0)}</td>
           <td>${Math.round(r.goldNet).toLocaleString()}</td>
-          <td>${r.milsovBonus ? `+${r.milsovBonus}%` : ''}</td>
-          <td>${flagsHtml(r)}</td>
+          <td class="sov-mil-cell">${militaryCellHtml(r)}</td>
         </tr>`).join('');
   return `
         ${head}
         <p class="sov-legend sov-map-note"></p>
         <table>
           <thead><tr><th>Site</th>
-            <th title="The highest whole-number tax this site can hold on food alone — the game takes no other kind">Max Tax</th>
-            <th title="Which ceiling stops the tax going any higher">Limited By</th><th>Food</th>
-            <th title="Research per hour the claims cost">Research</th><th>Net Gold</th>
-            <th title="Free military unit production bonus — costs this site no tax">Military</th>
-            <th></th></tr></thead>
+            <th title="The highest whole-number tax this site can hold on food alone — the game takes no other kind — and the icon of what stops it going higher">Max Tax</th>
+            ${iconHeading(ICONS.food, 'Food', 'Food per hour the city nets at that tax')}
+            ${iconHeading(ICONS.research, 'Research', 'Research per hour the claims cost')}
+            ${iconHeading(ICONS.gold, 'Net Gold', 'Gold per hour after claim upkeep')}
+            ${iconHeading(ICONS.troops, 'Military', 'Free military unit production bonus — costs this site no tax — and anything to know about it')}</tr></thead>
           <tbody>${rows}</tbody>
         </table>`;
 }
 
-/** Which claimed tiles name a building the structure table does not carry. */
+/** Which planned tiles' terrain bonuses name a building SOV_STRUCTURES lacks. */
 function conditionalDescriptors(plan) {
   const out = new Map();
   for (const t of [...(plan?.tiles ?? []), ...(plan?.milsov ?? [])]) {
@@ -2421,21 +2404,9 @@ function conditionalDescriptors(plan) {
 }
 
 /**
- * The descriptor bonus as it appears ON the tile: "+3% Bows". Read at a glance
- * across the whole grid, which is the point — hovering shows one tile at a time,
- * and the interesting question is which tile in the ring is worth which
- * structure.
- *
- * The PRODUCT is written out rather than drawn, because the products are what
- * distinguish the rungs and the icon set cannot. Bowyer makes Bows and Target
- * Range makes Ranged Units; Farrier and Jousting Yard both mean horses. One
- * icon each would make four of the eighteen unreadable, and there is no art at
- * all for saddles, livestock, beer, chainmail, leather armour, spears, books
- * or diplomats.
- *
- * Empty for terrain that grants nothing and for terrain nothing has identified;
- * both of those are answered in the hover text, where there is room to say
- * which of the two it is.
+ * A tile's terrain bonus as shown on the grid, e.g. "+3% Bows". The product is
+ * written out because the icons cannot tell the products apart. Empty when the
+ * terrain grants nothing or is unidentified.
  */
 export function descriptorBadge(tile) {
   const d = tile?.descriptor ?? (typeof tile?.i === 'number' ? descriptorFor(tile.i) : null);
@@ -2445,34 +2416,12 @@ export function descriptorBadge(tile) {
     escapeHtml(d.product)}</span>`;
 }
 
-/**
- * The plan as a map: the town in the middle, every claim on the tile it sits on,
- * x across the top and y down the left, highest y in the top row so the grid sits
- * the way the game map does.
- *
- * Only claimable tiles reach the panel, so water, foreign claims and unsettleable
- * terrain are crossed out too — a tile the plan cannot have looks the same
- * whether the game ruled it out or the user did.
- *
- * A tile in `excluded` is drawn crossed whatever the plan says, so a stale plan
- * cannot show a claim on a square the user has ruled out.
- *
- * @param {object} plan the plan to draw, as planSiteAt returns it
- * @param {{radius: number, x: number, y: number, excluded: Set<string>,
- *   pickable: boolean}} geom the square to draw, the centre's own coordinates,
- *   the tiles crossed out by the user, and whether cells respond to a click.
- *   Non-finite coordinates fall back to offset labels
- * @returns {string} the grid, with its legend under it
- */
-/** "your Sov III claim", or "your claim" where its level did not read. */
+/** "your Sov III claim", or "your claim" when its level does not read. */
 function relaidText(t) {
   return t.relaid > 0 ? `your Sov ${roman(t.relaid)} claim` : 'your claim';
 }
 
-/**
- * A claim's research, said as an upgrade where one is kept standing, and as a
- * replacement where one of yours is given up and laid out again.
- */
+/** A claim's research cost, as an upgrade of a kept claim or a replacement of one of yours. */
 function claimCostText(t) {
   const held = t.held ?? 0;
   if (held > 0) return `${t.rp.toFixed(0)} RP on top of the Sov ${roman(held)} claim already there`;
@@ -2480,6 +2429,17 @@ function claimCostText(t) {
   return `${t.rp.toFixed(0)} RP`;
 }
 
+/**
+ * The plan as a map around the town, highest y in the top row as on the game
+ * map. Tiles the plan cannot have, whether ruled out by the game or crossed out
+ * by the user, are drawn crossed.
+ *
+ * @param {object} plan the plan to draw, as planSiteAt returns it
+ * @param {{radius: number, x: number, y: number, excluded: Set<string>,
+ *   pickable: boolean}} geom the square to draw, its centre, the tiles crossed
+ *   out, and whether cells take clicks. Without coordinates, labels are offsets
+ * @returns {string} the grid, with its legend under it
+ */
 export function planGridHtml(plan, geom) {
   const r = Math.max(1, Math.round(geom?.radius ?? 0) || spanOf(plan));
   const cx = geom?.x;
@@ -2488,22 +2448,18 @@ export function planGridHtml(plan, geom) {
   const kept = new Map((geom?.kept ?? []).map((k) => [cellKey(k.dx, k.dy), k]));
   const pickable = !!geom?.pickable;
   const absolute = Number.isFinite(cx) && Number.isFinite(cy);
-  // Real coordinates where they are known, since those are what the user types
-  // into the game.
+  // Real coordinates where known, since those are what the game shows.
   const xLabel = (dx) => (absolute ? String(cx + dx) : signed(dx));
   const yLabel = (dy) => (absolute ? String(cy + dy) : signed(dy));
   const name = (dx, dy) => (absolute ? `${cx + dx}|${cy + dy}` : `${signed(dx)},${signed(dy)}`);
 
   const specs = new Map();
-  // Set by whichever square is actually drawn as kept, since a kept claim the
-  // plan built on is drawn as the claim it became and wants no legend entry.
+  // Whether any square is drawn as kept, for the legend.
   let anyKept = false;
 
-  // `free` goes down first because the other two overwrite it: military claims
-  // are placed on free tiles, so those squares appear in both lists.
+  // `free` goes first: military claims sit on free tiles and overwrite them.
   for (const t of plan.free ?? []) {
-    // A square the plan passed over that carries a kept claim is not ground going
-    // spare: it is a claim you keep paying for and build nothing on.
+    // A free tile with a kept claim is one you keep paying for and build nothing on.
     const held = t.held ?? 0;
     if (held > 0) anyKept = true;
     specs.set(cellKey(t.dx, t.dy), held > 0 ? {
@@ -2565,8 +2521,7 @@ export function planGridHtml(plan, geom) {
     }
     const spec = specs.get(cellKey(dx, dy));
     if (!spec) {
-      // A kept claim on a tile the planner was never offered is in none of the
-      // plan's lists, so it is drawn from the site's own record.
+      // A kept claim on a tile the planner was not offered is drawn from the record.
       const k = kept.get(cellKey(dx, dy));
       if (k) {
         anyKept = true;
@@ -2591,17 +2546,18 @@ export function planGridHtml(plan, geom) {
 
   return `<div class="sov-grid-wrap"><table class="sov-grid">
       <thead>${head}</thead><tbody>${body}</tbody></table></div>
-    <p class="sov-legend"><b class="sov-key-food">I–V</b> food claim,
-      <b class="sov-key-mil">I–V</b> military claim with its building level,
-      <b class="sov-key-free">grey</b> claimable but unclaimed,
-      <b class="sov-key-out">✕</b> not available${
-  anyKept ? ', <b class="sov-key-kept">I–V</b> already yours and kept' : ''}.${
-  pickable ? ' Click a tile to cross it out and re-plan without it.' : ''}
-      A tile's third line is its terrain bonus, if it has one.
-      Hover for distance, research cost, upkeep and the full descriptor.</p>`;
+    <div class="sov-keys">
+      <span><i class="sov-sw sov-sw-food"></i>Food claim</span>
+      <span><i class="sov-sw sov-sw-mil"></i>Military claim</span>${
+  anyKept ? '<span><i class="sov-sw sov-sw-kept"></i>Yours, kept</span>' : ''}
+      <span><i class="sov-sw sov-sw-free"></i>Unclaimed</span>
+      <span><i class="sov-sw sov-sw-out">✕</i>Unavailable</span>
+    </div>
+    <p class="sov-legend">I–V is the claim level, L the building's, and the last line the
+      terrain bonus.${pickable ? ' Click a tile to cross it out and re-plan without it.' : ''}
+      Hover a tile for the rest.</p>`;
 }
 
-/** -r..r, for both axes. */
 function range(r) {
   return Array.from({ length: 2 * r + 1 }, (_, i) => i - r);
 }
@@ -2610,11 +2566,7 @@ function signed(v) {
   return `${v >= 0 ? '+' : ''}${v}`;
 }
 
-/**
- * How far out the plan itself reaches, for a caller with no radius to hand. An
- * outer ring that is entirely unclaimable is invisible from the plan, so this can
- * draw a smaller square than the site was scored over.
- */
+/** How far out the plan reaches, for a caller with no radius. */
 function spanOf(plan) {
   let span = 1;
   for (const t of [...(plan.free ?? []), ...(plan.tiles ?? []), ...(plan.milsov ?? [])]) {
@@ -2623,30 +2575,46 @@ function spanOf(plan) {
   return span;
 }
 
+const NOTE_PILLS = {
+  binds: ['limit', 'sov-pill-warn', 'The ceiling that sets the tax: this production runs out first'],
+  deficit: ['deficit', 'sov-pill-bad', 'The plan spends more than the city makes'],
+  indicative: ['estimate', '', 'Per-plot yields for wood, clay, iron and stone are unmeasured'],
+};
+
+function notePills(note) {
+  return note.split(', ').filter((n) => NOTE_PILLS[n]).map((n) => {
+    const [text, cls, title] = NOTE_PILLS[n];
+    return ` <span class="sov-pill ${cls}" title="${title}">${text}</span>`;
+  }).join('');
+}
+
+/** Spent as a share of produced, as a bar with both figures; amber near the whole. */
+function useCellHtml(r) {
+  if (!Number.isFinite(r.base)) return '<td class="sov-use"></td>';
+  const share = r.base > 0 ? Math.min(1, Math.max(0, r.spent / r.base)) : 0;
+  const cls = r.value < 0 ? ' sov-bar-over' : share >= 0.95 ? ' sov-bar-full' : '';
+  return `<td class="sov-use"><div class="sov-bar${cls}"><i style="width:${(share * 100).toFixed(1)}%"></i></div>
+    <span class="sov-use-txt">${count(Math.round(r.spent))} of ${count(Math.round(r.base))}</span></td>`;
+}
+
 /**
- * Everything about one plan, at the tax it is run at. Rendered from the plan
- * alone so the slider can replace it wholesale — the balance, the buildings and
- * the claim grid all move together, which is the point of dragging it.
- *
- * `base` is the plan at the site's own maximum, so a lower tax can say what it
- * bought and what it cost rather than leaving two screens of numbers to diff.
+ * Everything about one plan at its tax, rendered from the plan alone so the
+ * slider can replace it whole. `base` is the plan at the site's ceiling, to
+ * say what the lower tax bought and cost.
  */
 function detailBodyHtml(plan, base, geom) {
-  // A ceiling only BINDS at the tax it was solved for. Below that everything has
-  // slack, so marking a row "binds" there would be a lie.
+  // A ceiling only binds at the tax it was solved for.
   const atCeiling = Math.abs(plan.tax - plan.tMax) < 0.05;
   const rows = surplusRows(plan.surplus, atCeiling ? plan.binding : null);
   const num = (v) => (Number.isFinite(v) ? Math.round(v).toLocaleString('en-GB') : '');
   const balance = rows.length
     ? `<table class="sov-balance"><thead><tr><th>At ${plan.tax.toFixed(0)}% Tax</th>
-        <th>Produced</th><th>Spent</th><th>Net</th><th></th></tr></thead><tbody>${
-      rows.map((r) => `<tr><td>${productionLabel(r.icon)}</td><td class="sov-hint">${num(r.base)}</td>
-        <td class="sov-hint">${num(r.spent)}</td><td class="${
-        r.value < 0 ? 'sov-bad' : 'sov-ok'}">${num(r.value)}</td>
-        <td class="sov-hint">${r.note}</td></tr>`).join('')}</tbody></table>`
+        <th class="sov-use" title="What the plan and your buildings spend, against what the city produces">Spent of produced</th>
+        <th>Net</th></tr></thead><tbody>${
+      rows.map((r) => `<tr><td>${productionLabel(r.icon)}${notePills(r.note)}</td>${useCellHtml(r)}
+        <td class="${r.value < 0 ? 'sov-bad' : 'sov-ok'}">${num(r.value)}</td></tr>`).join('')}</tbody></table>`
     : '';
-  // The Spent column carries the city's buildings too, which are not part of
-  // the plan, so their share of it is named here.
+  // The Spent figures include the city's buildings, so their share is named.
   const buildings = BASIC_RESOURCES.filter((res) => plan.surplus?.buildingUpkeep?.[res] > 0)
     .map((res) => `${num(plan.surplus.buildingUpkeep[res])} ${PRODUCTION_LABEL[res].toLowerCase()}`);
   const buildingNote = buildings.length
@@ -2662,10 +2630,7 @@ function detailBodyHtml(plan, base, geom) {
 
   const res = upkeepLimitHtml(plan);
 
-  // What this tax cost, against the plan at the top of the slider. What it bought
-  // is the military line above, so only the price is stated here. The food claim
-  // count is in it because dropping one is usually where the research for the
-  // buildings came from.
+  // What this tax cost against the plan at the ceiling.
   const claimDelta = plan.tiles.length - base.tiles.length;
   const goldDelta = Math.round(plan.goldNet - base.goldNet);
   const signed = (v) => `${v >= 0 ? '+' : ''}${v.toLocaleString('en-GB')}`;
@@ -2675,15 +2640,11 @@ function detailBodyHtml(plan, base, geom) {
       signed(claimDelta)} food claims, ${signed(goldDelta)} gold/hr.</p>`
     : '';
 
-  // A plan that does not hold its own tax leads with saying so, above the
-  // balance the shortfall is read off.
   const short = plan.holds === false
     ? `<p class="sov-flag">Plan shown at ${plan.tax.toFixed(0)}% tax.</p>`
     : '';
 
-  // The balance goes first, directly under the slider, so dragging moves numbers
-  // the eye is already on. The grid is the tallest block, so it goes last rather
-  // than pushing the table off the screen.
+  // Balance first, right under the slider; the tall grid last.
   return `${short}${balance}${buildingNote}${milPlan}${res}${trade}${planGridHtml(plan, geom)}`;
 }
 
@@ -2691,28 +2652,21 @@ function escapeHtml(s) {
   return String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 }
 
-// RFC 4180 quoting. Every column goes through this rather than only the free
-// text one — the military plan is the first field that can carry a
-// comma, and picking which columns are "safe" is how that regresses later.
+// RFC 4180 quoting, applied to every column.
 export function csvField(v) {
   const s = v === null || v === undefined ? '' : String(v);
   return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 
-// RFC 4180 says CRLF between records, and every spreadsheet reads it. LF alone
-// is what a bare join produces and what Excel on Windows renders as one line.
+// CRLF between records; Excel on Windows shows LF-only files as one line.
 const CSV_EOL = '\r\n';
 
-// A UTF-8 byte-order mark. Excel reads a BOM-less file as the system codepage,
-// which turns the em dash in the military plan into mojibake — the one column
-// that is prose is the one that breaks, and it breaks silently.
+// A UTF-8 byte-order mark, without which Excel misreads the em dash.
 export const CSV_BOM = '﻿';
 
 /**
- * `T_res` stays a number or blank, so a spreadsheet can total the column: the
- * two cases that have no number — no milsov requested, and no plots of the
- * binding resource — are told apart by `res_status` rather than by a sentinel
- * in the numeric column. Blank status means the ceiling was applied for real.
+ * `T_res` stays a number or blank so the column can be totalled; `res_status`
+ * says why it is blank. Blank status means the ceiling was applied.
  */
 function resColumns(r) {
   if (!r.resIndicative) {
@@ -2723,20 +2677,14 @@ function resColumns(r) {
     : [num(r.resCeiling, 2), r.resBinding, 'indicative'];
 }
 
-/**
- * A number, or blank where there is nothing to state. Blank rather than a
- * sentinel so a column stays summable: -Infinity and null both poison a SUM,
- * and "not applicable" is not a quantity.
- */
+/** A number, or blank (never a sentinel, so columns stay summable). */
 function num(v, dp = 0) {
   return Number.isFinite(v) ? v.toFixed(dp) : '';
 }
 
 export function toCsv(results) {
-  // `T_max` is the whole-number rate the plan is made at — the one to type into
-  // the game — and `T_max_exact` the ceiling it was floored from, so a row can be
-  // audited without re-deriving it. The one free-text field stays last, so a
-  // column added later does not land after the only one that can carry a comma.
+  // `T_max` is the settable whole-number rate, `T_max_exact` the unrounded
+  // ceiling. The free-text field stays last.
   const head = ['x', 'y', 'T_max', 'T_max_exact', 'binding', 'S_food', 'U_RP', 'U_gold',
     'Gold_net', 'milsov_buildings', 'milsov_bonus', 'milsov_upkeep', 'milsov_RP',
     'milsov_gold', 'milsov_price', 'milsov_min_tax', 'milsov_min_bonus',
@@ -2746,21 +2694,19 @@ export function toCsv(results) {
      num(r.uRp), num(r.uGold), num(r.goldNet),
      r.milsov?.length ?? 0, r.milsovBonus ?? 0, r.milsovUpkeep ?? 0,
      num(r.milsovRp ?? 0), num(r.milsovGold ?? 0), r.milsovPrice ?? 0,
-     // Where a minimum bonus is met, if it was not met for free. Blank covers
-     // both "nothing was asked for" and "nothing in range reaches it" — the
-     // milsovShortfall rows never reach the export, having been filtered out.
+     // Blank when nothing was asked for or nothing reaches it.
      num(r.milsovMinTax), num(r.milsovMinBonusAt),
      ...resColumns(r),
      milsovPlanText(r)].map(csvField).join(','));
   return [head.join(','), ...lines].join(CSV_EOL);
 }
 
-/** toCsv as the bytes to hand a download: BOM first, so Excel reads UTF-8. */
+/** toCsv with a BOM, so Excel reads UTF-8. */
 export function csvFile(results) {
   return CSV_BOM + toCsv(results);
 }
 
-/** `sov-sites-20260808-2043.csv` — sortable, and two exports never collide. */
+/** e.g. `sov-sites-20260808-2043.csv`. */
 export function csvFilename(now = new Date()) {
   const p = (n) => String(n).padStart(2, '0');
   return `sov-sites-${now.getFullYear()}${p(now.getMonth() + 1)}${p(now.getDate())}`

@@ -1,9 +1,6 @@
-// Persisting the settings form between sessions. Everything but the storage
-// adapter is DOM-free, so the load path is testable under Node.
-//
-// Loading always yields a complete settings object: a stored value is a
-// suggestion, re-read through the same validators the form uses, so a blob
-// written by an older build cannot leave the tool unable to scan.
+// Saves and restores the City Configuration. Loading always yields a complete
+// settings object: stored values go back through the form's own validators, so
+// one written by an older build cannot leave the tool unable to scan.
 
 import { DEFAULT_SETTINGS } from './constants.js';
 import {
@@ -18,32 +15,20 @@ import {
   parsePrestige,
 } from './panel.js';
 
-/** One key per origin. The suffix is the envelope's shape, not the tool's. */
 export const STORAGE_KEY = 'illyriad-sov-scanner.settings';
 
 /**
- * The shape of the whole stored document. Bumped only when a stored settings
- * object stops being readable field-for-field — a key that changed name or
- * split in two — and never for one merely added or removed: sanitizeSettings
- * already keeps what still exists, drops what does not, and defaults what is
- * new.
+ * Bumped only when a stored key is renamed or split. Added and removed keys need
+ * no bump: sanitizeSettings keeps, drops and defaults field by field.
  */
 export const STORAGE_VERSION = 2;
 
 /**
- * from-version -> that document one version newer. A stored blob is walked up
- * through these before it is sanitized, which is the only way a renamed key
- * arrives at the current schema still carrying its value instead of quietly
- * taking a default.
- *
- * An addition or a removal needs no step, since sanitizeSettings already keeps,
- * drops and defaults field by field. A migration returns a settings object and
- * is never asked to validate — whatever it produces goes through
- * sanitizeSettings after.
+ * Version -> the settings one version newer, so a renamed key keeps its value.
+ * The result is sanitized afterwards, so a step need not validate.
  */
 export const MIGRATIONS = {
-  // Version 1 kept the Chancery as a tick-box, which is one Chancery among the
-  // upkeep buildings.
+  // Version 1 had the Chancery as a tick-box; it is now a building count.
   1: ({ chancery, ...rest }) => ({
     ...rest,
     upkeepBuildings: { ...rest.upkeepBuildings, chanceryOfEstates: chancery ? 1 : 0 },
@@ -55,8 +40,7 @@ function migrate(body, from) {
   let out = body;
   for (let v = from; v < STORAGE_VERSION; v++) {
     const step = MIGRATIONS[v];
-    // No path from here: stop and let sanitizeSettings salvage field-for-field
-    // rather than hand a half-migrated document on.
+    // No path further: sanitizeSettings salvages what it can.
     if (!step) break;
     out = step(out);
   }
@@ -64,10 +48,8 @@ function migrate(body, from) {
 }
 
 /**
- * Coerce anything at all into a complete settings object, reading each field by
- * its declared type through the same parser the form uses. The output is built
- * from SETTINGS_FIELDS rather than copied from the input, so unknown keys never
- * reach it and missing ones take their defaults.
+ * Coerce anything into a complete settings object, each field read by the
+ * form's own parser. Unknown keys are dropped and missing ones defaulted.
  *
  * @param {*} raw anything, including null or a blob from an older build
  * @returns {object} a full settings object
@@ -83,15 +65,14 @@ export function sanitizeSettings(raw) {
         out[f.key] = v === undefined ? !!fallback : !!v;
         break;
       case 'select': {
-        // An unselectable value would leave the <select> showing its first
-        // option, so the form would disagree with what the scan runs.
+        // An unknown value would leave the <select> showing a different option
+        // from the one the scan uses.
         const known = f.options.some((o) => String(o.value) === String(v));
         out[f.key] = known ? (f.parse === 'number' ? Number(v) : String(v)) : fallback;
         break;
       }
       case 'plots': {
-        // An allocation that no longer sums to 25 would open the form with Scan
-        // disabled and no edit of the user's to undo.
+        // An allocation that does not sum to 25 would open with Scan disabled.
         const r = validatePlots(v);
         out.plots = r.ok ? r.plots : { ...fallback };
         break;
@@ -166,13 +147,11 @@ export function decodeSettings(text) {
   } catch {
     return unreadable();
   }
-  // A bare settings object is accepted alongside the envelope, so a blob
-  // hand-edited in devtools still loads.
+  // A bare settings object, as hand-edited in devtools, loads too.
   const body = parsed?.settings ?? parsed;
   if (!body || typeof body !== 'object' || Array.isArray(body)) return unreadable();
 
-  // An unstamped blob is a hand-written one, which is written to look like what
-  // this build reads.
+  // An unversioned blob is hand-written, so it is read as current.
   const version = Number.isInteger(parsed?.version) ? parsed.version : STORAGE_VERSION;
   if (version > STORAGE_VERSION) {
     return {
@@ -184,8 +163,7 @@ export function decodeSettings(text) {
   try {
     migrated = migrate(body, version);
   } catch {
-    // A migration that throws must not cost the user the settings it was handed:
-    // the unmigrated document still sanitizes field-for-field.
+    // The unmigrated settings still sanitize field by field.
     migrated = body;
   }
   return { settings: sanitizeSettings(migrated), note: driftNote(migrated) };
@@ -202,9 +180,8 @@ export function memoryStorage() {
 }
 
 /**
- * localStorage if the page has one we can actually write to, else null. Some
- * privacy settings make the property itself throw, so it is probed rather than
- * assumed.
+ * localStorage if it can be written to, else null. Some privacy settings make
+ * the property itself throw, so it is probed.
  */
 export function defaultStorage() {
   try {
@@ -256,7 +233,7 @@ export function createSettingsStore(storage = defaultStorage()) {
     clear() {
       try {
         store.removeItem(STORAGE_KEY);
-      } catch { /* nothing stored is the state we wanted anyway */ }
+      } catch { /* ignore */ }
     },
   };
 }

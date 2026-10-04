@@ -1,21 +1,14 @@
-// Two-pass build: bundle the worker to a string, then inline it into the main
-// bundle via `define`. Tampermonkey delivers one file and a Worker needs a URL,
-// so the worker source has to travel inside the script as a string literal.
-//
-// Bundled, never minified — the shipped file is the one anyone auditing this
-// reads, and a userscript asking for map access should be legible.
+// Two-pass build: the worker is bundled to a string and inlined into the main
+// bundle, since Tampermonkey ships one file. Never minified, so the shipped
+// script stays readable to anyone auditing it.
 
 import { build, context } from 'esbuild';
 import { mkdirSync, readFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { APP_ICON_SVG } from './src/icons.js';
 
-// Two version shapes, because two audiences read them. A release build carries
-// the plain package.json number and is what users see in Tampermonkey. A dev
-// build appends a minute-resolution stamp as a prerelease, so every rebuild
-// looks different to Tampermonkey — which otherwise keeps its installed copy
-// and silently runs stale code — and so a `-dev` build always sorts BELOW the
-// released number rather than shadowing it on a machine that has both.
+// A dev build's version carries a minute stamp as a prerelease, so Tampermonkey
+// sees every rebuild as new, and it sorts below the released version.
 const RELEASE = process.argv.includes('--release');
 const { version: PKG_VERSION } = JSON.parse(readFileSync('package.json', 'utf8'));
 
@@ -26,29 +19,21 @@ const STAMP = `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}`
 
 export const VERSION = RELEASE ? PKG_VERSION : `${PKG_VERSION}-dev.${STAMP}`;
 
-// Dev and release builds never share a file. Only the release path is tracked
-// by git and served to users, so rebuilding while you work cannot overwrite the
-// bundle waiting to ship — the two are only ever brought together by choosing
-// to run `--release`.
+// Only the release file is tracked and served to users.
 const OUT = RELEASE
   ? 'dist/illyriad-sov-scanner.user.js'
   : 'dist/dev/illyriad-sov-scanner.user.js';
 
-// Where Tampermonkey looks for updates. It polls @updateURL on its own schedule,
-// compares @version, and pulls @downloadURL when the number went up — so merging
-// to main and committing the rebuilt file is the whole release mechanism.
+// Tampermonkey polls this for updates, so pushing the release file to main ships it.
 const RAW = 'https://raw.githubusercontent.com/Norris-A/Illyriad-Epic-Town-Scanner/main'
   + '/dist/illyriad-sov-scanner.user.js';
 
-// The panel's crown, reused for Tampermonkey's dashboard and install icon so the
-// two are the same mark. A data URI carries it inside the one shipped file;
-// base64 so no character in the SVG needs escaping in the banner comment.
+// Base64, so nothing in the SVG needs escaping inside the banner comment.
 const ICON = 'data:image/svg+xml;base64,'
   + Buffer.from(APP_ICON_SVG).toString('base64');
 
-// A dev build installs under its own name, so it sits beside the released copy
-// in Tampermonkey rather than replacing it, and carries no update URLs — the
-// released file on main must never be pulled down over the code being tested.
+// A dev build installs under its own name and without update URLs, so it sits
+// beside the released copy and is never updated over.
 const NAME = RELEASE
   ? 'Illyriad Sovereignty Site Scanner'
   : 'Illyriad Sovereignty Site Scanner (dev)';
@@ -104,10 +89,7 @@ async function makeConfig() {
 mkdirSync(dirname(OUT), { recursive: true });
 
 if (process.argv.includes('--watch')) {
-  // The worker is bundled once, here, and baked into `define`; the watch rebuilds
-  // only the main bundle. A change to a module both import, such as scoring.js,
-  // triggers a rebuild that still carries the old worker, so worker changes need
-  // the watch restarted.
+  // The worker is bundled once, so changes to it or its imports need a restart.
   const ctx = await context(await makeConfig());
   await ctx.watch();
   console.log(`watching -> ${OUT}`);

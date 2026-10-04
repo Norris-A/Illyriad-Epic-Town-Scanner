@@ -1,311 +1,214 @@
 # Illyriad Sovereignty Site Scanner
 
-A Tampermonkey userscript that finds good sovereignty sites on the Illyriad world
-map, and plans the claims for one you have picked.
+A Tampermonkey script for [Illyriad](https://www.illyriad.co.uk/) that finds the
+best places on the World Map to build a sovereignty city, and plans which tiles
+to claim around them.
 
-- **Site Search** ranks every claimable tile on screen by the highest tax rate a
-  city there could sustain.
-- **Optimal Sovereignty** points the same planner at one tile you name, settled
-  or not, and shows what to claim around it.
+- **Site Search** ranks every tile on screen you could settle by the highest tax
+  a city there could sustain.
+- **Optimal Sovereignty** plans the claims around one tile you choose — empty
+  ground or one of your own towns.
+- **City Configuration** tells both what your city has: its plots, buildings,
+  research and bonuses.
 
-**The script makes no network requests.** It reads the map data the game has
-already loaded into the page, works on it locally when you press Scan or
-Optimise, and never contacts the game server. Nothing you enter leaves your
-machine.
+**Nothing leaves your browser.** The script makes no network requests. It reads
+the map the game has already loaded, does its work on your machine, and never
+contacts the game server or anyone else.
 
 ## Install
 
 1. Install [Tampermonkey](https://www.tampermonkey.net/) for your browser.
-2. Click **[install the script](https://raw.githubusercontent.com/Norris-A/Illyriad-Epic-Town-Scanner/main/dist/illyriad-sov-scanner.user.js)**.
-   Tampermonkey recognises the `.user.js` address and opens its install screen —
-   confirm there.
-3. Load the Illyriad world map. The panel appears down the side.
+2. Click **[install the script](https://raw.githubusercontent.com/Norris-A/Illyriad-Epic-Town-Scanner/main/dist/illyriad-sov-scanner.user.js)**
+   and confirm on Tampermonkey's install screen.
+3. Open the World Map in Illyriad. The panel appears on the right.
 
-Updates are automatic: Tampermonkey checks for a new version on its own schedule
-and installs it. You can force a check from its dashboard under *Utilities →
-Check for userscript updates*.
+Updates install themselves. To check straight away, open Tampermonkey's dashboard
+and choose *Utilities → Check for userscript updates*.
+
+## Quick start
+
+1. Open **City Configuration** and describe your city — at the least, how its
+   settle tile's plots will be split and how much food it eats. Everything saves
+   as you type.
+2. Pan the World Map to the area you are interested in.
+3. On **Site Search**, press **Scan**.
+4. Click a result to see its plan, or press **Optimise** on it to fine-tune it.
 
 ## The panel
 
-Three tabs — **Site Search**, **Optimal Sovereignty** and **City
-Configuration** — and a gear for the panel's own settings.
-
-Drag the title bar to move the panel; click the title to fold it down to its
-icon, and click again to open it. It stays where you put it between visits. On
-any page other than the world map it folds itself away, since there is no map
-data to read there; turn that off under the gear if you would rather it stayed
-open.
+- **Move it** by dragging the title bar. **Fold it** to a small icon by clicking
+  the title, and click again to open it. It remembers where you left it.
+- **Away from the World Map** it folds itself, since there is no map to read
+  there.
+- **The ⚙ menu** has two switches: *Minimise when off the World Map*, and *Mark
+  sites on the World Map*, which turns off everything the panel draws on the
+  game's map.
+- **The ⓘ** links to the licence and copyright notice.
 
 ## Site Search
 
-Pan or zoom the map to the region you care about, then press **Scan**. Every
-tile on screen that you could settle is ranked by the highest tax a city there
-could sustain.
+Pan or zoom so the area you care about is on screen, then press **Scan**. Every
+tile there that you could settle is ranked by the highest tax a city on it could
+sustain.
 
-| Column | What it means |
+A tile is left out if it already has a town or is already claimed, if it is
+closer to another town than the distances you set in City Configuration, or if
+it cannot reach your Minimum Tax. If you set a Minimum Military Bonus, sites that
+cannot reach it at any tax down to your Minimum Tax are left out too.
+
+| Column | Shows |
 |---|---|
-| Site | The tile's coordinates |
-| Max Tax | Highest whole-number tax the site holds on food alone |
-| Limited By | What stops it going higher — tax cap, food, research or resources |
-| Food | Food per hour the city nets at that tax |
-| Research | Research per hour the claims cost |
-| Net Gold | Gold per hour after claim upkeep |
-| Military | Free military bonus fitted on top, if you asked for a structure |
+| Site | The rank and the tile's coordinates. The top ten are ringed, matching the numbers drawn on the World Map |
+| Max Tax | The highest tax the site can hold on its food claims alone. The small icon beside it shows what stops it going higher: food, research, a basic resource running out, or the game's tax cap |
+| Food icon | Food per hour left over at that tax |
+| Research icon | Research per hour the claims cost |
+| Gold icon | Gold per hour after paying for the claims |
+| Military icon | The military unit production bonus the site fits for free, if you chose a military structure. Small tags flag anything worth knowing — hover them for the details |
 
-Click a row to open the plan: a grid of the tiles around the site showing what to
-claim and at what level, and a tax slider so you can see what the plan looks like
-at a lower rate. **Optimise x|y →** carries that tile over to the Optimal
-Sovereignty tab. **Export CSV** writes out every site the scan found, not just
-the first two hundred the table lists.
+The line above the table says where the scan looked and how many sites it found.
+If some sites were skipped because their claims would reach off screen, it says
+how many: zoom out or pan, then scan again.
 
-The top ten are also numbered on the World Map itself, 1 to 10 in the table's
-order, so you can see where they lie. Clicking a row outlines its tile in blue;
-clicking a numbered tile opens its row, as clicking the row does. The numbers
-belong to the view you scanned, so moving the map — dragging it, the compass, or
-*View Centred In Map* — clears them; Scan again to number the new view. They
-show only while Site Search is open: switching to another tab or folding the
-panel hides them, and they come back when you return, unless the map has moved
-in the meantime. A row
-you click after moving is still outlined if its tile is on screen. The line
-under the summary says what the map is showing. If a game update changes how the
-map is laid out, the markers turn themselves off and that line says so; the
-results are unaffected. To leave the map untouched, untick *Mark sites on the
-World Map* under the gear.
+The table lists the best 200. **Export CSV** saves every site the scan found as a
+spreadsheet.
 
-The summary line above the results says how much map was checked and how many
-candidates it held, whether or not any met your minimum. If sites were skipped
-because their claim radius runs past the edge of the screen, it says how many —
-zoom out or pan so the whole area is on screen, then scan again.
+### A site's plan
 
-Tiles are dropped from the results when they already carry a town, are already
-claimed, sit closer to an existing town than the distances you set under
-Neighbours, or hold less than your Minimum Tax.
+Click a row to open its plan.
+
+- **Tax slider** — drag it down to see what a lower tax buys you, usually a
+  bigger military bonus.
+- **Balance** — for each production, a bar of how much is spent out of what the
+  city makes, and what is left over each hour. *limit* marks the one that sets
+  the tax.
+- **Military** — the bonus, the buildings that give it, and their hourly upkeep.
+- **Claim grid** — the tiles around the site, showing what to claim and at what
+  level: green for food claims, amber for military, ✕ for tiles you cannot have.
+  A tile's small text is its terrain bonus. Click a tile to cross it out and
+  re-plan without it; hover for its distance, research cost and upkeep.
+- **Optimise x|y →** — takes the site to Optimal Sovereignty.
+
+### On the World Map
+
+After a scan, the top ten are numbered on the World Map itself. Clicking a row
+outlines its tile in blue, and clicking a numbered tile opens its row.
+
+The numbers belong to the view you scanned, so moving the map clears them — scan
+again to number the new view. They show only while Site Search is open.
 
 ## Optimal Sovereignty
 
-Where Site Search answers "which of these tiles is best", this answers "what
-would I actually build on *this* one".
+Where Site Search asks "which of these tiles is best?", this asks "what should I
+build on *this* one?" It plans any tile, even one that is settled, claimed or too
+close to a town — it just tells you which.
 
-| Input | Default |
+**Choose the tile** in one of three ways: pick one of your towns from the list,
+type its coordinates, or press **Pick on map** and click it on the World Map.
+While Pick on map is waiting for your click it turns red; press it again to
+cancel.
+
+| Option | What it does |
 |---|---|
-| One of Your Towns | Fills the coordinates from a town of yours on the map |
-| Coordinates, `x` and `y` | — |
-| Pick on map | Press it, then click a tile on the World Map: that tile fills the coordinates and is optimised. While it waits for the click it turns red and reads *Cancel*, and pressing it again cancels |
-| Sovereignty Radius | Blank, which follows the Claim Radius in City Configuration |
-| Starting Tax | 60%, then dragged on the same slider the results carry |
-| Preserve Existing Sovereignty | Off — on a town of yours, keeps the claims that town itself holds: their research and gold come off the top, and the plan builds on those squares for the cost of the levels it raises them by. A second city of yours nearby keeps its own, which stay as unavailable as a stranger's unless Treat Your Own Claims as Available is on. Left off on a town of yours, its claims are planned as empty ground at full price, for reworking a layout |
-| Use the Plot Allocation from City Configuration | On — plans the centre tile as you mean to terraform it, rather than on its ratings today |
-| Settle Plot Allocation and Treat Your Own Claims as Available | City Configuration's own settings, shown here too in a section of their own: changing them in either tab changes both |
+| Sovereignty Radius | How far out to claim. Leave it blank to use the Claim Radius from City Configuration |
+| Starting Tax | Where the tax slider starts, 60% unless you change it. If the tile cannot hold it, the plan starts at the tile's maximum instead |
+| Preserve Existing Sovereignty | For one of your towns: keep the claims it already holds and plan around them, paying only to raise their levels. Leave it off to plan from scratch, for reworking a layout |
 
-Everything else comes from City Configuration.
+The folded **City Configuration** section below these holds three settings
+shared with that tab — change them in either place:
 
-Any tile can be examined here, including one already settled, already claimed, or
-too near a town — the result says which of those it is rather than hiding the
-tile. The tile must be on screen, and so must the whole radius around it: if the
-radius runs past the edge of the screen, it says how many tiles are missing
-instead of planning around ground it cannot see. Either way it offers a link,
-*Centre the map on x|y*, that moves the map over the tile, zoomed out far enough
-for the whole radius, and optimises it again once the map has loaded. Moving the
-map any other way changes the message to say so; press **Optimise** to ask again.
+- **Use the Plot Allocation from City Configuration** — on, the tile is planned
+  as you will terraform it; off, on its plots as they are today.
+- **The plot allocation** itself.
+- **Treat Your Own Claims as Available** — on, tiles you already claim count as
+  free ground, as if you gave them up; off, they are off limits except to the
+  town that holds them.
 
-The plan is also drawn on the World Map itself: the tile outlined in blue, the
-radius as a dashed square, food claims shaded green and military claims amber,
-claims you keep in blue-grey, and crossed-out tiles marked with a red ✕. Where
-the tiles are big enough to read, each claim carries its level too. It is only
-a picture: clicking the map does what it always does in the game. The drawing
-follows the grid as you drag the tax slider or cross tiles out there. Moving
-the map clears it; press **Optimise** to draw it again. It shows only while this
-tab is open, as the numbers do for Site Search. Unticking *Mark sites on the
-World Map* under the gear turns all of this off.
+Press **Optimise**. The result shows the tile's maximum tax, radius and how many
+tiles around it can be claimed, then the same plan as a Site Search row: slider,
+balance, military and claim grid.
+
+The whole radius has to be on screen. If it is not, the result says so and offers
+*Centre the map on x|y*, which moves the map there and optimises again once it
+has loaded.
+
+The plan is also drawn on the World Map: the tile outlined in blue, the radius as
+a dashed square, food claims green, military claims amber, claims you are keeping
+blue-grey, and crossed-out tiles with a red ✕. It follows the slider and your
+cross-outs. Moving the map clears it — press Optimise to draw it again. It is
+only a picture: clicking the map still does what it normally does.
 
 ## City Configuration
 
-What the planner assumes about your city. It applies to the next Scan and the
-next Optimise.
+Everything the planner needs to know about your city. Changes apply from the next
+Scan or Optimise.
 
-| Group | Setting |
+Each section folds down to its name and a one-line summary, so you can see the
+whole configuration at a glance. Click a section to open it.
+
+| Section | What you set |
 |---|---|
-| Ranking | Minimum Tax a site must hold to be listed (50%) |
-| Settle Tile | How the settle tile's 25 plots are split once terraformed. **Prefill from Selected Tile** copies the ratings of whichever result row you last clicked |
-| City Food | Food consumed per hour, Flour Mill, Nature's Bounty and Geomancer Retreats, number of cities, and whether this one is the capital |
-| Research | Allembine Research, Overflowing Insight, and an override for reading your city's actual research output off the game |
-| Basic Resources | Which booster buildings you run at level 20 |
-| City Buildings | How many of each level 20 building that consumes basic resources every hour — the unit upkeep buildings, warfare colleges, diplomacy and magic buildings, Chancery of Estates and Trade Office. What they consume is taken off production before any sovereignty is paid for, and the Chancery count also sets the discount on each claim's first level |
-| Prestige | The production boost, per resource |
-| Minimum Surplus | A floor per hour on any of the six productions, so a plan cannot starve one |
-| Sovereignty | Claim radius, maximum buildings, which military structure to place, and the smallest military bonus worth having |
-| Neighbours | Minimum distance to other players (10), to your own cities (3) and to alliance towns (3), and whether to treat tiles you have already claimed as available |
+| Settle Tile | How the settle tile's 25 plots will be split once terraformed. **Prefill from Selected Tile** copies the plots of the result row you last clicked |
+| City Food | Food eaten per hour, Nature's Bounty and Geomancer Retreats, how many cities you have, and whether this one is your capital |
+| Research | Allembine Research, Overflowing Insight, and an optional reading of your city's actual research output, which replaces the estimate |
+| Production | For each production: whether its booster building is built (the Flour Mill, for food), whether prestige is boosting it, and how much per hour the plan must leave spare |
+| City Buildings | How many you have of each building that uses wood, clay, iron or stone every hour. Their upkeep is set aside before any sovereignty is paid for, and Chanceries of Estates also make the first level of every claim cheaper. Hover a building's resource icons for what it uses |
+| Sovereignty | Claim radius, the most buildings to place, which military structure to build, and the smallest military bonus worth having |
+| Site Filters | The Minimum Tax a site needs to be listed, how far a site must be from other players, your own cities and alliance towns, and whether tiles you already claim count as free ground |
 
-The form saves itself in your browser as you edit it, under the game's own
-origin, and restores next visit. **Reset to Defaults** clears it back; it does
-not move the panel, which remembers its position separately. Nothing is sent
-anywhere.
+Your configuration is saved in this browser as you edit it. **Reset to Defaults**
+puts back the starting values; it does not move the panel. If you edit it in two
+game tabs at once, the other tab follows along. After an update, settings the
+new version no longer uses are dropped, new ones start at their defaults, and the
+panel says when it has done so.
 
-Settings saved by an older version still load: anything unrecognised is dropped,
-anything missing takes its default, and the panel says when something drifted.
+## How sites are scored
+
+**Food comes first.** The tax a site can sustain on food claims alone is its
+score, and decides the ranking.
+
+**Military sovereignty uses what is left over** — the research, tiles, building
+slots and resources the food plan did not need. So it never costs a site any tax
+and never changes the ranking. You choose the structure; the planner decides how
+many to build, at what levels and on which tiles.
+
+That last choice is a balancing act. A claim's research cost grows with its
+distance from the town, which favours a few buildings close in. But a building's
+upkeep doubles with every level — 150, 300, 600, 1,200, then 2,400 per hour —
+which favours many low-level buildings spread out. The planner weighs the two for
+each site. To trade tax for a bigger military bonus, drag the tax slider down.
 
 ## Terrain bonuses
 
-Most tiles grant a small production bonus — 1–3% of one product, per level of a
-named building — shown on the tile as `+3% Bows`, with the full sentence in the
-hover text. It is **not scored**: those products are outside what the tool
-models. Treat it as advice about what a tile is *for*.
+Most tiles give a small bonus — 1% to 3% of one product per level of a matching
+building — shown on the tile as, say, `+3% Bows`. These bonuses are **not
+scored**, since those products are outside what the planner models. Treat them as
+a hint about what a tile is good for.
 
-Terrain names come from the game client itself. Of the 229 it names, 188 have had
-their bonus read off a real tile; the rest appear nowhere in the world, so there
-has been no tile to stand on and read. The hover text distinguishes a terrain
-that grants nothing from one nobody has read yet, so a blank is never ambiguous.
-
-## How a site is scored
-
-**Food first, alone.** It is the only claim that gives the city anything back,
-and the tax it can sustain is the site's answer.
-
-**Military sovereignty then takes what is left over** — the research the food
-plan did not spend, the tiles it did not claim, the building slots it did not
-use, and what the city can still afford to run. It never costs the site a point
-of tax, so the military column never changes the ranking. You pick the structure;
-the tool works out how many, at what levels, and on which tiles.
-
-That last part is a real trade rather than a rule of thumb. Research costs
-`2 × distance` per point of bonus at any level (less on a claim's first level,
-which a Chancery discounts), so research wants the plan
-concentrated on near tiles — while hourly upkeep climbs steeply with level
-(150/300/600/1,200/2,400), so upkeep wants it spread over many low-level
-buildings. Which wins depends on the site, and each site says what it chose and
-what one more point of tax would have bought.
+A few terrain types have never been found in the game world, so their bonus is
+unknown. Hovering a tile says whether its terrain gives nothing or simply has not
+been recorded yet.
 
 ## Known limits
 
-- **Only the five military structures are offered** as sovereignty buildings. The
-  thirteen crafting ones are costed correctly when a tile's terrain names one,
-  but the picker asks which unit the city is being built to make, and eighteen
-  entries made it a catalogue.
+- **Only the five military structures are offered** — Training Ground, Target
+  Range, Military Academy, Jousting Yard and Assembly Yard. Crafting structures
+  are not offered.
 - **Terrain bonuses are not scored**, as above.
+- **Buildings are assumed to be at level 20**, the level a finished city runs
+  them at.
+- **Only what is on screen is scanned.** Pan or zoom out to cover more ground.
 
----
+## Development
 
-# Development
+Building, testing and releasing the script are covered in
+[DEVELOPMENT.md](DEVELOPMENT.md).
 
-## Setup
+## Licence
 
-```bash
-npm install
-```
-
-Requires **Node 18+**; developed and verified on Node 24 LTS. npm 11+ blocks
-install scripts by default, so `package.json` carries an `allowScripts` entry
-for esbuild — without it the platform binary never unpacks and the build fails.
-
-```bash
-npm run build
-```
-
-Produces `dist/dev/illyriad-sov-scanner.user.js` at a `-dev` version stamped to
-the minute. Install it in Tampermonkey by opening that file's URL in the browser,
-or by pasting its contents into the Tampermonkey editor. `npm run watch` rebuilds
-on save — edits to `src/worker.js` or its imports need the watch restarted.
-
-A dev build installs under its own `@name` and carries no update URLs, so it sits
-beside the released copy in Tampermonkey instead of replacing it, and Tampermonkey
-never pulls `main` down over the code being tested. Dev builds also write to
-`dist/dev/`, which is untracked; only `npm run release` writes
-`dist/illyriad-sov-scanner.user.js`, the file users are served.
-
-```bash
-npm test
-```
-
-Runs the scoring engine against the mechanics worked example, the optimiser, the
-payload reader and capture, the grid, the map markers' geometry, the CSV writer, the settings validators and
-store, and the terrain descriptor table.
-
-## Releasing
-
-`main` is what users run. Tampermonkey polls the built file on `main` by raw URL,
-so pushing to `main` is the deploy.
-
-1. Branch, work, `npm run build`, test against the live client.
-2. Merge to `main`.
-3. Bump `version` in `package.json`.
-4. `npm run release` — the same bundle, versioned from `package.json` with no
-   `-dev` suffix, written to `dist/illyriad-sov-scanner.user.js`.
-5. Commit that file along with the bump, and push.
-
-Two rules keep this from going wrong. **Only ever commit the bundle on `main`** —
-a generated 200KB file tracked on feature branches conflicts on every merge; the
-`.gitignore` tracks exactly that one path and nothing else under `dist/`. And
-**never change the released `@name` or `@namespace`** — Tampermonkey identifies an
-installed script by that pair, so changing either makes every existing install a
-different script that silently stops updating. The dev build's `(dev)` suffix is
-that rule at work rather than an exception to it: it is deliberately a separate
-identity.
-
-Users do not update instantly. `raw.githubusercontent.com` caches for a few
-minutes, and Tampermonkey's own update check runs roughly daily.
-
-## Version scheme
-
-`npm run build` produces `1.0.0-dev.202608202336` in `dist/dev/`; `npm run
-release` produces `1.0.0` in `dist/`. Tampermonkey compares versions semver-style,
-so a `-dev` build sorts *below* the released number — a local build never shadows
-the shipped one on a machine that has both, while every rebuild still looks
-distinct enough that Tampermonkey picks it up instead of silently running a stale
-copy.
-
-## Layout
-
-| Path | Role |
-|---|---|
-| `src/constants.js` | Game constants, each marked with how well it is known — verified, sourced, derived or assumed. Also the terrain name table read from the game client, and the descriptor bonuses read by hand |
-| `src/scoring.js` | Pure engine — the three ceilings, the food knapsack and frontier walk, then the military plan fitted into what they leave. No DOM. Imported by both the worker and the tests |
-| `src/payload.js` | Payload reading and the candidacy filters |
-| `src/capture.js` | Reads the client's live `window.mapData`, cut to the tiles on screen. Reader only — no requests |
-| `src/worker.js` | Web Worker entry; bundled to a string and inlined |
-| `src/focus.js` | The Optimal Sovereignty calculator — one named tile, planned on the shared engine. No DOM |
-| `src/panel.js` | Side panel UI — the three tabs, the gear menu and the CSV writer |
-| `src/overlay.js` | What the panel draws on the game's World Map — Site Search's numbered top ten and selected row, and the optimiser's plan — and the clicks on it that open a row or pick a tile to plan. The geometry is DOM-free and tested |
-| `src/icons.js` | The app mark and the resource icons, as inline SVG and data URIs |
-| `src/settings-store.js` | Saving and restoring the City Configuration; sanitizes anything it loads |
-| `src/main.js` | Userscript entry; wires capture, panel and worker together |
-| `build.mjs` | Two-pass esbuild: worker → string → main bundle |
-
-The product spec and the game-mechanics notes are maintained outside this repo
-and are not tracked here.
-
-## Payload source
-
-The client keeps its map data in `window.mapData`. It is cumulative: each pan
-and zoom is merged in, so its tiles cover every view since the World Map was
-entered, while its `x`, `y` and `zoom` describe the view on screen now — centred
-on `x|y`, reaching `zoom` tiles out on every side. `getLatestPayload` reads that
-global **live** on each Scan and Optimise press and keeps only the tiles within
-that square, so a scan ranks exactly what is on screen and nothing panned past
-earlier. The towns and claims the global carries are kept whole: they only ever
-rule a site out, so one just past the edge still keeps its distance.
-
-This is a plain memory read of data the client already fetched to draw the
-tiles — no network, no side effects. It is the tool's only source: nothing
-patches or wraps the network.
-
-To confirm the global on a live map, open the console and run:
-
-```js
-window.__sovScanner.probeInPageData()
-```
-
-It reports which globals hold a payload. If a client update ever hides
-`window.mapData`, or stops giving it an `x`, `y` and `zoom` to say where the
-screen is, a Scan reports no payload rather than reading a stale one or guessing
-at the view. `IN_PAGE_NAMES` in `src/capture.js` is where a renamed global would
-be added.
-
-## License
-
-[PolyForm Noncommercial 1.0.0](LICENSE) — free to use, modify and share for
-any noncommercial purpose, and it covers the code in this repository only. The
-icon art comes from the official Illyriad fansite kit; it, the game data and
-the terrain names remain the intellectual property of Illyriad Games Limited,
-whose [copyright notice](LICENSE#illyriad-content) applies wherever they
-appear. This is an unofficial fan tool, not affiliated with or endorsed by
-Illyriad Games Limited.
+[PolyForm Noncommercial 1.0.0](LICENSE) — free to use, modify and share for any
+noncommercial purpose. It covers the code in this repository only. The icon art
+comes from the official Illyriad fansite kit; it, the game data and the terrain
+names remain the intellectual property of Illyriad Games Limited, whose
+[copyright notice](LICENSE#illyriad-content) applies wherever they appear. This
+is an unofficial fan tool, not affiliated with or endorsed by Illyriad Games
+Limited.

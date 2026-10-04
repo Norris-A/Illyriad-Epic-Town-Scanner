@@ -1,5 +1,5 @@
-// Web Worker entry. Bundled to a string by build.mjs and instantiated from a
-// Blob URL — there is no file to load from, and fetching one would be a request.
+// Web Worker that runs a scan. build.mjs inlines it as a string, started from a
+// Blob URL.
 
 import { scoreSite } from './scoring.js';
 import {
@@ -29,13 +29,10 @@ self.onmessage = (e) => {
         incomplete.push({ key, ...parseKey(key) });
       } else {
         const plan = scoreSite({ neighbours, settings });
-        // A milsovShortfall site is dropped even though its tax is fine: it just
-        // does not host enough military to be worth the trip.
+        // milsovShortfall: no tax down to tMin reaches the minimum military bonus.
         if (plan && !plan.milsovShortfall && plan.tMax >= settings.tMin) {
-          // `rs` travels with the result so the panel's Prefill button can load
-          // the site's actual allocation into the settle-plot fields, and
-          // `neighbours` so the panel can re-plan the site at any tax the user
-          // drags to without asking the worker to run again.
+          // `rs` feeds the panel's Prefill button; `neighbours` lets it re-plan
+          // at another tax without a new scan.
           results.push({ key, ...parseKey(key), rs: parseRs(tile), neighbours, ...plan });
         }
       }

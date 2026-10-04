@@ -21,6 +21,8 @@ import {
   productionLabel,
   settingsFormHtml,
   settingsMenuHtml,
+  sectionSummaryHtml,
+  plotBarHtml,
   focusFormHtml,
   clampPanelPosition,
   isWorldMapHash,
@@ -147,6 +149,34 @@ test('the markup carries every hook createPanel reads back out of it', () => {
   }
 });
 
+// A folded section is read by its summary alone, so every one has to say
+// something, and say when the allocation cannot be scanned.
+test('every section of the form summarises what it holds', () => {
+  for (const name of new Set(SETTINGS_FIELDS.filter((f) => !f.menu).map((f) => f.group))) {
+    assert.ok(sectionSummaryHtml(name, DEFAULT_SETTINGS), `${name} has no summary`);
+  }
+  const short = { ...DEFAULT_SETTINGS, plots: { wood: 5, clay: 5, iron: 5, stone: 3, food: 5 } };
+  assert.match(sectionSummaryHtml('Settle Tile', short), /<b class="sov-bad">2 short<\/b>$/);
+  assert.equal(sectionSummaryHtml('Production', { ...DEFAULT_SETTINGS, flourMill: false }), 'none set');
+  // The Flour Mill is food's booster, so it counts as one.
+  assert.equal(sectionSummaryHtml('Production', {
+    ...DEFAULT_SETTINGS,
+    flourMill: true,
+    resourceBoosters: { wood: true, clay: true },
+    resourceMinimums: { food: 100 },
+  }), '3 boosters · 1 minimum');
+});
+
+test('the plot bar draws a cell per plot, and marks any past the 25th', () => {
+  const cells = (plots) => plotBarHtml(plots).match(/<i[^>]*>/g);
+  assert.equal(cells({ wood: 2, food: 1 }).length, PLOT_TOTAL, 'a short allocation still spans the bar');
+  assert.deepEqual(cells({ wood: 2, food: 1 }).slice(0, 4),
+    ['<i class="sov-p-wood">', '<i class="sov-p-wood">', '<i class="sov-p-food">', '<i>']);
+  const over = cells({ wood: 20, food: 7 });
+  assert.equal(over.length, 27);
+  assert.deepEqual(over.slice(24), ['<i class="sov-p-food">', '<i class="sov-p-over">', '<i class="sov-p-over">']);
+});
+
 // --- what a click on a row is allowed to mean ---
 
 // Every form the panel draws. A control in any of them is one an edit here
@@ -188,6 +218,8 @@ test('every control is driven by one label of its own', () => {
     }
   }
   for (const f of SETTINGS_FIELDS) {
+    // The Production table's controls name themselves, checked above.
+    if (f.group === 'Production') continue;
     if (f.type === 'checkbox') assert.ok(seen.has(`sov-cb-${f.key}`), `${f.key} lost its label`);
     if (['number', 'select', 'milsov'].includes(f.type)) {
       assert.ok(seen.has(`sov-in-${f.key}`), `${f.key} lost its label`);

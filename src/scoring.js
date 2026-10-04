@@ -1,7 +1,5 @@
-// Pure scoring engine — the ceilings, the food plan, the military plan.
-// No DOM, no network, no globals.
-// This file is imported by both the Web Worker and the Node test suite; keep it
-// free of anything that only exists in one of those environments.
+// The scoring engine: the tax ceilings, the food plan and the military plan.
+// Shared by the Web Worker and the tests, so it uses no DOM or globals.
 
 import {
   PRODUCTION_BASE,
@@ -33,33 +31,24 @@ import {
   UPKEEP_BUILDINGS,
 } from './constants.js';
 
-// Float slack for comparisons on costs and ceilings, which are exact arithmetic
-// on measured constants — anything this close together is equal.
+// Slack for float comparisons on costs and ceilings.
 const EPS = 1e-9;
 
-/**
- * The highest tax the game will accept at or below a ceiling — the rate is whole
- * numbers only. What the floor discards is not rounding error but headroom:
- * research produced and upkeep affordable that a plan pinned to the fraction
- * never spends.
- */
+/** The highest whole-number tax at or below a ceiling; the game takes no other. */
 export function settableTax(t) {
   return Number.isFinite(t) ? Math.floor(t) : t;
 }
 
 // --- Derived city figures ---------------------------------------------------
 
-/** K = F_city * Y_farm / 100 — food per percentage point. 7 food -> 140.98. */
+/** K = F_city * Y_farm / 100: food per percentage point of production. */
 export function computeK(foodPlots) {
   return (foodPlots * FARM_YIELD_L20) / 100;
 }
 
 /**
- * B_other — additive non-tax, non-sovereignty food bonus points.
- *
- * Every food bonus the tool knows is totalled HERE, prestige included, so there
- * is exactly one figure to check against a city's in-game food breakdown. That
- * is also why prestigeBonus is not consulted for food anywhere else.
+ * B_other: every additive food bonus, in points, prestige included. Food
+ * prestige is counted only here.
  */
 export function computeBOther(s) {
   let b = prestigeBonus(s, 'food');
@@ -81,19 +70,10 @@ export function computeConsumption(s) {
 }
 
 /**
- * The city's research output split into the two parts that behave differently
- * under tax: `base`, the library output the (125-T) multiplier scales, and
- * `flat`, the bonuses added after it.
- *
- * The split is what makes research a straight line in T rather than a ray
- * through the origin, and collapsing it loses the intercept: a city with both
- * bonuses keeps 606.5 RP/hr at 100% tax, where one scaled reference predicts
- * proportionally less and understates T_rp by around twenty points.
- *
- * Calibration replaces the base only. The flat bonuses come off the reading
- * first, and the reading's own prestige state divides out with the tax — both
- * for the same reason: a bonus that does not scale, left inside the division,
- * is fitted as one that does and then extrapolates wrongly at every other tax.
+ * The city's research split into `base`, the library output that scales with
+ * (125 - T), and `flat`, the bonuses added after it. A calibration reading
+ * replaces the base: the flat bonuses come off it, and the reading's own tax and
+ * prestige are divided out.
  */
 export function computeResearch(s) {
   const flat = (s.allembine ? ALLEMBINE_RP : 0)
@@ -109,12 +89,8 @@ export function computeResearch(s) {
 // --- Basic resource production ---------------------------------------------
 
 /**
- * Y — per-plot yield at level 20, shared by all four basic resources.
- *
- * `measured` is what lets tRes bind. Every yield is measured today, so the flag
- * is always true; it is carried rather than assumed because the
- * annotate-but-do-not-rank path it drives is subtle enough to keep wired, and a
- * yield the engine cannot stand behind would need somewhere to say so.
+ * Y: per-plot yield at level 20 for the basic resources. `measured: false`
+ * would make the resource ceiling indicative only; every yield is measured.
  */
 export function computeBasicYield() {
   return { yield: BASIC_YIELD_L20, measured: true };
@@ -126,27 +102,20 @@ export function boosterBonus(s, resource) {
 }
 
 /**
- * Points added by the prestige production boost, cumulative with spells and
- * sovereignty rather than a multiplier over them.
- *
- * Food is a key here, but only computeBOther reads it: food points are totalled
- * there with the Flour Mill and the spell, so asking for them again at a food
- * call site would double them.
+ * Points the prestige boost adds to a production. Food's are counted in
+ * computeBOther, so food call sites must not ask for them here.
  */
 export function prestigeBonus(s, resource) {
   return s.prestige?.[resource] ? PRESTIGE_PRODUCTION_BONUS : 0;
 }
 
-/** Every additive point on one basic resource's production percentage. */
 export function resourceBonus(s, resource) {
   return boosterBonus(s, resource) + prestigeBonus(s, resource);
 }
 
 /**
- * How much of one production the plan may not spend, per hour — the surplus the
- * user has fenced off from sovereignty upkeep. A missing or negative figure is
- * no floor rather than a licence to run the resource negative. Keyed by any of
- * MINIMUM_KEYS, food and research included.
+ * The surplus per hour the user has kept back from sovereignty, for any of
+ * MINIMUM_KEYS. Missing or negative is no minimum.
  */
 export function resourceMinimum(s, resource) {
   const v = s.resourceMinimums?.[resource];
@@ -154,9 +123,8 @@ export function resourceMinimum(s, resource) {
 }
 
 /**
- * What the city's buildings consume of one basic resource per hour. Fixed
- * whatever the plan does, like a minimum — but spent, where a minimum is only
- * kept: it comes off the balance as well as the budget.
+ * What the city's buildings consume of one basic resource per hour. Unlike a
+ * minimum, it is spent, so it also comes off the balance.
  */
 export function buildingUpkeep(s, resource) {
   let sum = 0;
@@ -166,69 +134,43 @@ export function buildingUpkeep(s, resource) {
   return sum;
 }
 
-/**
- * Research produced per hour at a tax. Prestige is points on the same (125 - T)
- * percentage as every other production, so it is worth its face value in tax
- * headroom just as a booster is against a resource.
- */
+/** Research produced per hour at a tax; prestige adds points to the production percentage. */
 export function researchAt({ research, rpBonus = 0, tax }) {
   return (research.base * (PRODUCTION_BASE - tax + rpBonus)) / 100 + research.flat;
 }
 
-/**
- * Hourly output of one basic resource at a given tax. Same additive shape as
- * food: the booster is points on the production percentage, not a multiplier,
- * so it is worth its face value in tax headroom.
- */
+/** Hourly output of one basic resource at a given tax. */
 export function basicProduction({ plots, yield: y, bonus, tax }) {
   return (plots * y * (PRODUCTION_BASE - tax + bonus)) / 100;
 }
 
 // --- Claim costs -----------------------------------------------------------
 
-/**
- * Claim distance as the game charges it, quantised to CLAIM_DISTANCE_DECIMALS.
- * A diagonal is 1.41, not 1.414214, and the difference is not a rounding
- * courtesy: the exact float overcharges the diagonal and undercharges the (2,1)
- * tile, which moves knapsack decisions near the budget in both directions.
- */
+/** Claim distance as the game charges it, rounded to CLAIM_DISTANCE_DECIMALS. */
 export function distance(dx, dy) {
   const q = 10 ** CLAIM_DISTANCE_DECIMALS;
   return Math.round(Math.sqrt(dx * dx + dy * dy) * q) / q;
 }
 
 /**
- * The factor a city's Chanceries put on the cost of a claim's first level: 0.6
- * for one at level 20, and each further one adds half the discount of the one
- * before. 1 for a city without one.
+ * The factor a city's Chanceries put on a claim's first level: 0.6 for one,
+ * each further one adding half the discount before. 1 without a Chancery.
  */
 export function chanceryFactor(s) {
   const n = s.upkeepBuildings?.chanceryOfEstates ?? 0;
   return 1 - 2 * CHANCERY_DISCOUNT_L20 * (1 - 0.5 ** n);
 }
 
-/**
- * Hourly research a claim held at `level` costs: 10 x distance for each level,
- * the first of them discounted by the city's Chanceries.
- */
+/** Hourly research for a claim at `level`; the Chancery discounts its first level. */
 function claimRp(d, level, chancery) {
   if (level <= 0) return 0;
   return CLAIM_RP_PER_LEVEL_DISTANCE * d * (level - 1 + chancery);
 }
 
 /**
- * Upkeep for raising a claim from `held` to `level`. Gold is exactly 10x RP.
- * `chancery` is the chanceryFactor of the city paying.
- *
- * `d` arrives already quantised from distance(), and level multiplies it
- * exactly: the game rounds the distance, not the finished cost. What is left
- * here is exact float, rounded only at the knapsack weight, which is the one
- * place it has to be an integer.
- *
- * Zero where the standing claim is already at or above `level`. A tile carries
- * `held` only where the plan is preserving what is there, and the whole of that
- * standing bill is charged once as a floor — so charging any of it here as well
- * would price those levels twice.
+ * Upkeep for raising a claim from `held` to `level`; gold is 10x RP. Zero when
+ * the claim already stands at `level`, since kept claims are charged
+ * separately.
  */
 export function claimUpkeep(d, level, chancery = 1, held) {
   const from = held ?? 0;
@@ -239,54 +181,39 @@ export function claimUpkeep(d, level, chancery = 1, held) {
 // --- Structure upkeep ------------------------------------------------------
 
 /**
- * The structure record a placed building names. One naming none, or naming one
- * the table does not know, resolves to the default — which is a Production
- * Structure, so a blank or a typo errs toward billing rather than toward a free
- * claim. Every reader goes through here, so that fallback is decided once.
+ * The structure a placed building names. Unknown or missing names resolve to
+ * the default, a Production Structure, so they are still charged upkeep.
  */
 export function sovStructure(entry) {
   return SOV_STRUCTURE_BY_KEY[entry?.structure] ?? SOV_STRUCTURE_BY_KEY[DEFAULT_SOV_STRUCTURE];
 }
 
-/** Whether a building's structure is charged hourly upkeep at all. */
 export function isProductionStructure(entry) {
   return sovStructure(entry).type === 'production';
 }
 
 /**
- * Hourly cost of one building, of EACH of wood, clay, iron and stone.
- * It keys off the BUILDING level; the claim's sovereignty level is paid in RP
- * and gold instead. A Resource Structure is charged nothing HERE at any level —
- * it still pays its claim's RP and gold, which is simply not this function's
- * half of the bill.
+ * Hourly cost of one building, in each of wood, clay, iron and stone, by its
+ * building level. Resource Structures cost nothing here.
  */
 export function structureUpkeep(entry) {
   return isProductionStructure(entry) ? (MILSOV_UPKEEP_BY_LEVEL[entry?.buildingLevel] ?? 0) : 0;
 }
 
-/** The same, summed over a whole plan. */
 export function milsovUpkeep(entries) {
   return (entries ?? []).reduce((sum, e) => sum + structureUpkeep(e), 0);
 }
 
 // --- The three ceilings ----------------------------------------------------
 
-/**
- * T_food = 125 + B_other + S_food - (C + M_food)/K. A minimum adds to
- * consumption: both are food per hour the tax may not take.
- */
+/** T_food = 125 + B_other + S_food - (C + M_food)/K. */
 export function tFood({ bOther, sFood, consumption, k, minimum = 0 }) {
   return PRODUCTION_BASE + bOther + sFood - (consumption + minimum) / k;
 }
 
 /**
- * T_rp = 125 + prestige - 100 * (U_RP + M_rp - flat) / base. A minimum adds to
- * the claims' bill, being research they may not have.
- *
- * The flat bonuses are a bill the tax never touches, so they come off the spend
- * before it is charged against the part of production that does scale. A city
- * whose claims cost less than its flat research has no research ceiling at all,
- * and the subtraction is what lets the figure run past 125 to say so.
+ * T_rp = 125 + prestige - 100 * (U_RP + M_rp - flat) / base. With claims cheaper
+ * than the flat research it runs past 125, meaning no research ceiling.
  */
 export function tRp({ uRp, research, rpBonus = 0, minimum = 0 }) {
   return PRODUCTION_BASE + rpBonus
@@ -294,37 +221,17 @@ export function tRp({ uRp, research, rpBonus = 0, minimum = 0 }) {
 }
 
 /**
- * T_res — per-resource ceiling from military sovereignty structure upkeep, from
- * what the city's own buildings consume, and from the surplus the user asked to
- * keep on top of both.
+ * T_res: the ceiling set by what the basic resources must pay for — military
+ * structure upkeep, the city's buildings, and any minimum surplus — checked for
+ * each resource, with the worst one binding. Infinity when nothing is owed.
  *
- * Returns Infinity (non-binding, unflagged) whenever there is nothing to pay
- * for: no minimum set, no building with upkeep, and nothing placed that is
- * charged hourly upkeep — no military sovereignty at all, or Resource
- * Structures, which pay only their claims. A minimum or a building alone is a
- * ceiling on the same terms as an hourly bill, being production the tax may not
- * take, so it binds with nothing built on the claims.
- *
- * `indicative` says the ceiling rests on a yield the engine cannot stand behind,
- * in which case scoreSite reports it without letting it into T_max. A measured
- * yield does not set it — see computeBasicYield for why the flag is carried.
- *
- * `impossible` marks a resource the settle tile has no plots of while something
- * is owed in it — a bill, a building or a minimum, since no plots cannot leave
- * 1,000/hr standing either. It produces nothing at any tax, so the ceiling is
- * genuinely -Infinity rather than merely low, and it is reported as a flag
- * because a caller filtering on the number alone would drop the site unable to
- * say why.
- *
- * All four resources are checked even once one has come back impossible, so
- * `binding` always names the worst of them rather than the first bad one.
+ * `impossible` marks a resource owed by a settle tile with no plots of it: no
+ * tax pays that, so the ceiling is -Infinity.
  */
 export function tRes({ milsovAssignments, plots, settings = {} }) {
   const none = { ceiling: Infinity, indicative: false, binding: null, impossible: false };
   const upkeep = milsovUpkeep(milsovAssignments ?? []);
   const fixed = (res) => resourceMinimum(settings, res) + buildingUpkeep(settings, res);
-  // A zero bill covers nothing placed, Resource Structures, and the degenerate
-  // case of a level with no entry in the upkeep table.
   if (upkeep <= 0 && !BASIC_RESOURCES.some((res) => fixed(res) > 0)) return none;
   const { yield: y, measured } = computeBasicYield(settings);
   let worst = Infinity;
@@ -334,8 +241,7 @@ export function tRes({ milsovAssignments, plots, settings = {} }) {
     //   =>  T <= 125 + bonus - 100*(upkeep + buildings + minimum)/(plots*Y)
     const need = upkeep + fixed(res);
     const perPoint = plots[res] * y;
-    // No plots owing nothing is not a constraint; no plots owing something is
-    // one no tax rate satisfies.
+    // No plots is a constraint only if something is owed.
     const ceiling = perPoint > 0
       ? PRODUCTION_BASE + resourceBonus(settings, res) - (100 * need) / perPoint
       : (need > 0 ? -Infinity : Infinity);
@@ -348,33 +254,16 @@ export function tRes({ milsovAssignments, plots, settings = {} }) {
 }
 
 /**
- * What the city has left over per hour at a given tax, once the plan is paid
- * for: the two ceilings' own quantities, gold, and the four basic resources.
+ * What the city has left per hour at a tax once the plan is paid for: food,
+ * research, gold and the basic resources. At T_max the binding ceiling reads 0.
  *
- * Gold is not a ceiling but a FLOOR, which is why no T_gold sits beside the
- * other three: income is 0.04 x T x C and RISES with tax, against a bill fixed
- * at 10x the claims' research. So the constraint is 0.04 x T x C >= 10 x U_RP,
- * satisfied from above — roughly T >= U_RP/123 at C = 30,800 — and a plan fails
- * it only by taxing too LITTLE. Reported, never solved for.
+ * Gold is a floor, not a ceiling: income rises with tax while the claims' bill
+ * is fixed, so a plan can only fail it by taxing too little. It is reported,
+ * never solved for.
  *
- * These are the same equations as the ceilings, read as a balance instead of
- * solved for T — so at T_max the binding one comes out at 0, which is what
- * makes the row self-checking. Nothing here goes negative while every ceiling
- * is applied: T_max is their minimum, so a lower tax only produces more. A
- * figure at zero is the one that named the tax.
- *
- * `indicative` is copied from the yield and covers the four basic figures only;
- * food and research do not depend on it.
- *
- * Every figure reads as the whole surplus, not the part above any minimum set:
- * the minimum constrains the plan, and netting it off here would hide the
- * production it exists to protect. A figure held up by its own minimum
- * therefore reads at that minimum rather than at zero.
- *
- * `base` holds the same seven quantities before the plan is paid for, so each
- * figure can be shown as base minus what the plan takes. What is taken includes
- * the city's own buildings, which are not the plan's but are paid from the same
- * production; `buildingUpkeep` holds their share of each basic resource.
+ * Figures are the whole surplus, minimums included. `base` holds the same
+ * figures before the plan, and `buildingUpkeep` the city's buildings' share of
+ * what is spent.
  */
 export function surplusAt({ tax, settings, sFood, uRp, uGold, milsovAssignments }) {
   const s = settings;
@@ -421,11 +310,7 @@ export function tMax({ food, rp, res }) {
   return { value: best.value, binding: best.name };
 }
 
-/**
- * Gold tracks RP exactly 10:1 for a claim, so a plan's own bill is a conversion.
- * `keptClaimRp` — claims the city already holds, see focus.js — is added here and
- * nowhere else, so the three plan paths cannot disagree about counting it.
- */
+/** The plan's gold bill: 10x its research, plus the kept claims' (keptClaimRp). */
 export function claimGold(uRp, s) {
   return (uRp + (s?.keptClaimRp ?? 0)) * 10;
 }
@@ -437,13 +322,9 @@ export function goldNet({ tax, consumption, uGold }) {
 // --- The food plan ---------------------------------------------------------
 
 /**
- * 0/1 knapsack over food candidates. Weight = round(cost_RP), value = food.
- * Returns, for every RP spend from 0..budget, the best achievable S_food, plus
- * the chosen set at each spend level.
- *
- * `maxItems` adds a count dimension. It only binds when there are more
- * candidates than the building cap allows, which at R_claim=2
- * (24 candidates, cap 20) is rare — so the cheap 1-D DP runs unless needed.
+ * 0/1 knapsack over food candidates: weight round(cost_RP), value food. Returns
+ * the best S_food at every spend from 0 to budget, and the set chosen at each.
+ * `maxItems` adds a count limit, used only when the building cap binds.
  */
 export function knapsack(candidates, budget, maxItems = Infinity) {
   const needCountDim = candidates.length > maxItems;
@@ -469,8 +350,7 @@ export function knapsack(candidates, budget, maxItems = Infinity) {
     return { best, took, bytesPerItem, countLimited: false };
   }
 
-  // Count-limited variant: exact, but O(items * budget * maxItems). Only
-  // reached when the building cap actually binds.
+  // Count-limited variant, O(items * budget * maxItems).
   const dp = [];
   for (let c = 0; c <= maxItems; c++) dp.push(new Float64Array(width).fill(-Infinity));
   dp[0].fill(0);
@@ -512,12 +392,9 @@ export function knapsack(candidates, budget, maxItems = Infinity) {
 }
 
 /**
- * Recover the item indices chosen at a given spend level.
- *
- * Both DPs mark item i whenever it improves a cell, so a cell may carry marks
- * from several items; the highest-indexed mark set the cell's final value.
- * Scanning items downwards and continuing below each hit is therefore exact —
- * when item i was processed its predecessor cell held the optimum over 0..i-1.
+ * Recover the items chosen at a spend level. A cell can carry marks from
+ * several items, the highest-indexed of which set its value, so scanning items
+ * downwards is exact.
  */
 export function recoverSet(candidates, dpResult, spend) {
   const chosen = [];
@@ -548,36 +425,20 @@ export function recoverSet(candidates, dpResult, spend) {
 // --- Military sovereignty: spending what the food plan left -----------------
 
 /**
- * The three budgets a military plan may spend at `tax` without costing the site
- * a single point of it.
+ * What a military plan may spend at `tax` without lowering it — what the food
+ * plan left over:
  *
- * Food is planned first and sets the tax. Military sovereignty gives the city
- * nothing back — it charges research, gold and four basic resources per hour —
- * so every building can only ever push a ceiling down. What it may have is
- * whatever the food plan did not need:
+ *  - `rp`     research produced at `tax`, less the food claims and the minimum
+ *  - `upkeep` production of the scarcest basic resource, less the city's
+ *             buildings and the minimum
+ *  - `slots`  the building cap, less the food claims
  *
- *  - `rp`   research produced at `tax` less what the food claims already cost
- *           and less any the user asked to keep, which is the slack in T_rp. It
- *           exists because S_food is a step and T_rp is a line: the walk stops
- *           at the last food tile worth buying, and the change left over is too
- *           little for another one.
- *  - `upkeep` hourly production of the SCARCEST basic resource at `tax`, less
- *           what the city's buildings consume of it and any surplus of it
- *           the user asked to keep, which is the slack in T_res. Charged of
- *           each of the four, so the worst one is the budget.
- *  - `slots` the building cap, less what the food plan is already using.
- *
- * A research-bound site returns rp = 0, correctly: T_rp is what set the tax
- * there, so there is no free research to spend. An allocation with no plots of
- * some basic resource returns upkeep = 0, also correctly — no tax rate pays a
- * bill in a resource the city does not produce. Neither is an error, and both
- * are reported rather than inferred, so a site with no military can say why.
+ * A research-bound site has rp = 0; a resource with no plots gives upkeep = 0.
  */
 export function milsovHeadroom({ tax, settings, uRp = 0, buildingsUsed = 0 }) {
   const s = settings;
   const slots = Math.max(0, (s.maxBuildings ?? 20) - buildingsUsed);
-  // A site with no finite tax has no balance to spend from; -Infinity would
-  // otherwise read as an infinite budget.
+  // An infinite tax would otherwise read as an infinite budget.
   if (!Number.isFinite(tax)) return { rp: 0, upkeep: 0, slots };
 
   const { yield: y } = computeBasicYield(s);
@@ -592,26 +453,14 @@ export function milsovHeadroom({ tax, settings, uRp = 0, buildingsUsed = 0 }) {
     rp: Math.max(0, researchAt({
       research: computeResearch(s), rpBonus: prestigeBonus(s, 'research'), tax,
     }) - uRp - resourceMinimum(s, 'research')),
-    // Buildings or a minimum bigger than the production they draw on leave
-    // nothing to spend rather than a negative budget.
     upkeep: Math.max(0, upkeep),
     slots,
   };
 }
 
 /**
- * What a tile's own terrain adds to the structure being placed on it, in points
- * per building level.
- *
- * Only when the descriptor names THIS structure. A Wooded Glade grants +2%
- * Spear Units per level of Training Ground, so a Training Ground there runs at
- * 7 points a level instead of 5 — but the same tile does nothing for a Jousting
- * Yard. `sovKey` is the descriptor's structure as a key, which is what makes
- * this a comparison rather than a name match.
- *
- * Zero for a tile whose bonus nobody has read yet, which is the honest answer:
- * an unread descriptor is scored as granting nothing, so a plan can only be
- * understated by the gaps in the table, never overstated.
+ * Points per building level a tile's terrain adds to the structure placed on
+ * it, when its descriptor names that structure. An unread descriptor adds none.
  */
 function descriptorBonus(tile, structure) {
   const d = tile?.descriptor;
@@ -619,88 +468,39 @@ function descriptorBonus(tile, structure) {
 }
 
 /**
- * Choose how many military buildings to place, at what levels, on which tiles —
- * the most total production bonus those budgets will buy.
+ * Choose how many military buildings to place, at what levels and on which
+ * tiles, for the most production bonus the budgets buy.
  *
- * `tiles` are the free land tiles in ASCENDING distance; the plan takes a
- * prefix of them. Two facts about the game's costs make this exact and cheap
- * rather than a search over 6^24 assignments.
- *
- * **A claim's cost is distance times a rate that rises with level.** A claim
- * costs 10 x distance for each level, the first of them discounted by a
- * Chancery. The rate rises with level and multiplies distance, so by the
- * rearrangement inequality the cheapest arrangement always puts the highest
- * levels nearest. So the plan is a staircase: levels never rise with distance.
- *
- * **That staircase decomposes into five independent layers.** Let `m[j]` be how
- * many tiles carry level j or better, and let D_j(m) be the summed distance of
- * the m nearest tiles, counting as zero any tile whose claim already stands at
- * level j — that layer is bought, and only the levels above it are still for
- * sale. Then, writing STEP[j] for what raising one building to level j adds to
- * its hourly bill, and RATE[j] for what raising its claim to level j adds per
- * unit of distance — chancery for level 1, the only level a Chancery
- * discounts, and 1 above:
+ * `tiles` are free land tiles by ascending distance. A claim's research cost
+ * is distance times a rate that rises with level, so the cheapest arrangement
+ * puts the highest levels nearest: levels never rise with distance. The plan is
+ * then five layer counts m[1] >= ... >= m[5], m[j] being how many tiles reach
+ * level j, and every cost is a sum of per-layer terms:
  *
  *     bonus  = 5 x SUM m[j]
  *     rp     = 10 x SUM RATE[j] x D_j(m[j])
  *     upkeep = SUM STEP[j] x m[j]
  *
- * All three are sums of per-layer terms, so the whole problem is five numbers,
- * m[1] >= m[2] >= ... >= m[5] — an ordering the search keeps by capping each
- * layer at the one below it.
+ * where D_j(m) is the summed distance of the m nearest tiles not already at
+ * level j, and RATE is the claim cost per level step: chancery for the first,
+ * then 1. Research favours few near buildings; the rising upkeep steps favour
+ * many low ones. The search walks layers cheapest-first with a bound, and breaks
+ * equal bonuses on lower research.
  *
- * **The two budgets pull opposite ways**, which is the whole content of the
- * answer. Research wants concentration, because reaching a further tile costs
- * more for the same bonus. Upkeep wants spreading, because STEP is convex —
- * 150, 150, 300, 600, 1,200 — so the same bonus split over more buildings runs
- * cheaper. Which wins is a property of the site, not a rule of thumb, and it is
- * why several low-level structures often beat one Sov V and sometimes do not. A
- * Chancery pulls research toward spreading as well, its discount making a level
- * 1 claim the cheapest bonus there is.
- *
- * The search walks layers cheapest-first, taking the largest feasible count at
- * each, so its first descent is already a strong answer and the bound prunes the
- * rest hard. A site whose budgets cover every tile at level 5 skips it entirely.
- *
- * **The search maximises building LEVELS, not bonus.** Those are the same thing
- * only while every tile pays 5 points a level, which stops being true when a
- * tile's descriptor names the structure being placed (descriptorBonus). The
- * reported bonus is exact — it is summed per tile — but the tiles are still
- * chosen nearest-first, so a plan can miss a matching tile one square further
- * out that would have paid more. Rare, since a terrain names one structure in
- * eighteen and only a handful of tiles in a ring can match, and it errs by
- * understating rather than by inventing. Making selection bonus-aware means
- * giving up the prefix-sum distance bound the search is built on.
- *
- * **Tiles are taken nearest-first, which standing claims can make second-best.**
- * A further tile already at Sov V costs no research to build on, where the
- * nearer one taken ahead of it has all five levels to buy; a prefix of one
- * distance order cannot express that. It costs the plan a tile it could have
- * afforded rather than one it cannot — understating, never inventing, the same
- * way the descriptor case below does.
- *
- * **Equal bonuses are broken on research.** Bonus is quantised in fives, so
- * several staircases routinely reach the same total by different routes — one
- * tile at level 2, or two at level 1 — and they are not equally good: gold tracks
- * research at exactly 10:1, so the cheaper one in RP is strictly better in gold
- * as well, and leaves more research for everything else. Hence the bound keeps
- * branches that can only TIE, and a tie is taken on lower RP. Cutting ties
- * instead handed the answer to whichever staircase the descent found first.
+ * Tiles are taken nearest-first, so a slightly further tile whose terrain names
+ * the structure, or that already holds a claim, can be missed. That only ever
+ * understates the plan.
  *
  * @param {number} [chancery] the paying city's chanceryFactor.
- * @param {string} [structure] the sovereignty structure key being placed. Tiles
- *   whose descriptor names it run at a higher rate per level — see
- *   descriptorBonus.
+ * @param {string} [structure] the structure being placed; see descriptorBonus.
  */
 export function planMilsov({ tiles, headroom, chancery = 1, structure }) {
   const EPS = 1e-9;
   const n = Math.min(tiles.length, Math.floor(headroom.slots));
-  // RATE[j], indexed from 0 for level 1, as the doc above defines it.
+  // RATE[j], indexed from 0 for level 1.
   const RATE = [chancery, 1, 1, 1, 1];
 
-  // D[j][m] — summed distance of the m nearest free tiles for layer j, which is
-  // level j+1. A tile whose claim already stands at that level or above adds
-  // nothing: the layer is charged only to the tiles that still have to buy it.
+  // D[j][m]: summed distance of the m nearest tiles not already at level j+1.
   const D = [];
   for (let j = 0; j < MILSOV_MAX_LEVEL; j++) {
     const pre = [0];
@@ -714,7 +514,6 @@ export function planMilsov({ tiles, headroom, chancery = 1, structure }) {
 
   const layerTotal = MILSOV_UPKEEP_STEP.reduce((a, b) => a + b, 0);
   const finish = (counts) => {
-    // Tile i carries a level for every layer that reaches past it.
     const levels = [];
     let bonus = 0;
     for (let i = 0; i < n; i++) {
@@ -733,8 +532,7 @@ export function planMilsov({ tiles, headroom, chancery = 1, structure }) {
     };
   };
 
-  // Every free tile at the top level. Where both budgets cover it there is
-  // nothing to choose and no reason to search for it.
+  // Skip the search when both budgets cover every tile at the top level.
   const topRp = D.reduce((sum, _, j) => sum + rpOf(j, n), 0);
   if (topRp <= headroom.rp + EPS && layerTotal * n <= headroom.upkeep + EPS) {
     return finish(new Array(MILSOV_MAX_LEVEL).fill(n));
@@ -750,20 +548,14 @@ export function planMilsov({ tiles, headroom, chancery = 1, structure }) {
       }
       return;
     }
-    // The largest count this layer can still afford. Both costs rise with the
-    // count, so the feasible counts are the run 0..vMax.
     let vMax = 0;
     while (vMax < cap
         && rp + rpOf(j, vMax + 1) <= headroom.rp + EPS
         && upkeep + MILSOV_UPKEEP_STEP[j] * (vMax + 1) <= headroom.upkeep + EPS) vMax++;
 
     for (let v = vMax; v >= 0; v--) {
-      // No later layer may exceed this one, so (layers left) x v bounds
-      // everything below — and it only falls as v does, so both cuts end the
-      // loop rather than skipping a branch. A branch that can only TIE survives
-      // the first, because the RP tie-break is decided at the leaf; it dies on
-      // the second once its RP already matches the incumbent's, since research
-      // only grows with depth.
+      // No later layer may exceed this one, so (layers left) x v bounds what is
+      // left. Branches that can only tie survive, for the research tie-break.
       if (best) {
         const bound = units + (MILSOV_MAX_LEVEL - j) * v;
         if (bound < best.units) break;
@@ -780,10 +572,8 @@ export function planMilsov({ tiles, headroom, chancery = 1, structure }) {
 }
 
 /**
- * Turn a chosen staircase into claims on the actual tiles. The building always
- * matches its claim's sovereignty level: bonus and hourly upkeep both follow the
- * BUILDING, so a claim above its building buys nothing and the same building on
- * a cheaper claim beats it outright.
+ * Place a chosen staircase on the tiles. Each claim is at its building's level,
+ * since a claim above its building buys nothing.
  */
 function milsovClaims({ tiles, levels, structure, chancery }) {
   return levels.map((level, i) => {
@@ -791,8 +581,7 @@ function milsovClaims({ tiles, levels, structure, chancery }) {
     return {
       ...tiles[i],
       structure,
-      // A standing claim is not given back, so it keeps the level it is at even
-      // where the plan wanted no more than a smaller building on it.
+      // A standing claim keeps its level.
       sovLevel: Math.max(level, held),
       buildingLevel: level,
       ...claimUpkeep(tiles[i].d, level, chancery, held),
@@ -800,14 +589,9 @@ function milsovClaims({ tiles, levels, structure, chancery }) {
   });
 }
 
-/**
- * Why a site got no military sovereignty, in the user's terms. Returned only
- * when nothing was placed — when something was, the plan speaks for itself.
- */
+/** Why no military sovereignty was placed, as a key into MILSOV_BLOCKED_TEXT. */
 function milsovBlockedBy({ hosts, free, headroom, chancery }) {
   if (free.length === 0) return 'tiles';
-  // Tiles were left over; none of them can host. Distinct from 'tiles' because
-  // the two send the user to different places.
   if (hosts.length === 0) return 'water';
   if (headroom.slots < 1) return 'slots';
   if (headroom.upkeep + 1e-9 < MILSOV_UPKEEP_BY_LEVEL[1]) return 'upkeep';
@@ -818,41 +602,29 @@ function milsovBlockedBy({ hosts, free, headroom, chancery }) {
 }
 
 /**
- * Everything about a site that does not depend on the tax: the tiles in cost
- * order, the food candidates, and the knapsack over them.
- *
- * Split out from planning because the knapsack is by far the most expensive
- * thing here — some thousands of spend levels against two dozen tiles, and the
- * building cap puts it on the count-limited path — while a plan at one tax is a
- * bisection and a small search. Anything asking the same site about many taxes,
- * which is what the panel's tax slider does on every drag, prepares once and
- * plans per tax. Preparing per tax instead is a fifty-fold difference and was
- * enough to make the slider feel broken.
+ * Everything about a site that does not depend on the tax, including the
+ * knapsack, the expensive part. Callers asking about many taxes, like the tax
+ * slider, prepare once and plan per tax.
  */
 export function prepareSite({ neighbours, settings }) {
   const s = settings;
   const chancery = chanceryFactor(s);
   const maxBuildings = s.maxBuildings ?? 20;
 
-  // Equal distances break toward the lower food rating, which only matters once
-  // military sovereignty is choosing hosts: among tiles that cost the same it
-  // should take the one the food plan would miss least, not whichever the dy/dx
-  // scan order happened to produce.
+  // Equal distances put the lower food rating first, for military hosts.
   const byDistance = neighbours
     .map((n, idx) => ({ ...n, idx, d: distance(n.dx, n.dy) }))
     .sort((a, b) => a.d - b.d || a.food - b.food);
 
-  // Food sovereignty wants a level 5 claim, so a tile standing at some of that
-  // is charged only the levels between — down to a weight of nothing for one
-  // already there, which is food the city has and has paid for.
+  // A tile already holding part of a level 5 claim is charged only the rest.
   const foodCandidates = byDistance
     .filter((t) => t.food > 0)
     .map((t) => {
       const up = claimUpkeep(t.d, FOOD_CLAIM_LEVEL, chancery, t.held);
       return { ...t, level: FOOD_CLAIM_LEVEL, ...up, weight: Math.round(up.rp) };
     });
-  // The most research the city can produce, which is at 0 tax. The budget has to
-  // cover it or the knapsack truncates the frontier silently.
+  // The most research the city can produce, at 0% tax; a smaller budget would
+  // truncate the knapsack.
   const rpBonus = prestigeBonus(s, 'research');
   const budget = Math.max(0, Math.round(researchAt({ research: computeResearch(s), rpBonus, tax: 0 })));
   return {
@@ -875,12 +647,9 @@ export function prepareSite({ neighbours, settings }) {
 
 
 /**
- * The cheapest food spend that still holds `tax`, or null where no food plan
- * does. dp.best is non-decreasing in spend, so this is a bisection.
- *
- * Below the site's own maximum a CHEAPER food plan will do — food only has to
- * be good enough to hold the tax, not to maximise it — and the research it no
- * longer spends is most of what pays for military sovereignty.
+ * The cheapest food spend that still holds `tax`, or null if none does. Below
+ * the site's maximum a cheaper food plan suffices, which frees research for
+ * military sovereignty.
  */
 function foodSpendFor(ctx, tax) {
   const needed = tax - PRODUCTION_BASE - ctx.bOther + (ctx.consumption + ctx.minFood) / ctx.k;
@@ -892,20 +661,11 @@ function foodSpendFor(ctx, tax) {
     if (ctx.dp.best[mid] >= needed - EPS) hi = mid;
     else lo = mid + 1;
   }
-  // The food claims alone must not outspend the research produced at this tax,
-  // nor eat into any research the user asked to keep free of sovereignty.
   const produced = researchAt({ research: ctx.research, rpBonus: ctx.rpBonus, tax });
   return produced - lo - ctx.minRp < -EPS ? null : lo;
 }
 
-/**
- * The most food a site can make at `tax` when no plan holds it: the cheapest
- * plan reaching the best food the research produced at that tax can pay for.
- *
- * The city cannot run on it — that is what a food ceiling below the tax means —
- * but it is the arithmetic at that rate, and the shortfall on the balance is
- * read off it.
- */
+/** The most food reachable at a tax no plan holds, for the deficit it shows. */
 function bestFoodSpend(ctx, tax) {
   const produced = researchAt({ research: ctx.research, rpBonus: ctx.rpBonus, tax });
   const affordable = Math.max(0, Math.min(ctx.budget, Math.floor(produced - ctx.minRp)));
@@ -922,14 +682,8 @@ function bestFoodSpend(ctx, tax) {
 
 /**
  * The whole plan at one tax: the cheapest food that holds it, then the most
- * military sovereignty the leftovers buy.
- *
- * This is what makes the tax an input rather than only an output. At the site's
- * own maximum it returns the free plan; run it lower and the food claims get
- * cheaper, which is where the extra military comes from. Returns null for a tax
- * the site cannot hold at all, unless `bestEffort` asks for the arithmetic at
- * that tax anyway — the plan then reports a T_max below its own tax, and its
- * surplus carries the deficit that says by how much.
+ * military the leftovers buy. Null for a tax the site cannot hold, unless
+ * `bestEffort` asks for the plan at that tax anyway, deficit and all.
  */
 export function planSiteAt(ctx, tax, { bestEffort = false } = {}) {
   const s = ctx.settings;
@@ -941,10 +695,8 @@ export function planSiteAt(ctx, tax, { bestEffort = false } = {}) {
   const tiles = recoverSet(ctx.foodCandidates, ctx.dp, spend).map((i) => ctx.foodCandidates[i]);
   const claimed = new Set(tiles.map((t) => t.idx));
   const free = ctx.byDistance.filter((t) => !claimed.has(t.idx));
-  // Water takes no Production Structure, so a military plan gets the free LAND
-  // tiles. planMilsov and milsovClaims both take this one list, in this order:
-  // milsovClaims maps levels onto tiles by position, so filtering one and not
-  // the other puts a level on a tile it was not costed against.
+  // Water takes no structure. planMilsov and milsovClaims must get this same
+  // list in this order: levels are mapped onto tiles by position.
   const hosts = free.filter((t) => !t.water);
   const headroom = milsovHeadroom({
     tax, settings: s, uRp: spend, buildingsUsed: tiles.length,
@@ -961,9 +713,6 @@ export function planSiteAt(ctx, tax, { bestEffort = false } = {}) {
   const uRp = spend + milsovRp;
   const uGold = claimGold(uRp, s);
   const resCeiling = tRes({ milsovAssignments: milsov, plots: s.plots, settings: s });
-  // An indicative ceiling annotates the plan; it does not constrain it. Nothing
-  // marks one today — the yields are measured — but the path stays wired for a
-  // figure that is ever computed before it is trusted.
   const ceiling = tMax({
     food: tFood({
       bOther: ctx.bOther, sFood, consumption: ctx.consumption, k: ctx.k, minimum: ctx.minFood,
@@ -974,8 +723,7 @@ export function planSiteAt(ctx, tax, { bestEffort = false } = {}) {
 
   return {
     tax,
-    // False where the plan is the arithmetic at a tax the site cannot hold, so
-    // a reader is never left to infer it from tMax being below tax.
+    // False when the plan is at a tax the site cannot hold.
     holds: held !== null,
     tMax: ceiling.value,
     binding: ceiling.binding,
@@ -984,8 +732,6 @@ export function planSiteAt(ctx, tax, { bestEffort = false } = {}) {
     uRp,
     uGold,
     goldNet: goldNet({ tax, consumption: ctx.consumption, uGold }),
-    // What running this plan leaves per hour, at the tax it is run at, so the
-    // ceiling that binds reads 0 and the rest read as headroom.
     surplus: Number.isFinite(tax)
       ? surplusAt({ tax, settings: s, sFood, uRp, uGold, milsovAssignments: milsov })
       : null,
@@ -1008,20 +754,9 @@ export function planSiteAt(ctx, tax, { bestEffort = false } = {}) {
 }
 
 /**
- * The most military sovereignty reachable at or above `floor`, and the highest
- * tax that still delivers `required`.
- *
- * Achievable bonus only rises as the tax falls — more research produced, less of
- * it needed for food, more spare tiles and slots, more resources to run the
- * upkeep, all pulling the same way — so the answer is a bisection, and the most
- * that will ever fit above the floor is whatever fits AT the floor.
- *
- * The game takes whole-number taxes only, so the bisection is over integers —
- * exact, where refining a fractional bracket could only approximate. `floor`
- * rounds UP: below it is a tax the user said they would not accept.
- *
- * Returns `{ bonus, tax }` for the best tax meeting the requirement, or null
- * when even the floor cannot.
+ * The highest whole-number tax down to `floor` that reaches `required`
+ * military bonus, by bisection: the bonus only rises as the tax falls. Returns
+ * `{ bonus, tax }`, or null when even the floor falls short.
  */
 export function milsovAtFloor(ctx, { required, floor, ceiling }) {
   const at = (tax) => {
@@ -1031,8 +766,7 @@ export function milsovAtFloor(ctx, { required, floor, ceiling }) {
   let lo = Math.ceil(floor);
   let best = at(lo);
   if (!best) return null;
-  // `lo` is the highest tax known to meet the requirement, `hi` the lowest known
-  // not to — which the caller's ceiling already is, or it would not have asked.
+  // `lo` meets the requirement, `hi` does not.
   let hi = Math.floor(ceiling);
   while (hi - lo > 1) {
     const mid = Math.floor((lo + hi) / 2);
@@ -1048,14 +782,8 @@ export function milsovAtFloor(ctx, { required, floor, ceiling }) {
 }
 
 /**
- * Walk the DP frontier for the site's own ceiling — the best tax any food plan
- * reaches, and the cheapest plan reaching it. No military building is placed
- * here — but the city's buildings and a minimum surplus are ceilings all
- * the same, fixed by the city rather than the food spend, so they are solved
- * once outside the walk.
- *
- * Split out for callers that already hold a context, since rebuilding one is the
- * whole cost of preparing a site.
+ * The site's own ceiling: the best tax any food plan reaches, and the cheapest
+ * plan reaching it.
  *
  * @returns {{tMax: number, binding: string, sFood: number, spend: number}|null}
  *   null only when there is no spend level to evaluate at all.
@@ -1073,8 +801,7 @@ export function siteCeiling(ctx) {
       rp: tRp({ uRp: spend, research: ctx.research, rpBonus: ctx.rpBonus, minimum: ctx.minRp }),
       res,
     });
-    // A negative T_max is a real answer — the site cannot feed a city at any
-    // tax. Report it and let the caller filter on tMin.
+    // A negative T_max is a real answer; the caller filters on tMin.
     const net = goldNet({
       tax: t.value, consumption: ctx.consumption, uGold: claimGold(spend, ctx.settings),
     });
@@ -1086,46 +813,27 @@ export function siteCeiling(ctx) {
 }
 
 /**
- * Score one candidate site. `neighbours` are the claimable tiles already
- * filtered for claimability, each { dx, dy, food, key, i, water }.
- *
- * Food is planned first and alone. It is what a city is settled for,
- * it is what pays for a tax rate, and it is the only claim that gives the city
- * anything back — so it gets the whole neighbourhood, the whole research budget
- * and the whole building cap, and the tax it reaches is this site's answer.
- *
- * Military sovereignty is then fitted into what that plan left over, and only
- * into what it left over: the engine chooses the count, the levels and the
- * tiles, and the user chooses only which structure to put there. A plan that
- * would cost a point of tax is not a plan this returns.
- *
- * Returns the winning plan. T_max may be negative — that is a real answer, not
- * an error. Ranking and the tMin filter are the caller's job.
- * Returns null only when there is nothing to evaluate at all.
+ * Score one site from its claimable `neighbours`. Food is planned first and
+ * sets the tax; military sovereignty is fitted into what it leaves, never
+ * costing tax. T_max may be negative. Null only when there is nothing to
+ * evaluate.
  */
 export function scoreSite({ neighbours, settings }) {
   return scoreSiteFrom(prepareSite({ neighbours, settings }));
 }
 
-/** scoreSite for a caller that prepared the context and wants to keep it. */
+/** scoreSite on an already prepared context. */
 export function scoreSiteFrom(ctx) {
   const s = ctx.settings;
   const winner = siteCeiling(ctx);
   if (!winner) return null;
 
-  // The plan at the settable rate, not at the ceiling itself, and the military
-  // it fits there — which costs no tax, the food plan holding that rate
-  // outright. Rounding down frees the fraction the exact ceiling could never
-  // spend, so this plan is never worse than the one at the ceiling and is often
-  // strictly better.
+  // Plan at the settable (whole-number) rate. Rounding down frees headroom, so
+  // this is never worse than the plan at the exact ceiling.
   const plan = planSiteAt(ctx, settableTax(winner.tMax)) ?? fallbackPlan(ctx, winner);
   const cheaper = ctx.structure ? planSiteAt(ctx, plan.tax - 1) : null;
 
-  // Whether a minimum bonus is met is a question about the whole tax RANGE the
-  // user will accept, not about the ceiling alone. A site reaching +10% for free
-  // at 80% tax, whose owner would settle for 50%, has forty points of tax to
-  // spend before the answer is no — and asking only at the ceiling threw those
-  // sites away with nothing on the row to say why.
+  // A minimum military bonus is met if any tax down to tMin reaches it.
   const required = ctx.structure ? Math.max(0, s.milsovMinBonus ?? 0) : (s.milsovMinBonus ?? 0);
   const floor = Math.min(s.tMin ?? 0, plan.tax);
   const reach = required > 0 && plan.milsovBonus < required && Number.isFinite(plan.tax)
@@ -1134,30 +842,21 @@ export function scoreSiteFrom(ctx) {
 
   return {
     ...plan,
-    // What the site is reported and ranked at: the highest whole number its food
-    // plan holds. `tMaxExact` is what the arithmetic solved for, kept because it
-    // is the true ceiling — and because it is not a rate anyone can set.
+    // Ranked at the whole-number rate; `tMaxExact` is the unrounded ceiling.
     tMax: plan.tax,
     tMaxExact: winner.tMax,
-    // Which ceiling stopped the tax going higher is a question about the exact
-    // one; the plan's own ceiling has the rounding slack in it.
+    // Named from the exact ceiling.
     binding: winner.binding,
     milsovPrice: cheaper ? cheaper.milsovBonus - plan.milsovBonus : 0,
-    // Where the minimum is met, if it is not met for free: the highest tax that
-    // still delivers it. Null means the free plan already covers it, or nothing
-    // in the acceptable range does.
+    // The highest tax reaching the minimum bonus, when it is not met for free.
     milsovMinTax: reach ? reach.tax : null,
     milsovMinBonusAt: reach ? reach.bonus : null,
-    // Only a genuine shortfall: not reachable anywhere the user would accept.
+    // Not reachable at any tax the user accepts.
     milsovShortfall: required > 0 && plan.milsovBonus < required && !reach,
   };
 }
 
-/**
- * A site with no food plots reaches no finite tax, so there is no spend to solve
- * for. The frontier already settled on the cheapest of the equally hopeless
- * plans; describe that one rather than returning nothing.
- */
+/** A site with no food plots reaches no finite tax; describe its cheapest plan. */
 function fallbackPlan(ctx, winner) {
   const tiles = recoverSet(ctx.foodCandidates, ctx.dp, winner.spend)
     .map((i) => ctx.foodCandidates[i]);

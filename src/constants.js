@@ -1,11 +1,9 @@
-// Game constants, each carrying how well it is known: [V] verified in game, [F]
-// stated by a reliable source, [D] derived from one, [?] assumed. The markers
-// are here deliberately — when output looks wrong, the [F] and [?] values are
-// what to re-check first.
+// Game constants, each marked with how well it is known: [V] verified in game,
+// [F] from a reliable source, [D] derived from one, [?] assumed. When output
+// looks wrong, re-check the [F] and [?] values first.
 
-// [F] The world's extent, inclusive. Tiles beyond it are not unloaded map data —
-// they do not exist, so a claim ring overlapping an edge is genuinely smaller
-// rather than unreadable.
+// [F] The world's extent, inclusive. A claim ring past an edge is smaller, not
+// missing data.
 export const WORLD_MIN_X = -1000;
 export const WORLD_MAX_X = 1000;
 export const WORLD_MIN_Y = -3300;
@@ -18,82 +16,53 @@ export const GOLD_PER_TAX_POP = 0.04;      // [F] Gold_income = 0.04 * T * Pop
 export const CLAIM_RP_PER_LEVEL_DISTANCE = 10;    // [V] RP/hr = 10 * L * d
 export const CLAIM_GOLD_PER_LEVEL_DISTANCE = 100; // [V] gold is exactly 10x RP
 
-// [V] The game quantises the claim distance to two decimals before multiplying,
-// so a diagonal is charged at 1.41 rather than 1.414214 and a (2,1) tile at 2.24.
-// Rounding is half-up, and it lands on the distance rather than on the finished
-// cost: a (2,1) claim at level 2 costs 448 gold, where rounding the product would
-// give 447. Level then multiplies exactly, with no further rounding — a level 5
-// diagonal costs five times the level 1 figure.
+// [V] The game rounds the claim distance half-up to two decimals before
+// multiplying: a diagonal costs as 1.41, and a (2,1) claim at level 2 costs 448
+// gold, not the 447 that rounding the product would give.
 export const CLAIM_DISTANCE_DECIMALS = 2;
 
-// [F] A Chancery of Estates takes 2% per building level, so 40% at level 20, off
-// the cost of a claim's first level. A claim held above level 1 keeps that
-// discount on its first level and pays in full for the levels above it — GM
-// Stormcrow's release notes for the building, 7 October 2011. Each further
-// Chancery adds half the discount of the one before — 40%, 60%, 70% for one,
-// two, three.
-// [?] Whether the discount lands before or after the distance quantisation above
-// is unmeasured. Applied here to the finished cost.
+// [F] A level 20 Chancery of Estates takes 40% off a claim's first level, and
+// each further Chancery half as much again: 40%, 60%, 70%. The first level keeps
+// its discount on a claim held higher, and the levels above it pay in full (GM
+// Stormcrow's release notes, 7 October 2011). [?] Applied to the finished cost;
+// whether the game applies it before the distance rounding is unmeasured.
 export const CHANCERY_DISCOUNT_L20 = 0.4;
 
 // [F] Food sovereignty requires a level 5 claim carrying a level 5 building.
 export const FOOD_CLAIM_LEVEL = 5;
 
-// [F] Military sov structure upkeep, per hour, of EACH of wood/clay/iron/stone.
-// Keyed by BUILDING level, not by the claim's sovereignty level — see below.
+// [F] Military structure upkeep per hour, of each of wood, clay, iron and
+// stone, by building level.
 export const MILSOV_UPKEEP_BY_LEVEL = { 1: 150, 2: 300, 3: 600, 4: 1200, 5: 2400 };
 
-// What raising one building from level j-1 to level j adds to that hourly bill:
-// [150, 150, 300, 600, 1200], indexed from 0 for level 1. The table above is
-// convex, so these increments grow — which is the whole reason spreading a given
-// bonus over more buildings is cheaper to run than concentrating it, and the
-// term the planner balances against distance. Derived rather than written out,
-// so the two can never drift apart.
+// What each level adds to that bill, indexed from 0 for level 1. The steps
+// grow, which is why spreading a bonus over more buildings costs less to run.
 export const MILSOV_UPKEEP_STEP = [1, 2, 3, 4, 5].map(
   (level) => MILSOV_UPKEEP_BY_LEVEL[level] - (MILSOV_UPKEEP_BY_LEVEL[level - 1] ?? 0),
 );
 
 export const MILSOV_MAX_LEVEL = 5;
 
-// [D] Military sov production bonus, % per claimed tile, before the tile's
-// innate descriptor modifier. Derived from the [F] "+5% unit production per
-// building level", and cross-checked against a [F] worked example: 8x Sov III +
-// 12x Sov II = 8*15 + 12*10 = +240%, the figure quoted there. Linear in level,
-// which is what lets the planner treat bonus as five independent layers.
+// [D] Military unit production bonus per building level, from [F] "+5% per
+// level" and a worked example: 8x Sov III + 12x Sov II = +240%.
 //
-// A claimed tile carries two levels, set independently in game: the claim's
-// SOVEREIGNTY level, which fixes its RP and gold upkeep and rises with distance,
-// and the BUILDING level of the structure on it, which fixes this bonus and the
-// flat upkeep above. This bonus and MILSOV_UPKEEP_BY_LEVEL are both keyed by
-// building level; CLAIM_RP_PER_LEVEL_DISTANCE is keyed by sovereignty level. The
-// planner sets the two equal, since a claim above its building buys nothing.
-//
-// A tile whose terrain descriptor names the structure being placed raises this
-// rate for that tile: a Training Ground on a Wooded Glade (+2% Spear Units per
-// level of Training Ground) runs at 7 points a level, not 5. The descriptor is
-// per BUILDING level, the same footing as this rate, so the two simply add.
-// See descriptorBonus in scoring.js — the reported bonus accounts for it; tile
-// SELECTION still runs nearest-first.
-export const MILSOV_BONUS_PER_LEVEL = 5; // [F] points of bonus per building level
+// A claim has a sovereignty level, which sets its RP and gold cost, and the
+// structure on it has a building level, which sets this bonus and its upkeep.
+// The planner keeps the two equal. A tile whose terrain descriptor names the
+// structure adds its own bonus per building level (see descriptorBonus).
+export const MILSOV_BONUS_PER_LEVEL = 5;
 
-// [F] Every sovereignty structure, and the three fields the rest of the tool
-// reads off them. `type` is the whole of the arithmetic: a 'production'
-// structure pays MILSOV_UPKEEP_BY_LEVEL every hour, a 'resource' one pays
-// nothing beyond its claim's RP and gold. `boosts` is what a resource structure
-// raises. `military` marks the five the picker offers, which is a smaller set
-// than the Production Structures — see MILSOV_STRUCTURES. The table is
-// complete; what the form offers is a filter over it rather than a second list
-// to keep in step.
+// [F] Every sovereignty structure. A 'production' structure pays
+// MILSOV_UPKEEP_BY_LEVEL every hour; a 'resource' one pays only its claim's RP
+// and gold. `boosts` is what a resource structure raises; `military` marks
+// the five the form offers.
 export const SOV_STRUCTURES = [
   { key: 'trainingGround', name: 'Training Ground', type: 'production', military: true },
   { key: 'targetRange', name: 'Target Range', type: 'production', military: true },
   { key: 'militaryAcademy', name: 'Military Academy', type: 'production', military: true },
   { key: 'joustingYard', name: 'Jousting Yard', type: 'production', military: true },
   { key: 'assemblyYard', name: 'Assembly Yard', type: 'production', military: true },
-  // The crafting half of the Production Structures. Same hourly ladder as the
-  // military five — the class is about upkeep, not about what is made — and the
-  // terrain descriptors name these, so they have to be here or a descriptor
-  // reads as a bonus riding on something the tool does not know about.
+  // Crafting structures: not offered, but terrain descriptors name them.
   { key: 'cattleRancher', name: 'Cattle Rancher', type: 'production' },
   { key: 'bladesmith', name: 'Bladesmith', type: 'production' },
   { key: 'renderer', name: 'Renderer', type: 'production' },
@@ -103,11 +72,6 @@ export const SOV_STRUCTURES = [
   { key: 'bridlemaker', name: 'Bridlemaker', type: 'production' },
   { key: 'plateForger', name: 'Plate Forger', type: 'production' },
   { key: 'armourer', name: 'Armourer', type: 'production' },
-  // No terrain grants an Engineering Yard bonus, so it is the one crafting
-  // structure the descriptor table never names. It is here because the planner
-  // still has to cost one if a plan asks for it — and because the game's
-  // "Siege Block production" against the Assembly Yard's "Siege unit
-  // production" is easy to conflate when reading a tile.
   { key: 'engineeringYard', name: 'Engineering Yard', type: 'production' },
   { key: 'papermill', name: 'Papermill', type: 'production' },
   { key: 'brewersYard', name: "Brewer's Yard", type: 'production' },
@@ -122,59 +86,25 @@ export const SOV_STRUCTURES = [
 
 export const SOV_STRUCTURE_BY_KEY = Object.fromEntries(SOV_STRUCTURES.map((s) => [s.key, s]));
 
-// What the form offers for military sovereignty: the five military structures.
-//
-// Not every Production Structure. The thirteen crafting ones are in the table
-// above because the terrain descriptors name them and the engine has to know
-// what they cost — but offering eighteen entries made the picker a catalogue,
-// and the question it asks is which unit the city is being built to make.
-//
-// The engine chooses how many buildings to place and at what levels, by
-// maximising production bonus against the hourly upkeep they cost.
-//
-// A Resource Structure pays its claim's RP and gold like every other claim — it
-// is not a free tile — but it pays no hourly wood/clay/iron/stone bill. It is
-// costed correctly wherever it appears and never placed automatically: the host
-// tile's resource rating, which is what would make one worth claiming, is not
-// scored, so the planner has no basis to tell a good tile from a bad one. The
-// Farmstead and Fishery are out for a second reason: the food plan is what
-// places those.
+// The structures the form offers for military sovereignty. Resource Structures
+// are never placed automatically: what makes one worth claiming is the tile's
+// resource rating, which is not scored.
 export const MILSOV_STRUCTURES = SOV_STRUCTURES.filter((s) => s.military);
 
-// A plan that names no structure, or names one this table does not know, is
-// charged as a Production Structure: that is the charged case, so the fallback
-// errs toward billing rather than toward a free claim.
+// An unknown or missing structure is charged as this one, so it is never free.
 export const DEFAULT_SOV_STRUCTURE = 'trainingGround';
 
-// Sovereignty levels are written in Roman numerals wherever a level is shown.
 export const SOV_LEVEL_ROMAN = ['I', 'II', 'III', 'IV', 'V'];
 
-// [V] What each terrain type `i` grants a claim built on it, from the account
-// owner's own reading of the tiles, and for thirty-nine rows from the client's
-// own Sovereignty Bonuses table. Where the two disagree the client's table
-// wins: it states the whole ladder at once, where a tile is read one at a time
-// and the building a bonus belongs to is the easy thing to misattribute.
+// [V] What each terrain type `i` grants a claim on it, read off tiles in game
+// and, for thirty-nine rows, from the client's Sovereignty Bonuses table, which
+// wins where they disagree.
 //
-// A `bonus` is scored, but only on a tile hosting the very structure its
-// `building` names — see descriptorBonus. On every other tile it is a column
-// and a flag.
-//
-// `building` is what the bonus scales with, per level of it. Every one of them
-// is a Production Structure, crafting and military alike, so a descriptor names
-// a claim that could be placed on that very tile — it reads as advice about
-// what the tile is FOR, not as a caveat (see descriptorFor).
-//
-// An entry with no `building` is a terrain that grants nothing. That is a
-// finding, not a gap: it has to read differently from an `i` nobody has
-// identified, which is why they are listed rather than omitted.
-//
-// Two terrains can grant the same building the same bonus. That was assumed
-// impossible and is not — see sharedRungs.
-//
-// `disputed` marks a row read once and not yet confirmed. Nothing carries it:
-// thirty-nine rows have the client's table behind them as a second source, and
-// the others stand on one reading each without being flagged, because a row
-// read once is not a row that is wrong.
+// `bonus` is `product` per level of `building`, and is scored only on a tile
+// hosting that structure (see descriptorBonus). A row with no `building` is a
+// terrain known to grant nothing, as distinct from an unidentified `i`. Two
+// terrains can grant the same bonus (see sharedRungs). `disputed` marks a row
+// not yet confirmed.
 export const TERRAIN_DESCRIPTORS = {
   1: { name: 'Plains' },
   2: { name: 'Plains' },
@@ -235,30 +165,14 @@ export const TERRAIN_DESCRIPTORS = {
   56: { name: 'Wooded Glade', bonus: 2, product: 'Spear Units', building: 'Training Ground' },
   57: { name: 'Light Woods', bonus: 1, product: 'Spears', building: 'Poleturner' },
   58: { name: 'Plains' },
-  // Rivers. Food is read from `rs` like any other tile; there is no descriptor
-  // bonus on top of it, so a river is worth exactly its food rating.
   59: { name: 'Fresh Water', water: true },
-  // An NPC settlement and the ring of eight it occupies. Neither is claimable —
-  // the centre carries no `sov` and the ring is `imp` — so these are here to
-  // keep a settlement in view from reporting nine unidentified IDs per scan.
-  //
-  // The ring's `rs` is the one place a land tile does NOT sum to 25: it keeps
-  // its terrain ratings with food forced to 0, summing to 20. Nothing reads it,
-  // but do not take it as a counterexample to the 25-plot rule.
   66: { name: 'Faction Hub', settlement: true },
   67: { name: 'Forbidden', impassable: true },
   80: { name: 'Drumlin' },
 
-  // The glacial terrains, read off tiles in a b:2 region. Their plots total 0
-  // to 15 where most land totals 25, so they are poor ground whatever they
-  // grant — which is what the scanner reads, the bonus being a column.
   68: { name: 'Barren Wastes', bonus: 3, product: 'Spear Units', building: 'Training Ground' },
   69: { name: 'Glacier' },
   70: { name: 'Frozen Ground' },
-  // One of only two military +3 rungs, with i:68 Barren Wastes. Every other
-  // military rung stops at +2, where crafting rungs reach +3 freely — so a
-  // military +3 is rare rather than impossible, and the pair is pinned by a
-  // test to keep a third from arriving unnoticed.
   71: { name: 'Nunatak', bonus: 3, product: 'Siege Units', building: 'Assembly Yard' },
   72: {
     name: 'Scoured Bedrock', bonus: 2, product: 'Infantry Units', building: 'Military Academy',
@@ -275,9 +189,6 @@ export const TERRAIN_DESCRIPTORS = {
     name: 'Roche Moutonnee', bonus: 1, product: 'Chainmail', building: 'Armourer',
   },
   82: { name: 'Ice Holes' },
-  // Shares its name with i:30, which grants Finishing School +1%. Same name,
-  // different terrain, different answer — the id identifies a terrain and the
-  // name does not.
   83: { name: 'Scrubland' },
   84: { name: 'Permafrost' },
   85: { name: 'Icy Moss' },
@@ -286,29 +197,11 @@ export const TERRAIN_DESCRIPTORS = {
     name: 'Lichen', bonus: 1, product: 'Livestock', building: 'Cattle Rancher',
   },
 
-  // The wetland terrains, read off a b:16 region. Their plots total 10 to 17,
-  // so they are poor ground too.
-  //
-  // Marsh grants Poleturner +3%, which i:55 Wooded Land also holds. That was
-  // taken as evidence for a per-family ladder; it is simply a shared rung, of
-  // which there are several — see sharedRungs.
-  //
-  // i:89 is the only Swamp in the table. The two tiles this project called
-  // Swamps for months are i:22 Canyon and i:23 Swampland — both impassable,
-  // both named from sprite context rather than from the game, and both wrong
-  // until the client's own table settled it.
   89: { name: 'Swamp', bonus: 2, product: 'Bows', building: 'Bowyer' },
   90: { name: 'Marsh', bonus: 3, product: 'Spears', building: 'Poleturner' },
   91: { name: 'Bog' },
   92: { name: 'Mire' },
 
-  // The rainforests, all read in the Jungle biome. Their plots total 22 or 23,
-  // which is the counterexample to "land always sums to 25".
-  //
-  // Thick Rainforest grants Poleturner +3%, a rung two other terrains also
-  // hold. Rainforest Hilltop grants Papermill +3%, which i:6 Rich Clay Seam
-  // holds — and both were read in the SAME biome, which is what finally
-  // disproved the one-terrain-per-rung rule rather than rescoping it again.
   41: { name: 'Barrow' },
   95: { name: 'Playa' },
   101: { name: 'Cactus', bonus: 3, product: 'Horses', building: 'Farrier' },
@@ -325,14 +218,10 @@ export const TERRAIN_DESCRIPTORS = {
   113: { name: 'Dense Monsoon Jungle', bonus: 2, product: 'Books', building: 'Papermill' },
   114: { name: 'Monsoon Hilltop' },
   115: { name: 'Light Rainforest' },
-  // Holds Bowyer +3% alongside i:52 Thick Forest — the second rung read twice
-  // in the Jungle biome, after Papermill +3% on i:6 and i:120.
   116: { name: 'Rainforest Canopy', bonus: 3, product: 'Bows', building: 'Bowyer' },
   117: { name: 'Rainforest' },
   118: { name: 'Dense Rainforest' },
   119: { name: 'Thick Rainforest', bonus: 3, product: 'Spears', building: 'Poleturner' },
-  // Holds Papermill +3% alongside i:6 Rich Clay Seam, in the same biome. This
-  // is the row that ended the one-terrain-per-rung rule.
   120: { name: 'Rainforest Hilltop', bonus: 3, product: 'Books', building: 'Papermill' },
   121: { name: 'Succulents' },
   122: { name: 'Dry tundra' },
@@ -363,17 +252,9 @@ export const TERRAIN_DESCRIPTORS = {
   223: { name: 'Jungle Standing Stones' },
   224: { name: 'Shattered Head' },
 
-  // The fifty-eight the world data file said were still unread, worked through
-  // in one pass. Five of them grant something; the rest are answers of the
-  // other kind. With these in, every terrain the world actually contains has a
-  // row here — the forty-one still absent are named by the client and appear
-  // nowhere in the world, so there is no tile to go and read.
+  // Every terrain the world contains has a row. The ids still missing are named
+  // by the client but appear nowhere in the world.
 
-  // Three of the five reproduce a same-named terrain exactly: i:63 matches
-  // i:57 Light Woods, i:64 matches i:49 Rocky Outcrop, i:65 matches i:9 Clay
-  // Seam, rung for rung. That is NOT the name determining the answer — i:30 and
-  // i:83 are both Scrubland and disagree, and so do i:88 and i:195, both
-  // Petrified Forest. Three names matched and two did not.
   3: { name: 'Plains' },
   63: { name: 'Light Woods', bonus: 1, product: 'Spears', building: 'Poleturner' },
   64: { name: 'Rocky Outcrop', bonus: 3, product: 'Horses', building: 'Farrier' },
@@ -381,10 +262,6 @@ export const TERRAIN_DESCRIPTORS = {
   76: { name: 'Tarn' },
   88: { name: 'Petrified Forest' },
 
-  // The desert. Two of the eight grant anything: the Oasis, and the Mesa, whose
-  // Plate Forger +3% i:46 Abundant Quarry also holds. The gravel and stone
-  // flats — Yardang, Hamada, Reg, Wadi — grant nothing despite rating as high
-  // as 10 plots between them, so a plot total does not predict a bonus.
   93: { name: 'Sand Dune' },
   94: { name: 'Oasis', bonus: 3, product: 'Livestock', building: 'Cattle Rancher' },
   96: { name: 'Yardang' },
@@ -394,10 +271,6 @@ export const TERRAIN_DESCRIPTORS = {
   100: { name: 'Reg (Gravel Plain)' },
   102: { name: 'Wadi' },
 
-  // Open water and the shoreline. The four water rows rate zero on all five and
-  // are flagged like i:18, i:19 and i:59; the four shore rows rate food alone,
-  // 5 to 10 of it, and are worth exactly that food and no bonus — the same
-  // answer a river gets.
   60: { name: 'Tidal Water', water: true },
   61: { name: 'Shallow Salt Water', water: true },
   62: { name: 'Ocean', water: true },
@@ -407,10 +280,7 @@ export const TERRAIN_DESCRIPTORS = {
   175: { name: 'Coast' },
   198: { name: 'Dead Water', water: true },
 
-  // The volcanic terrains. All nine rate zero on all five plots, which reads
-  // like the impassable rows and is not: their combat class is Obsidian
-  // Mountains, and only i:20-23 are class Impassable anywhere in the client's
-  // table. So this is walkable ground that grows nothing — not a wall.
+  // Volcanic terrains: zero on every plot, but passable, unlike i:20-23.
   199: { name: 'Obsidian Mountain' },
   200: { name: 'Glassy Crag' },
   201: { name: 'Volcanic Mountain' },
@@ -420,20 +290,10 @@ export const TERRAIN_DESCRIPTORS = {
   206: { name: 'Lava Pool' },
   207: { name: 'Magma Rift' },
 
-  // The dead forests, all three rating 7|3|3|2|3 — one plot signature across
-  // three names, and none of them grants anything. i:195 shares its name with
-  // i:88, which rates 0|3|5|4|3: a third same-name pair, after the Scrublands
-  // and the Swamps.
   194: { name: 'Scorched Forest' },
   195: { name: 'Petrified Forest' },
   196: { name: 'Deadvlei Forest' },
 
-  // Landmarks and sites, twenty-five of them, and not one grants anything —
-  // which is what every landmark already in the table says too, from Standing
-  // Stones to Mausoleum. Their plots vary tile to tile where most terrain's are
-  // fixed, so a landmark is worth its own ratings and nothing more. The four
-  // Altars answer the same: fixed single tiles, one per element, granting
-  // nothing.
   123: { name: 'Geyser' },
   131: { name: 'Obelisk' },
   135: { name: 'Heroic Human Statue' },
@@ -461,28 +321,10 @@ export const TERRAIN_DESCRIPTORS = {
   221: { name: 'Ferry Post' },
 };
 
-// [V] The client's own terrain table, read out of `window.terrain` on the map
-// page by the account owner. Index is `i`; each row is [name, combat class].
-//
-// Independently confirmed against the server's `datafile_terrain.xml`, which
-// lists the same 228 ids with the same names and no disagreement anywhere. The
-// XML has no i:4, which the client calls 'Town' — so Town is something the
-// client draws, not terrain the world is made of.
-// Index 0 is unused and holds an explicit null, so that every other index is
-// the terrain ID itself rather than one off it.
-//
-// This is the game's data rather than ours, so it settles every NAME — nine
-// rows here corrected hand-read ones, including four that had been guessed from
-// sprite context. What it does NOT carry is the production bonus, which appears
-// only in the tile's in-game descriptor. Names come from here; bonuses come from
-// TERRAIN_DESCRIPTORS, which is still filled in by hand a tile at a time.
-//
-// The combat class is not used by the scanner. It is kept because it is the
-// only record of it anywhere, and because it independently confirms the
-// impassable rows: i:20-23 are the four the payload flags `imp`.
-//
-// Two names carry trailing spaces in the client ('Wadi ', 'Tropical Hilltop ')
-// and are trimmed here.
+// [V] The client's terrain table (`window.terrain`), matching the server's
+// datafile_terrain.xml. Index is `i`, with 0 unused; each row is [name, combat
+// class]. Names come from here and bonuses from TERRAIN_DESCRIPTORS. The combat
+// class is unused. Trailing spaces in two client names are trimmed.
 export const TERRAIN_NAMES = [
   null,                                             // 0 - unused; the client's array starts at 1
   ['Plains', 'Plains'],                             // 1
@@ -716,50 +558,19 @@ export const TERRAIN_NAMES = [
   ['Shipwreck', 'Buildings'],                       // 229
 ];
 
-// [V] The six terrains the server's own data file marks `npcterrain: Yes`, and
-// there are exactly six. Their `rs` does not follow from their `i`: i:40
-// appears as an abandoned mill, a quarry and a lumberyard within one payload,
-// and i:43 and i:45 vary the same way, so only the tile's own `rs` is worth
-// reading.
-//
-// These are NOT unnamed. The client calls i:40 Standing Stones and i:123 a
-// Geyser, and both are in TERRAIN_NAMES like every other row. What this set
-// records is that the name does not predict the ratings.
-//
-// This list was nineteen entries longer, holding every `i` ever seen on a tile
-// flagged `npc:1` — 88, 123, 124, 139, 143 and the rest. The data file calls
-// all nineteen ordinary terrain. A tile's `npc:1` and its terrain's npcterrain
-// class are separate facts: a Dark Forest tile can carry an NPC lair without
-// Dark Forest being NPC terrain, exactly as an i:40 tile can carry an
-// "Abandoned Goldmine" landmark in the `n` block without that being its type.
-// Terrain type, tile flag and landmark are three independent things, and this
-// set is only the first.
+// [V] The six terrains the server's data file marks `npcterrain: Yes`. Their
+// ratings vary tile to tile, so only a tile's own `rs` can be trusted. This is
+// unrelated to a tile's `npc:1` flag, which marks an NPC lair on any terrain.
 export const NODE_CLASS_TERRAIN = new Set([40, 41, 42, 43, 44, 45]);
 
 const SOV_STRUCTURE_BY_NAME = new Map(SOV_STRUCTURES.map((s) => [s.name, s]));
 
 /**
- * What terrain `i` is and what it grants, or null for an `i` off the end of the
- * client's own table.
- *
- * Two sources, and which one answers what matters. The NAME always comes from
- * TERRAIN_NAMES, the game's data, so it is right for all 229 IDs whether or not
- * anyone has ever stood on one. The BONUS comes from TERRAIN_DESCRIPTORS, which
- * is read off tiles by hand and covers every terrain the world contains.
- *
- * That splits "unknown" into two answers that were one before the client table
- * was found, and they are not the same job:
- *
- * - `bonusUnread` — the terrain is named and nobody has read its descriptor.
- *   Every one left is absent from the world, so there is no tile to read.
- * - a null return — `i` is past the end of the client table, so the client
- *   itself does not know it. That is a new terrain, not an unread one.
- *
- * `sovKey` is the structure the bonus scales with, and `conditional` says there
- * is no such structure in the table. Nothing is conditional today — every
- * building the descriptors name is a Production Structure — but the table is
- * read off the game, so a row naming something unknown has to be visible rather
- * than resolve to a silent null.
+ * What terrain `i` is and what it grants, or null for an `i` the client's table
+ * does not have. The name comes from TERRAIN_NAMES and the bonus from
+ * TERRAIN_DESCRIPTORS; `bonusUnread` marks a named terrain with no descriptor
+ * row. `sovKey` is the structure the bonus scales with, and `conditional` is
+ * set when SOV_STRUCTURES has no such structure.
  */
 export function descriptorFor(i) {
   const named = TERRAIN_NAMES[i];
@@ -782,19 +593,9 @@ export function descriptorFor(i) {
 }
 
 /**
- * Which (building, bonus) rungs more than one terrain grants.
- *
- * A rung is not unique to one terrain. i:120 Rainforest Hilltop grants
- * Papermill +3% Books, and so does i:6 Rich Clay Seam, both read in the same
- * Jungle biome. Nor does grouping terrains by biome restore uniqueness: **biome
- * belongs to the region, not to the terrain type** — Wooded Quarry, Clay Seam
- * and a dozen other "temperate" terrains sit in that Jungle biome with their
- * bonuses unchanged — so a biome says where a tile was read, not anything about
- * its terrain.
- *
- * A shared rung is therefore reported, not treated as an error. A duplicate is
- * still worth seeing when a row is added — it is how a genuine transcription
- * error would look, and reading this list is the only way to notice one.
+ * Which (building, bonus) pairs more than one terrain grants. Shared pairs are
+ * legitimate, but worth checking when a row is added, since a transcription
+ * error looks the same.
  *
  * @returns {string[]} one line per shared rung, empty when every rung is held
  *   by a single terrain.
@@ -812,13 +613,11 @@ export function sharedRungs(table = TERRAIN_DESCRIPTORS) {
     .map(([rung, ids]) => `${rung}: i:${ids.join(', i:')}`);
 }
 
-// The four basic resources, in the order the panel shows them. Food is scored
-// on its own everywhere and is deliberately not in this list.
+// The four basic resources. Food is handled separately everywhere.
 export const BASIC_RESOURCES = ['wood', 'clay', 'iron', 'stone'];
 
-// [V] The level 20 booster building for each, worth the same +40 points the
-// Flour Mill gives food — additive on the production percentage, not a
-// multiplier, so it reads as 40 points of tax headroom.
+// [V] Each level 20 booster adds 40 points to its production percentage, as the
+// Flour Mill does for food.
 export const RESOURCE_BOOSTERS = {
   wood: 'Carpentry',
   clay: 'Kiln',
@@ -827,17 +626,12 @@ export const RESOURCE_BOOSTERS = {
 };
 export const RESOURCE_BOOSTER_BONUS = 40;
 
-// [F] Every city building that consumes basic resources every hour, and what it
-// consumes of each at level 20 — Illypedia's consumption tables. Every other city
-// building consumes food alone, through its population, which the city's
-// consumption figure already counts; so do these, and that is not carried here
-// either. Only level 20 is modelled, the level a finished city runs them at.
-// Any of them can be built more than once, and every copy consumes the same as
-// the first even though it does half the good of the one before, so a city's
-// bill is count x rate. `group` is the heading the form shows it under, and
-// `hint` anything a building does beyond consuming.
+// [F] City buildings that consume basic resources every hour, and how much at
+// level 20 (Illypedia). Every copy consumes the same, so the bill is count x
+// rate. Their food use is already in the city's consumption figure. `group` is
+// the form's heading; `hint` anything else the building does.
 export const UPKEEP_BUILDINGS = [
-  { key: 'spearmensBillets', group: 'Military', name: "Spearmen's Billets", consumes: { clay: 2700, iron: 1100 } },
+  { key: 'spearmensBillets', group: 'Military', name: "Spearmens' Billets", consumes: { clay: 2700, iron: 1100 } },
   { key: 'archersField', group: 'Military', name: "Archers' Field", consumes: { wood: 2700, iron: 1100 } },
   { key: 'infantryQuarters', group: 'Military', name: 'Infantry Quarters', consumes: { iron: 1100, stone: 2700 } },
   { key: 'cavalryParadeGround', group: 'Military', name: 'Cavalry Parade Ground', consumes: { wood: 1100, clay: 2700 } },
@@ -851,8 +645,7 @@ export const UPKEEP_BUILDINGS = [
   { key: 'assassinsAbode', group: 'Diplomacy', name: "Assassins' Abode", consumes: { iron: 3100, stone: 1900 } },
   { key: 'foreignOffice', group: 'Diplomacy', name: 'Foreign Office', consumes: { clay: 400, iron: 800, stone: 1600 } },
   { key: 'runemastersGrounding', group: 'Magic', name: "Runemasters' Grounding", consumes: { clay: 900, stone: 1700 } },
-  // A count of its own, apart from the Retreats Nature's Bounty is cast with:
-  // the spell can come from another city's Retreats, so the two need not agree.
+  // Separate from geomancerRetreats: Nature's Bounty can be cast from another city.
   { key: 'geomancersRetreat', group: 'Magic', name: "Geomancers' Retreat", consumes: { wood: 700, clay: 2300, stone: 1500 } },
   {
     key: 'chanceryOfEstates',
@@ -865,20 +658,13 @@ export const UPKEEP_BUILDINGS = [
   { key: 'tradeOffice', group: 'Trade', name: 'Trade Office', consumes: { wood: 2800, clay: 690, stone: 1580 } },
 ];
 
-// [V] Per-plot yield at L20, the same for all four basic resources. Multiplied
-// by the plot count and the production percentage to give hourly output.
+// [V] Per-plot yield at level 20, the same for all four basic resources.
 export const BASIC_YIELD_L20 = 2538;
 
-// [V] The prestige production boost, in additive points on the production
-// percentage: the Famine Management description has prestige cumulative with
-// spells and sovereignty, which is what makes it points and not a multiplier.
-// The figure is the account owner's, correcting the +25 first assumed here.
-// Half a booster building, and worth its face value in tax headroom.
+// [V] The prestige boost, in points added to the production percentage.
 export const PRESTIGE_PRODUCTION_BONUS = 20;
 
-// What it can be switched on for — every production the tool models. Food's
-// points are added inside computeBOther rather than here, so B_other stays the
-// one total of the city's food bonuses and nothing can count them twice.
+// Food's prestige points are counted in computeBOther, with the other food bonuses.
 export const PRESTIGE_KEYS = [...BASIC_RESOURCES, 'food', 'research'];
 
 export const PRODUCTION_LABEL = {
@@ -891,12 +677,9 @@ export const PRODUCTION_LABEL = {
   gold: 'Gold',
 };
 
-// What a minimum surplus can be asked for — the four basic resources plus food
-// and research, which are produced differently but take a floor the same way.
 export const MINIMUM_KEYS = [...BASIC_RESOURCES, 'food', 'research'];
 
-// [V] Food consumed per hour, which the user reads off their own town. Only a
-// starting figure — every city differs, so the number itself is the input.
+// [V] A starting figure for food consumed per hour; the user enters their own.
 export const DEFAULT_CITY_CONSUMPTION = 30800;
 
 // [F] Additive food bonuses, in points on the production percentage.
@@ -905,21 +688,13 @@ export const NATURES_BOUNTY_BY_RETREATS = [8, 16, 20, 22, 23];
 export const FAMINE_MANAGEMENT = 10;  // capital, >=10 cities
 export const SOIL_ENRICHMENT = 15;    // capital, >=30 cities
 
-// [V] Library RP/hr at level 20 with no Allembine, read in game at 25% tax. At
-// 25% production is 100%, so the reading is the base directly with no multiplier
-// to divide out; readings at 50% and 100% tax confirm it scales with (125 - T).
-// Only level 20 is modelled — no reading exists for any other level and no curve
-// is assumed, so LIBRARY_LEVEL is fixed rather than configurable.
+// [V] Library RP/hr at level 20 without Allembine, read at 25% tax, where
+// production is 100%. It scales with (125 - T). Only level 20 is modelled.
 export const LIBRARY_BASE_RP_L20 = 1013;
 export const LIBRARY_LEVEL = 20;
 
-// [V] Both research bonuses are flat additions AFTER the tax multiplier, not
-// terms inside it: each contributes the same RP/hr at 25%, 50% and 100% tax.
-//
-// Allembine is +5 RP/hr per library level, so +100 at level 20. Overflowing
-// Insight contributes half the library's base output, which is 506.5 — it is not
-// the x1.5 multiplier it resembles at 25% tax, where the multiplier is 1 and the
-// two models coincide.
+// [V] Flat research bonuses, unaffected by tax: Allembine is +5 RP/hr per
+// library level, and Overflowing Insight half the library's base output.
 export const ALLEMBINE_RP_PER_LIBRARY_LEVEL = 5;
 export const ALLEMBINE_RP = ALLEMBINE_RP_PER_LIBRARY_LEVEL * LIBRARY_LEVEL;
 export const OVERFLOWING_INSIGHT_FRACTION = 0.5;
@@ -928,7 +703,6 @@ export const OVERFLOWING_INSIGHT_RP = LIBRARY_BASE_RP_L20 * OVERFLOWING_INSIGHT_
 /** Plot order matches the payload's `rs` string: "wood|clay|iron|stone|food". */
 export const PLOT_KEYS = ['wood', 'clay', 'iron', 'stone', 'food'];
 
-/** Every land tile has 25 plots, so an allocation has to spend exactly 25. */
 export const PLOT_TOTAL = 25;
 
 export const DEFAULT_SETTINGS = {
@@ -936,38 +710,22 @@ export const DEFAULT_SETTINGS = {
   plots: { wood: 5, clay: 5, iron: 5, stone: 3, food: 7 }, // must sum to 25
   cityConsumption: DEFAULT_CITY_CONSUMPTION,
   flourMill: true,
-  // The 22,400 baseline the model is calibrated against needs 18.89 points on
-  // top of the Flour Mill, which is Nature's Bounty at two retreats to within
-  // 0.7%. Defaulting the spell on rather than carrying the same 20 points as a
-  // nameless constant keeps B_other at 60 while making the assumption one the
-  // user can see and untick — and stops it being counted twice.
+  // Nature's Bounty at two retreats matches the 22,400 food baseline the model
+  // is calibrated against.
   naturesBounty: true,
   geomancerRetreats: 2,
   cityCount: 1,
   isCapital: false,
   allembine: true,
   overflowingInsight: false,
-  // { observedRpPerHour, atTax, prestige } back-solves the library base. The
-  // prestige flag describes the reading rather than the city: what is divided out
-  // has to be the multiplier that was running when the figure was read. The flat
-  // bonuses come off before the division, or a bonus that does not scale is
-  // fitted as one that does.
+  // { observedRpPerHour, atTax, prestige } back-solves the library base.
+  // `prestige` is whether the boost was running when the reading was taken.
   rpCalibration: null,
-  // Which of the four booster buildings the city has at level 20. Each is worth
-  // RESOURCE_BOOSTER_BONUS points against that resource's ceiling.
   resourceBoosters: { wood: false, clay: false, iron: false, stone: false },
-  // How many of each UPKEEP_BUILDINGS entry the city has at level 20. What they
-  // consume is taken off production before sovereignty is paid for, and the
-  // Chancery count also sets the discount on each claim's first level.
   upkeepBuildings: Object.fromEntries(UPKEEP_BUILDINGS.map((b) => [b.key, 0])),
-  // Surplus per hour the plan may not touch, per resource. A city sitting exactly
-  // on T_res puts its whole scarcest resource into upkeep and can never build or
-  // trade in it again — this is where the user says how much to hold back. Zero
-  // is the ceiling as it was. Food is counted above what the city eats and
-  // research above what the claims cost.
+  // Surplus per hour the plan must leave free. Food is counted after what the
+  // city eats, research after what the claims cost.
   resourceMinimums: { wood: 0, clay: 0, iron: 0, stone: 0, food: 0, research: 0 },
-  // Which productions the boost is running on, PRESTIGE_PRODUCTION_BONUS points
-  // each.
   prestige: {
     wood: false, clay: false, iron: false, stone: false, food: false, research: false,
   },
@@ -975,24 +733,13 @@ export const DEFAULT_SETTINGS = {
   maxBuildings: 20,
   dOther: 10,
   dOwn: 3,
-  // Its own figure rather than either of the two above: `dOther` is what
-  // convention asks of a stranger, and an ally is someone you will have agreed
-  // the ground with. Confederates are not allies here and keep `dOther`.
+  // Confederates are not allies here, and use dOther.
   dAlliance: 3,
-  // Which military structure to place, by key into SOV_STRUCTURES. How many, at
-  // what levels and on which tiles is the engine's answer, not a setting: food
-  // is planned first and military sovereignty takes only the headroom the food
-  // plan leaves behind. Null asks for none, which is a food-only scan.
+  // Key into SOV_STRUCTURES; null plans food only.
   milsovStructure: null,
-  // Least production bonus worth listing a site for, in percent. Zero lists
-  // every site whatever it fits. This filters; it never changes a plan — the
-  // amount of military a site hosts is what its food plan leaves free.
+  // Sites below this military bonus are not listed; it never changes a plan.
   milsovMinBonus: 0,
   ownClaimsAvailable: false,
-  // Fold the panel to its icon off the World Map: the scanner reads
-  // window.mapData, which exists only there.
   autoMinimizeOffMap: true,
-  // Number the top ten on the game's own World Map after a Scan, and outline the
-  // selected row's tile there.
   mapOverlay: true,
 };

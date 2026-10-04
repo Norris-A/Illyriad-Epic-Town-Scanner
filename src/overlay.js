@@ -1,26 +1,18 @@
-// What the panel's open pane has to show on the game's World Map. Site Search
-// marks the last Scan's top ten, numbered on their tiles, and the selected row's
-// tile with an outline; a click on a listed site's tile selects its row. Optimal
-// Sovereignty draws the plan below its form, for looking at only: a click on it
-// is the game's alone. A pick armed from that pane makes the next click name a
-// tile to plan.
+// What the panel draws on the game's World Map: Site Search's numbered top ten
+// and selected tile, and Optimal Sovereignty's plan. Clicks on a numbered tile
+// select its row, and an armed pick names a tile to plan.
 //
-// The map is a stack of canvases the client paints; there is no element per tile.
-// The marks go on a canvas of our own, laid over the tile grid and never taking
-// a pointer event, so the game handles every gesture exactly as it would without
-// it. Anything on screen describes one view only, so the first move of the map
-// removes it. Nothing is drawn, and no listener exists, except in answer to a
-// gesture in the panel. Only the open pane's marks are drawn; the other pane's
-// are kept, and so is the listener that drops them when the map moves, so they
-// come back only on the view they belong to.
+// The marks go on a canvas of our own over the game's tile canvases, with
+// pointer events off, so the game handles every gesture as usual. Marks belong
+// to one view, so any move of the map removes them. Only the open pane's marks
+// are painted; the other pane's are kept until the map moves.
 //
 // Everything above createOverlay is DOM-free and tested under Node.
 
 import { isWorldMapHash, cellKey, roman } from './panel.js';
 
-// The client's map host, and the canvases measured as the tile grid. First match
-// with a size wins, so a layer hidden by one of the game's own map options is
-// passed over.
+// The first of these layers with a size is measured as the tile grid; the game
+// can hide some of them.
 const MAP_HOST_ID = 'mapDiv';
 const MAP_LAYER_IDS = ['mapTerrain', 'mapGrid', 'mapSov', 'mapCities'];
 
@@ -47,8 +39,7 @@ export function mapGeometry({ view, hash, hostRect, layerRect }) {
   if (!Number.isInteger(x) || !Number.isInteger(y) || !Number.isInteger(zoom) || zoom < 1) {
     return fail('no-view');
   }
-  // A bare #/World/Map is a map not moved since arrival, which the view still
-  // describes; every move writes the new view into the hash.
+  // Every move writes the view into the hash; a bare #/World/Map has not moved.
   const named = MAP_HASH_VIEW.exec(hash);
   if (named && (Number(named[1]) !== x || Number(named[2]) !== y || Number(named[3]) !== zoom)) {
     return fail('view-moved');
@@ -107,18 +98,15 @@ export function tileBox(geom, x, y) {
 }
 
 /**
- * The tiles to mark for a plan, decided as the claim grid decides its cells: a
- * crossed-out tile is crossed whatever the plan says, and a kept claim the plan
- * was never offered is marked from the site's own record. Claimable tiles the
- * plan leaves empty, and the centre, are not marks.
+ * The tiles to mark for a plan, matching the panel's claim grid. Empty tiles and
+ * the centre get no mark.
  *
  * @param {object} plan the plan the grid is drawn from
  * @param {{x, y, radius, kept, excluded}} geom the grid's own
  * @returns {{x, y, kind: 'food'|'mil'|'kept'|'out', level?: number}[]}
  */
 export function planMarks(plan, geom) {
-  // In the grid's order, which matters: military claims sit on free tiles, so a
-  // square can be in both lists.
+  // Military claims sit on free tiles, so they must be set after them.
   const claims = new Map();
   const claim = (t, kind, level) => claims.set(cellKey(t.dx, t.dy), kind && { kind, level });
   for (const t of plan.free ?? []) claim(t, t.held > 0 ? 'kept' : null, t.held);
@@ -148,7 +136,7 @@ export function parseCoords(text) {
 // --- On the page --------------------------------------------------------------
 
 const CANVAS_ID = 'sov-map-overlay';
-// The game's coordinate ruler, the topmost layer. The markers go just below it.
+// The game's coordinate ruler, the topmost layer.
 const RULER_ID = 'mapCoords';
 // The game's readout of the tile under the pointer.
 const READOUT_ID = 'coords';
@@ -156,11 +144,9 @@ const READOUT_ID = 'coords';
 const TOP_COUNT = 10;
 // A release further than this from its press is a drag, which moves the map.
 const CLICK_SLOP = 4;
-// Below this tile pitch a level numeral does not fit its tile, so the shading
-// alone shows the plan.
+// Tile size in pixels below which claim levels are not drawn.
 const NUMERAL_PITCH = 20;
-// The claim grid's own colours: a cell's border for the shading, its level's
-// for the numeral.
+// The panel claim grid's colours.
 const CLAIM_COLOURS = {
   food: { shade: '#3a5', text: '#8d8' },
   mil: { shade: '#a83', text: '#eb8' },
@@ -168,8 +154,7 @@ const CLAIM_COLOURS = {
 };
 const CAPTURE_PASSIVE = { capture: true, passive: true };
 
-// Refusals that mean the map shows some other view, as against a layout this
-// version does not know.
+// Refusals meaning the map shows another view, not an unknown layout.
 const ELSEWHERE = new Set(['not-on-map', 'view-moved']);
 
 const MOVED_TEXT = 'The map has moved; Scan again to number this view.';
@@ -178,7 +163,7 @@ const PLAN_MOVED_TEXT = 'The map has moved; Optimise again to draw the plan on t
 const OFF_TEXT = 'The map markers are off: the game’s map is not laid out the way this '
   + 'version expects. The results below are unaffected.';
 
-/** The map host's padding box, which absolute positioning inside it is measured from. */
+/** The padding box, which absolute positioning is measured from. */
 function paddingBox(el) {
   const b = el.getBoundingClientRect();
   const left = b.left + el.clientLeft;
@@ -186,7 +171,6 @@ function paddingBox(el) {
   return { left, top, right: left + el.clientWidth, bottom: top + el.clientHeight };
 }
 
-/** Measured afresh at each use: the page may have scrolled, or the map been rebuilt. */
 function measureMap(view) {
   const host = document.getElementById(MAP_HOST_ID);
   const layer = host && MAP_LAYER_IDS.map((id) => document.getElementById(id))
@@ -200,9 +184,9 @@ function measureMap(view) {
 }
 
 /**
- * Our canvas fitted over the grid, cleared, with a context drawing in CSS pixels.
- * It goes immediately below the ruler: no layer in the stack sets a z-index, so
- * they paint in document order, and one of ours would lift it above the ruler too.
+ * Our canvas fitted over the grid, cleared, with a context in CSS pixels. It is
+ * placed just before the ruler, since the layers paint in document order and a
+ * z-index would lift it above the ruler too.
  */
 function canvasOver(geom) {
   let canvas = document.getElementById(CANVAS_ID);
@@ -216,7 +200,6 @@ function canvasOver(geom) {
   }
   canvas.style.cssText = `position:absolute;left:${geom.offsetX}px;top:${geom.offsetY}px;`
     + `width:${geom.size}px;height:${geom.size}px;pointer-events:none`;
-  // Sized to the screen's pixel ratio, as the client sizes its own layers.
   const ratio = window.devicePixelRatio || 1;
   const backing = Math.floor(geom.size * ratio);
   canvas.width = backing;
@@ -232,8 +215,7 @@ function paintOutline(ctx, box) {
   ctx.strokeRect(box.left + 1, box.top + 1, box.size - 2, box.size - 2);
 }
 
-// At the deepest zoom a tile is under 13 pixels. The disc's floor keeps its number
-// readable there, at the cost of overlapping the neighbouring tiles slightly.
+// The disc has a minimum size so its number stays readable at the deepest zoom.
 function paintDisc(ctx, box, rank, picked) {
   const d = Math.max(box.size - 2, 14);
   const cx = box.left + box.size / 2;
@@ -329,10 +311,7 @@ export function createOverlay({ getView, onPickSite, onPickCentre, onPicking, on
     document.getElementById(CANVAS_ID)?.remove();
   }
 
-  /**
-   * Listen for the map moving while anything is kept or a pick is armed, and for
-   * clicks on it while Site Search's markers are drawn or a pick is armed.
-   */
+  /** Attach or detach the map listeners to match what is kept, drawn or armed. */
   function listen() {
     const set = (target, type, fn, on, options) => {
       if (on) target.addEventListener(type, fn, options);
@@ -359,7 +338,6 @@ export function createOverlay({ getView, onPickSite, onPickCentre, onPicking, on
     onPicking(next);
   }
 
-  /** Drop everything on the map and everything it is drawn from. */
   function forget() {
     dropTop(false);
     plan = null;
@@ -386,9 +364,8 @@ export function createOverlay({ getView, onPickSite, onPickCentre, onPicking, on
   }
 
   /**
-   * Redraw the canvas whole with the open pane's marks, placed on `view`. The
-   * other pane's are measured the same way, which decides what is kept, and are
-   * not painted.
+   * Redraw the open pane's marks on `view`. The other pane's are measured too,
+   * to decide what is kept, but not painted.
    */
   function draw(view = getView()) {
     const geom = measureMap(view);
@@ -467,8 +444,7 @@ export function createOverlay({ getView, onPickSite, onPickCentre, onPicking, on
     }
     const tile = tileAt(geom, e.clientX, e.clientY);
     if (!tile) return;
-    // The readout names the tile the client itself places under the pointer, so
-    // it checks the pitch this click was mapped with.
+    // The game's own readout of the tile under the pointer checks our geometry.
     const readout = parseCoords(document.getElementById(READOUT_ID)?.textContent);
     if (readout && (readout.x !== tile.x || readout.y !== tile.y)) {
       refuse('coords-mismatch');
@@ -482,7 +458,6 @@ export function createOverlay({ getView, onPickSite, onPickCentre, onPicking, on
     }
   }
 
-  /** Drop Site Search's markers and empty its map line. */
   function clearTop() {
     dropTop(false);
     if (pane === 'scan') unpaint();
@@ -491,10 +466,7 @@ export function createOverlay({ getView, onPickSite, onPickCentre, onPicking, on
   }
 
   return {
-    /**
-     * Number the first ten results on the map, if `view` — the view the Scan
-     * read — is still the one on screen.
-     */
+    /** Number the first ten results, if `view`, the one scanned, is still on screen. */
     showTop(results, view) {
       if (!results.length) {
         clearTop();
@@ -505,15 +477,11 @@ export function createOverlay({ getView, onPickSite, onPickCentre, onPicking, on
       moved = false;
       draw(view);
     },
-    /** Outline a result's tile, or say that it is not in view. */
     outline(result) {
       selected = result;
       draw();
     },
-    /**
-     * Draw the optimiser's plan from what its claim grid is drawn from, or take
-     * it off the map when `next` is null.
-     */
+    /** Draw the optimiser's plan, or remove it when `next` is null. */
     showPlan(next, geom) {
       if (next) {
         plan = { x: geom.x, y: geom.y, radius: geom.radius, marks: planMarks(next, geom) };
@@ -525,21 +493,16 @@ export function createOverlay({ getView, onPickSite, onPickCentre, onPicking, on
       listen();
       onNote('focus', '');
     },
-    /** Make the next click on the map name a tile to plan, or stop it doing so. */
     togglePick() {
       setPicking(!picking);
     },
-    /**
-     * Show the marks of the pane open on screen, `next`, or of none while it is
-     * null. Any change of pane disarms a pick.
-     */
+    /** Show the open pane's marks; null shows none. Disarms a pick. */
     setPane(next) {
       pane = next;
       setPicking(false);
       if (top.length || selected || plan) draw();
     },
     clearTop,
-    /** Take everything off the map and empty both map lines. */
     clear() {
       forget();
       onNote('scan', '');

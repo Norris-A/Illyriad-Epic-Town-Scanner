@@ -1,9 +1,5 @@
-// Icons from the Illyriad fansite kit, inlined as data URIs. Inlined because the
-// script ships as one Tampermonkey file with no host to serve assets from, and
-// the banner promises zero network requests.
-//
-// This is the kit, not the call sites: an icon can sit here unused. Regenerate
-// from the kit if the art changes — nothing here is computed.
+// Icons from the Illyriad fansite kit, inlined as data URIs: the script ships
+// as one file and makes no network requests.
 
 const PNG = 'data:image/png;base64,';
 
@@ -27,8 +23,8 @@ export const ICONS = {
   sovereignty: PNG + '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',
 };
 
-// The app's crown mark, vector so it stays sharp at any size, and reused for the
-// Tampermonkey @icon. The same-colour stroke rounds the point tips.
+// The app's crown, also used as the Tampermonkey @icon. The same-colour stroke
+// rounds the point tips.
 export const APP_ICON_SVG = '<svg class="sov-app-icon" viewBox="0 0 64 64" '
   + 'xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Sovereignty Scanner">'
   + '<path d="M12 43 L9 25 L24 33 L32 21 L40 33 L55 25 L52 43 Z" '
@@ -40,7 +36,20 @@ export const APP_ICON_SVG = '<svg class="sov-app-icon" viewBox="0 0 64 64" '
   + '<circle cx="55" cy="24" r="5" fill="#bfeecd"/>'
   + '</svg>';
 
-/** Keyed as the settings objects are. Every production the tool names has art. */
+// Line glyphs for the panel's own controls, drawn in the surrounding text colour.
+const glyph = (body) => '<svg class="sov-glyph" viewBox="0 0 16 16" aria-hidden="true" '
+  + 'fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" '
+  + `stroke-linejoin="round">${body}</svg>`;
+
+export const GLYPHS = {
+  search: glyph('<circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5 14 14"/>'),
+  target: glyph('<circle cx="8" cy="8" r="5.5"/><circle cx="8" cy="8" r="1.8"/>'
+    + '<path d="M8 1v2.5M8 12.5V15M1 8h2.5M12.5 8H15"/>'),
+  city: glyph('<path d="M2 14V7.5l2-1.5 2 1.5V14M6 14V4l2-2 2 2v10M10 14V7.5l2-1.5 2 1.5V14M1 14h14"/>'),
+  download: glyph('<path d="M8 2v8M4.5 6.5 8 10l3.5-3.5M2.5 13.5h11"/>'),
+  chevron: glyph('<path d="M6 4l4 4-4 4"/>'),
+};
+
 export const PRODUCTION_ICONS = {
   wood: ICONS.wood,
   clay: ICONS.clay,
@@ -51,9 +60,7 @@ export const PRODUCTION_ICONS = {
   gold: ICONS.gold,
 };
 
-// Which icon heads each group of upkeep buildings in the City Buildings form,
-// keyed by UPKEEP_BUILDINGS' `group`. The crown is research-tree art shrunk
-// from 200px; the kit has no small sovereignty icon.
+// Keyed by UPKEEP_BUILDINGS' `group`.
 export const UPKEEP_GROUP_ICONS = {
   Military: ICONS.troops,
   Diplomacy: ICONS.diplomacy,
@@ -62,16 +69,8 @@ export const UPKEEP_GROUP_ICONS = {
   Trade: ICONS.caravan,
 };
 
-// Which icon stands for each Production Structure. The kit has no building art,
-// so each one is represented by the unit type it trains, and all five share one
-// mark: the structure is chosen once, for the whole plan, so a per-cell icon
-// naming which one it is would repeat what the user already picked.
-// What the cell has to say is that a military claim sits there, and at what
-// level.
-//
-// Terrain descriptors do not use these at all: their product is written out,
-// because Bows and Ranged Units are different rungs and one bow icon cannot say
-// which. Add art here and the descriptor badge still will not use it.
+// The kit has no building art, and a plan uses a single structure, so every
+// military claim on the grid shares the troops icon.
 export const STRUCTURE_ICONS = {
   trainingGround: ICONS.troops,
   targetRange: ICONS.troops,

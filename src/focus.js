@@ -1,11 +1,7 @@
-// One named tile through the same engine the scan runs.
-//
-// Nothing here computes: it resolves the three things a plan needs that a single
-// tile does not carry — an allocation, a radius, a neighbourhood — and hands them
-// to prepareSite. isCandidateSite is deliberately not called; a tile the scan
-// would exclude is one this is expected to answer for.
-//
-// DOM-free like the rest of the engine, so it is testable under Node.
+// The Optimal Sovereignty planner: one named tile through the scan's engine.
+// It resolves the allocation, radius and neighbourhood, then hands them to
+// prepareSite. isCandidateSite is not called: a tile the scan would exclude can
+// still be planned here.
 
 import { PLOT_KEYS, PLOT_TOTAL } from './constants.js';
 import {
@@ -16,10 +12,8 @@ import {
   prepareSite, planSiteAt, scoreSiteFrom, claimUpkeep, chanceryFactor, distance,
 } from './scoring.js';
 
-/** Where the slider starts. Not a game constant — nothing derives from it. */
 export const FOCUS_DEFAULT_TAX = 60;
 
-/** The lowest tax the input accepts. The game sets tax from 0 to 100. */
 export const FOCUS_TAX_FLOOR = 0;
 
 export const DEFAULT_FOCUS = {
@@ -27,11 +21,7 @@ export const DEFAULT_FOCUS = {
   y: null,
   radius: null,          // null follows R_claim from the city configuration
   tax: FOCUS_DEFAULT_TAX,
-  // On, because the tile as you intend to terraform it is the usual question
-  // here; its ratings today describe ground nobody is going to leave alone.
   useConfiguredPlots: true,
-  // Off by default, because it only means anything on a tile that is already
-  // yours, and the common case here is unsettled ground.
   preserveSovereignty: false,
 };
 
@@ -42,8 +32,8 @@ function toInt(raw, { min = -Infinity, max = Infinity, fallback = null } = {}) {
 }
 
 /**
- * Read the four inputs. Only the coordinates can fail; the rest fall back rather
- * than erroring, and a blank radius resolves later rather than clamping to 1.
+ * Read the form's inputs. Only the coordinates can fail; a blank radius stays
+ * null and follows R_claim.
  *
  * @param {object} raw as typed
  * @returns {{focus: object, errors: string[]}}
@@ -57,10 +47,8 @@ export function parseFocus(raw) {
     focus: {
       x,
       y,
-      // Blank tracks the configuration; a number overrides it for this run only.
       radius: toInt(raw?.radius, { min: 1, max: 6, fallback: null }),
-      // Whole points only, since the game accepts no other rate — a fractional
-      // request would answer a question the user cannot act on.
+      // Whole points only: the game accepts no other rate.
       tax: toInt(raw?.tax, { min: FOCUS_TAX_FLOOR, max: 100, fallback: FOCUS_DEFAULT_TAX }),
       useConfiguredPlots: !!raw?.useConfiguredPlots,
       preserveSovereignty: !!raw?.preserveSovereignty,
@@ -75,9 +63,8 @@ export function focusRadius(focus, settings) {
 }
 
 /**
- * `rs` as a plot allocation, or null when it is not one. Water and other
- * unsettleable terrain carry ratings that do not total PLOT_TOTAL, and computeK
- * would take those food plots at face value.
+ * `rs` as a plot allocation, or null when it does not total PLOT_TOTAL, as on
+ * water and other unsettleable terrain.
  */
 function plotsFromRs(rs) {
   if (!rs) return null;
@@ -92,10 +79,7 @@ function plotsFromRs(rs) {
   return total === PLOT_TOTAL ? plots : null;
 }
 
-/**
- * Which allocation to plan on, with a line saying which — it feeds computeK, so
- * every figure downstream depends on which of the three branches ran.
- */
+/** Which allocation to plan on, with a note for the user saying which. */
 export function resolvePlots(focus, settings, rs) {
   const configured = settings.plots;
   if (focus.useConfiguredPlots) {
@@ -125,17 +109,9 @@ export function resolvePlots(focus, settings, rs) {
 }
 
 /**
- * The claims `town` already holds inside the radius, which it pays for whatever
- * the plan does next.
- *
- * Level and distance are the whole of a claim's bill, and both are in the
- * payload, so this is the floor under every plan on the tile: research and gold
- * already committed, which no plan can free and none may spend twice. What the
- * plan then does with those squares is priced against this floor — a claim it
- * builds on is charged only the levels it adds.
- *
- * `otherTown` counts claims that are yours but another town's, which this one
- * can no more build on than a stranger's.
+ * The claims `town` already holds inside the radius, and their hourly cost. A
+ * plan that builds on one is charged only the levels it adds. `otherTown`
+ * counts claims held by another town of yours, which this one cannot use.
  *
  * @returns {{claims: object[], rp: number, unknownLevel: number,
  *   otherTown: number}} `rp` is the hourly research the kept claims already spend
@@ -169,7 +145,6 @@ export function keptClaims({ payload, centre, radius, idx, chancery, town }) {
   return { claims, rp, unknownLevel, otherTown };
 }
 
-/** Reported, never branched on — the caller only renders these. */
 function centreFacts(tile, key, idx) {
   const claim = idx.claims.get(key);
   return {
@@ -184,15 +159,13 @@ function centreFacts(tile, key, idx) {
  *
  * Returns `{ ok: false, reason, message }` when there is nothing to plan, where
  * `reason` is one of:
- *   - `no-payload`   there is no map data on screen to read
+ *   - `no-payload`     there is no map data on screen to read
  *   - `centre-missing` the named tile is off screen
- *   - `incomplete`   part of the claim radius is off screen
+ *   - `incomplete`     part of the claim radius is off screen; carries a count
+ *   - `unplannable`    the engine found no plan
  *
- * `incomplete` carries a count where the scan's equivalent carries nothing: the
- * user can pan and retry, so the number is worth returning.
- *
- * On success `ctx` is the prepared site, kept so the caller can re-plan at any
- * tax without rebuilding the knapsack.
+ * On success `ctx` is the prepared site, so the caller can re-plan at any tax
+ * without rebuilding the knapsack.
  */
 export function focusSite({ payload, focus, settings }) {
   if (!payload || !payload.data) {
@@ -220,31 +193,24 @@ export function focusSite({ payload, focus, settings }) {
   const { plots, source: plotSource, note: plotNote } = resolvePlots(focus, settings, rs);
   let effective = { ...settings, plots, rClaim: radius };
 
-  // Sovereignty belongs to a town, so there is something to preserve only where
-  // the centre is a town of yours — and only its own claims, never the ones a
-  // second city of yours holds nearby.
+  // Sovereignty belongs to a town: only a town of yours on the centre has claims
+  // to preserve, and only its own.
   const centreTown = idx.towns.get(key);
   const homeTown = centreTown?.rd === 'Yours' ? townIdentity(centreTown) : [];
   const preserveTown = focus.preserveSovereignty ? homeTown : [];
 
-  // The town's own claims are ground this plan may use whether they are kept or
-  // not: not keeping them means laying them out again, at full price, which is
-  // how a layout that is not optimal gets reworked.
+  // The town's own claims are usable ground either way; not keeping them means
+  // laying them out again at full price.
   if (homeTown.length) effective = { ...effective, homeTown };
 
-  // Charged as a research minimum, which is what it is — research the plan may
-  // not spend — so ceiling, knapsack budget and balance all read it off the one
-  // field instead of three that could disagree. `keptClaimRp` is the gold half.
-  //
-  // The town travels with the settings because which levels are already bought
-  // turns on it further down.
+  // Kept claims are charged as a research minimum, so the ceiling, knapsack and
+  // balance all read them from one field. `keptClaimRp` carries the gold side.
   const kept = preserveTown.length
     ? keptClaims({
       payload, centre: focus, radius, idx, chancery: chanceryFactor(settings), town: preserveTown,
     })
     : { claims: [], rp: 0, unknownLevel: 0, otherTown: 0 };
-  // Counted only to be reported: claims the plan was told to ignore are free
-  // ground, and none of their cost is charged.
+  // Counted for the note only; their cost is not charged.
   const released = homeTown.length && !preserveTown.length
     ? keptClaims({
       payload, centre: focus, radius, idx, chancery: chanceryFactor(settings), town: homeTown,
@@ -285,13 +251,8 @@ export function focusSite({ payload, focus, settings }) {
     };
   }
 
-  // Clamped, not rejected: planSiteAt returns null above the ceiling, so an
-  // out-of-range request would otherwise lose the plan that answers it.
-  //
-  // 0 is the floor because it is the lowest rate the game's own field takes. A
-  // ceiling below it is a site that holds no tax at all, and the plan is then
-  // the arithmetic at 0% — production's maximum, and the smallest shortfall
-  // there is — rather than a plan at a rate nobody can enter.
+  // Clamped rather than rejected, since planSiteAt returns null above the
+  // ceiling. A ceiling below 0% is planned at 0%, the lowest rate the game takes.
   const ceiling = base.tMax;
   const floor = Math.max(0, Math.min(settings.tMin ?? 0, ceiling));
   const requested = focus.tax;
@@ -310,16 +271,13 @@ export function focusSite({ payload, focus, settings }) {
     plotSource,
     plotNote,
     centre: centreFacts(centre, key, idx),
-    // What was asked for, and the town it could be asked of — null where the
-    // centre carries no town of yours and there is nothing of its own to keep.
+    // Null where the centre is not a town of yours.
     preserving: !!focus.preserveSovereignty,
     preserveTown: preserveTown[0] ?? null,
     homeTown: homeTown[0] ?? null,
-    // How many of the town's own claims were laid out afresh because preserving
-    // was off.
+    // The town's own claims laid out afresh because preserving was off.
     released: released ? released.claims.length + released.unknownLevel : 0,
-    // Both kept so the caller can re-plan this site without a tile, which needs
-    // the settings this plan was made with — the pane overrides two of them.
+    // The settings this plan was made with, which differ from the form's.
     neighbours,
     settings: effective,
     kept,
@@ -330,10 +288,8 @@ export function focusSite({ payload, focus, settings }) {
     plan,
     tax,
     requestedTax: requested,
-    // Set when the clamp above moved the tax; `plan` is then at `ceiling`.
     aboveCeiling: requested > ceiling + 1e-9,
-    // The ceiling is below the game's own floor: no tax runs this site, and the
-    // plan is at 0% with a deficit rather than at the ceiling.
+    // No tax runs this site; the plan is at 0% with a deficit.
     holdsNoTax: ceiling < 0,
     ceiling,
     floor,

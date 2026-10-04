@@ -1,7 +1,6 @@
-// Userscript entry point. Wires capture -> panel -> worker, and the panel to the
-// map markers.
-// __WORKER_SOURCE__ is replaced at build time by build.mjs with the bundled
-// worker code as a string literal.
+// Userscript entry point: wires map capture, the panel, the scan worker and the
+// map overlay together. __WORKER_SOURCE__ is the bundled worker code, inlined as
+// a string by build.mjs.
 
 import { probeInPageData, getLatestPayload, whenViewLoaded } from './capture.js';
 import { createPanel, csvFile, csvFilename } from './panel.js';
@@ -14,18 +13,14 @@ const workerUrl = URL.createObjectURL(
   new Blob([__WORKER_SOURCE__], { type: 'text/javascript' }),
 );
 
-// The settings form owns the live values; this is only what the last scan ran
-// with.
+// What the last scan ran with; the form holds the live values.
 let settings = { ...DEFAULT_SETTINGS };
 let lastResults = [];
 
-// The City Configuration persists in this browser's local storage. The panel's
-// own position and collapsed state are kept under their own keys by panel.js, so
-// resetting the configuration never moves the panel.
 const store = createSettingsStore();
 const restored = store.load();
 
-// Every keystroke fires a change; one write per burst of typing is enough.
+// Saves are debounced: every keystroke reports a change.
 let saveTimer = null;
 let unsaved = null;
 
@@ -44,19 +39,16 @@ function saveSoon(s) {
   saveTimer = setTimeout(flushSave, 250);
 }
 
-// The debounce is a window in which the tab can be closed, navigated or frozen
-// with the last edit still only in the form. `pagehide` and the hidden half of
-// `visibilitychange` are the two that fire in every case that ends a page —
-// `unload` does not, and listening for it forfeits the back/forward cache.
+// Flush a pending save before the page goes away. `pagehide` and a hidden
+// `visibilitychange` fire however a page ends; `unload` does not, and listening
+// for it disables the back/forward cache.
 window.addEventListener('pagehide', flushSave);
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) flushSave();
 });
 
-// Another tab of the game is the same settings edited twice. `storage` fires
-// only in the tabs that did not write, so the later save is the newer intent
-// and this one follows it — unless there is an edit here still waiting to be
-// written, which is newer still and wins by being saved next.
+// Follow settings saved by another game tab, unless an edit here is still
+// waiting to be saved: that one is newer and wins.
 window.addEventListener('storage', (e) => {
   if (e.key !== STORAGE_KEY || e.newValue === null || unsaved) return;
   const { settings: s } = decodeSettings(e.newValue);
@@ -66,7 +58,6 @@ window.addEventListener('storage', (e) => {
   panel.setStoreNote('Settings were changed in another tab; this panel now matches them.');
 });
 
-// A payload's envelope is the view on screen.
 const viewOf = (p) => p && { x: p.x, y: p.y, zoom: p.zoom };
 
 const overlay = createOverlay({
@@ -82,8 +73,7 @@ const mapOverlayOn = () => panel.getSettings().settings.mapOverlay;
 const panel = createPanel({
   initialSettings: restored.settings ?? DEFAULT_SETTINGS,
   onSettingsChange: (s) => {
-    // Turned off, the markers leave the map at once; turned on, they wait for
-    // the next Scan or Optimise.
+    // Turned back on, the markers wait for the next Scan or Optimise.
     if (!s.mapOverlay) overlay.clear();
     saveSoon(s);
   },
@@ -96,8 +86,6 @@ const panel = createPanel({
     if (mapOverlayOn()) overlay.showPlan(plan, geom);
   },
   onPickOnMap: () => overlay.togglePick(),
-  // Read afresh whenever the optimiser or its town picker needs it, cut to the
-  // view on screen as a Scan's is.
   getPayload: getLatestPayload,
   whenViewLoaded,
   onExport: () => {
@@ -107,9 +95,8 @@ const panel = createPanel({
     const a = document.createElement('a');
     a.href = url;
     a.download = csvFilename();
-    // In the document and revoked a tick later: a detached anchor is not
-    // clickable in every browser, and revoking in the same turn as the click can
-    // cancel the download before it has read the blob.
+    // Attached, and revoked a tick later: some browsers ignore a click on a
+    // detached anchor, and revoking at once can cancel the download.
     a.style.display = 'none';
     document.body.appendChild(a);
     a.click();
@@ -120,12 +107,9 @@ const panel = createPanel({
   },
 });
 
-// A clean restore, and a first run, say nothing.
 if (restored.note) panel.setStoreNote(restored.note);
 
 function runScan() {
-  // Read the form at the moment of the press, so the last edit always reaches
-  // the worker and nothing at all happens between presses.
   const read = panel.getSettings();
   if (read.errors.length) {
     panel.setStatus(read.errors.join(' '));
@@ -152,7 +136,6 @@ function runScan() {
       return;
     }
     lastResults = msg.results;
-    // The facts, not the sentence — the panel does the wording.
     panel.renderResults(msg.results, { ...view, scanned: msg.scanned });
     if (mapOverlayOn()) overlay.showTop(msg.results, view);
     panel.renderIncomplete(msg.incomplete);
@@ -163,14 +146,10 @@ function runScan() {
   worker.postMessage({ payload, settings });
 }
 
-// Exposed for console tinkering during development only — the settings form is
-// the supported route. Writes go through the form so the two cannot disagree:
-// runScan reads the form, not this variable.
+// For console debugging. Writes go through the form, which is what a scan reads.
 window.__sovScanner = {
   get settings() { return panel.getSettings().settings; },
-  // The payload a Scan would read now, for looking at when the tool reads
-  // something out of it wrongly — the block formats are only partly documented.
-  // The client's uncut global is window.mapData.
+  // What a Scan would read now, cut to the screen. The uncut global is window.mapData.
   get payload() { return getLatestPayload(); },
   set settings(v) { panel.setSettings({ ...DEFAULT_SETTINGS, ...v }); },
   probeInPageData,

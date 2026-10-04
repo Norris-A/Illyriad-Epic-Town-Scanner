@@ -275,17 +275,21 @@ test('the scan summary states the area covered and the count found', () => {
   );
 });
 
-test('the Limited By column names the ceiling rather than its code', () => {
+test('the Max Tax cell names the ceiling rather than its code', () => {
   assert.equal(bindingLabel('rp'), 'Research');
   assert.equal(bindingLabel('res'), 'Resources');
   assert.equal(bindingLabel('cap'), 'Tax cap');
   // Unknown codes pass through: showing one raw beats showing nothing.
   assert.equal(bindingLabel('mystery'), 'mystery');
 
-  const html = resultsHtml([{
-    x: 1, y: 2, tMax: 62, binding: 'rp', sFood: 10, uRp: 3, goldNet: 400,
+  const row = (over) => resultsHtml([{
+    x: 1, y: 2, tMax: 62, binding: 'rp', sFood: 10, uRp: 3, goldNet: 400, ...over,
   }], 'Centre 1|2.');
-  assert.match(html, /<td>Research<\/td>/);
+  assert.match(row(), /alt="Research" title="Limited by research"/);
+  // A resource ceiling names the resource that ran out, not the class of them.
+  assert.match(row({ binding: 'res', resBinding: 'stone' }), /alt="Resources" title="Limited by stone"/);
+  // The tax cap has no art, so it says so in a word.
+  assert.match(row({ binding: 'cap' }), /title="Limited by tax cap">tax cap</);
 });
 
 // Marsh holds Poleturner +3%, and so does i:55 Wooded Land. One rung, two

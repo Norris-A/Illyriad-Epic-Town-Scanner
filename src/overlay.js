@@ -155,7 +155,7 @@ const CLICK_SLOP = 4;
 const NUMERAL_PITCH = 20;
 // The panel claim grid's colours.
 const CLAIM_COLOURS = {
-  food: { shade: '#3a5', text: '#8d8' },
+  food: { shade: '#3a5', text: '#7fdca0' },
   mil: { shade: '#a83', text: '#eb8' },
   kept: { shade: '#4a6a8a', text: '#8ab' },
 };

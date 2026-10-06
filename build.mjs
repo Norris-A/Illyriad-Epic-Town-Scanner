@@ -5,7 +5,7 @@
 import { build, context } from 'esbuild';
 import { mkdirSync, readFileSync } from 'node:fs';
 import { dirname } from 'node:path';
-import { APP_ICON_SVG } from './src/icons.js';
+import { APP_ICON_SVG } from './src/app-icons.js';
 
 // A dev build's version carries a minute stamp as a prerelease, so Tampermonkey
 // sees every rebuild as new, and it sorts below the released version.

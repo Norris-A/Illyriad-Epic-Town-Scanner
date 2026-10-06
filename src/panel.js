@@ -26,9 +26,10 @@ import {
   UPKEEP_BUILDINGS,
   descriptorFor,
 } from './constants.js';
+import { APP_ICON_SVG, GLYPHS } from './app-icons.js';
 import {
-  ICONS, APP_ICON_SVG, GLYPHS, PRODUCTION_ICONS, STRUCTURE_ICONS, UPKEEP_GROUP_ICONS,
-} from './icons.js';
+  ICONS, PRODUCTION_ICONS, STRUCTURE_ICONS, UPKEEP_GROUP_ICONS,
+} from './game-icons.js';
 import { extractTowns, tileKey } from './payload.js';
 import {
   computeBOther,
@@ -102,6 +103,11 @@ const CSS = `
   box-shadow:-2px 0 8px rgba(0,0,0,.5)}
 .sov-collapsed h2 .sov-title,.sov-collapsed h2 .sov-h2-actions{display:none}
 .sov-collapsed h2 .sov-app-icon{width:56px;height:56px;margin:0;vertical-align:middle}
+/* A glint sweeps the crown once per hover. The sweep starts from the glint's
+   resting translate in APP_ICON_SVG, and its px are the icon's own units. */
+@keyframes sov-glint{from{transform:translateX(-46px)}to{transform:translateX(46px)}}
+@media (prefers-reduced-motion:no-preference){
+  .sov-collapsed h2:hover .sov-app-icon-glint{animation:sov-glint .85s ease-in-out}}
 
 .sov-tabs{flex:none;display:flex;margin:0;padding:0 6px;background:#262626;
   border-bottom:1px solid var(--line2)}
@@ -1263,7 +1269,7 @@ export function createPanel({
       title="Settings" aria-label="Settings" aria-expanded="false">⚙</span><a class="sov-about"
       href="https://github.com/Norris-A/Illyriad-Epic-Town-Scanner/blob/main/LICENSE"
       target="_blank" rel="noopener" title="Unofficial fan tool. Illyriad, its game data and
-the icon art are the intellectual property of Illyriad Games Limited — click for the
+the game's icon art are the intellectual property of Illyriad Games Limited — click for the
 licence and full copyright notice.">ⓘ</a></span></span></h2>
     <nav class="sov-tabs">
       <button type="button" data-tab="scan" class="on">${GLYPHS.search}Site Search</button>

@@ -81,7 +81,8 @@ copy.
 | `src/focus.js` | The Optimal Sovereignty calculator — one named tile, planned on the shared engine. No DOM |
 | `src/panel.js` | Side panel UI — the three tabs, the gear menu and the CSV writer |
 | `src/overlay.js` | What the panel draws on the game's World Map — Site Search's numbered top ten and selected row, and the optimiser's plan — and the clicks on it that open a row or pick a tile to plan. The geometry is DOM-free and tested |
-| `src/icons.js` | The app mark, the game's resource icons as data URIs, and the panel's line glyphs as inline SVG |
+| `src/app-icons.js` | The tool's own art as inline SVG: the app mark and the panel's line glyphs |
+| `src/game-icons.js` | The game's icons from the Illyriad fansite kit, as data URIs, and which icon each resource, building group and structure shows |
 | `src/settings-store.js` | Saving and restoring the City Configuration; sanitizes anything it loads |
 | `src/main.js` | Userscript entry; wires capture, the panel, the overlay, the settings store and the worker together |
 | `build.mjs` | Two-pass esbuild: worker → string → main bundle |

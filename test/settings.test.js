@@ -28,7 +28,7 @@ import {
   isWorldMapHash,
 } from '../src/panel.js';
 import { DEFAULT_FOCUS } from '../src/focus.js';
-import { PRODUCTION_ICONS, UPKEEP_GROUP_ICONS } from '../src/icons.js';
+import { PRODUCTION_ICONS, UPKEEP_GROUP_ICONS } from '../src/game-icons.js';
 import {
   DEFAULT_SETTINGS,
   BASIC_RESOURCES,

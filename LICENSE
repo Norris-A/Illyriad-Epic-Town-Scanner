@@ -80,7 +80,7 @@ The **licensor** is the individual or entity offering these terms, and the **sof
 ## Illyriad content
 
 The licence above covers the code in this repository only. The icon art
-embedded in src/icons.js comes from the Illyriad fansite kit and is used under
+embedded in src/game-icons.js comes from the Illyriad fansite kit and is used under
 its terms; Illyriad's game data and terrain names likewise remain the
 intellectual property of Illyriad Games Limited. This is an unofficial fan
 tool, not affiliated with or endorsed by Illyriad Games Limited.

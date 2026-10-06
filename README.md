@@ -207,9 +207,9 @@ Building, testing and releasing the script are covered in
 ## Licence
 
 [PolyForm Noncommercial 1.0.0](LICENSE) — free to use, modify and share for any
-noncommercial purpose. It covers the code in this repository only. The icon art
-comes from the official Illyriad fansite kit; it, the game data and the terrain
-names remain the intellectual property of Illyriad Games Limited, whose
+noncommercial purpose. It covers the code in this repository only. The game's
+icon art comes from the official Illyriad fansite kit; it, the game data and the
+terrain names remain the intellectual property of Illyriad Games Limited, whose
 [copyright notice](LICENSE#illyriad-content) applies wherever they appear. This
 is an unofficial fan tool, not affiliated with or endorsed by Illyriad Games
 Limited.

@@ -93,8 +93,9 @@ Click a row to open its plan.
 After a scan, the top ten are numbered on the World Map itself. Clicking a row
 outlines its tile in blue, and clicking a numbered tile opens its row.
 
-The numbers belong to the view you scanned, so moving the map clears them — scan
-again to number the new view. They show only while Site Search is open.
+The numbers stay on their tiles as you move the map, so you can pan away and
+back; ground that comes into view is not numbered until you scan it. They show
+only while Site Search is open, and leaving the World Map clears them.
 
 ## Optimal Sovereignty
 
@@ -134,8 +135,8 @@ has loaded.
 The plan is also drawn on the World Map: the tile outlined in blue, the radius as
 a dashed square, food claims green, military claims amber, claims you are keeping
 blue-grey, and crossed-out tiles with a red ✕. It follows the slider and your
-cross-outs. Moving the map clears it — press Optimise to draw it again. It is
-only a picture: clicking the map still does what it normally does.
+cross-outs, and stays in place as you move the map; leaving the World Map clears
+it. It is only a picture: clicking the map still does what it normally does.
 
 ## City Configuration
 

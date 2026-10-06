@@ -54,7 +54,7 @@ window.addEventListener('storage', (e) => {
   const { settings: s } = decodeSettings(e.newValue);
   if (!s) return;
   panel.setSettings(s, { save: false });
-  if (!s.mapOverlay) overlay.clear();
+  overlay.setEnabled(s.mapOverlay);
   panel.setStoreNote('Settings were changed in another tab; this panel now matches them.');
 });
 
@@ -66,25 +66,19 @@ const overlay = createOverlay({
   onPickCentre: (x, y) => panel.planAt(x, y),
   onPicking: (armed) => panel.setPicking(armed),
   onNote: (pane, text, tooltip) => panel.setMapNote(pane, text, tooltip),
+  whenViewLoaded,
 });
-
-const mapOverlayOn = () => panel.getSettings().settings.mapOverlay;
 
 const panel = createPanel({
   initialSettings: restored.settings ?? DEFAULT_SETTINGS,
   onSettingsChange: (s) => {
-    // Turned back on, the markers wait for the next Scan or Optimise.
-    if (!s.mapOverlay) overlay.clear();
+    overlay.setEnabled(s.mapOverlay);
     saveSoon(s);
   },
   onScan: runScan,
-  onSelect: (result) => {
-    if (mapOverlayOn()) overlay.outline(result);
-  },
+  onSelect: (result) => overlay.outline(result),
   onPaneShown: (pane) => overlay.setPane(pane),
-  onFocusPlan: (plan, geom) => {
-    if (mapOverlayOn()) overlay.showPlan(plan, geom);
-  },
+  onFocusPlan: (plan, geom) => overlay.showPlan(plan, geom),
   onPickOnMap: () => overlay.togglePick(),
   getPayload: getLatestPayload,
   whenViewLoaded,
@@ -107,6 +101,7 @@ const panel = createPanel({
   },
 });
 
+overlay.setEnabled(panel.getSettings().settings.mapOverlay);
 if (restored.note) panel.setStoreNote(restored.note);
 
 function runScan() {
@@ -137,7 +132,7 @@ function runScan() {
     }
     lastResults = msg.results;
     panel.renderResults(msg.results, { ...view, scanned: msg.scanned });
-    if (mapOverlayOn()) overlay.showTop(msg.results, view);
+    overlay.showTop(msg.results);
     panel.renderIncomplete(msg.incomplete);
     panel.setStatus('');
     worker.terminate();

@@ -83,7 +83,7 @@ copy.
 | `src/overlay.js` | What the panel draws on the game's World Map — Site Search's numbered top ten and selected row, and the optimiser's plan — and the clicks on it that open a row or pick a tile to plan. The geometry is DOM-free and tested |
 | `src/icons.js` | The app mark, the game's resource icons as data URIs, and the panel's line glyphs as inline SVG |
 | `src/settings-store.js` | Saving and restoring the City Configuration; sanitizes anything it loads |
-| `src/main.js` | Userscript entry; wires capture, panel and worker together |
+| `src/main.js` | Userscript entry; wires capture, the panel, the overlay, the settings store and the worker together |
 | `build.mjs` | Two-pass esbuild: worker → string → main bundle |
 
 The product spec and the game-mechanics notes are maintained outside this repo

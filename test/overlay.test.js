@@ -6,7 +6,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  mapGeometry, tileAt, tileBox, squareBox, planMarks, parseCoords,
+  mapGeometry, hashView, tileAt, tileBox, squareBox, planMarks, parseCoords,
 } from '../src/overlay.js';
 import { cellKey } from '../src/panel.js';
 
@@ -58,6 +58,11 @@ test('a hash naming another view refuses; a bare one or the same one passes', ()
   }
   assert.equal(measured({ hash: '#/World/Map' }).ok, true);
   assert.equal(measured({ hash: '#/World/Map/360/-3170/9' }).ok, true);
+});
+
+test('a hash names the view the map is moving to', () => {
+  assert.deepEqual(hashView('#/World/Map/360/-3170/9'), { x: 360, y: -3170, zoom: 9 });
+  assert.equal(hashView('#/World/Map'), null);
 });
 
 test('a missing host or layer refuses', () => {

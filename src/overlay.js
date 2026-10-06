@@ -3,9 +3,10 @@
 // select its row, and an armed pick names a tile to plan.
 //
 // The marks go on a canvas of our own over the game's tile canvases, with
-// pointer events off, so the game handles every gesture as usual. Marks belong
-// to one view, so any move of the map removes them. Only the open pane's marks
-// are painted; the other pane's are kept until the map moves.
+// pointer events off, so the game handles every gesture as usual. Marks are
+// kept when the map moves and drawn again on the new view once the client has
+// loaded it; leaving the World Map drops them. Only the open pane's marks are
+// painted.
 //
 // Everything above createOverlay is DOM-free and tested under Node.
 
@@ -19,6 +20,12 @@ const MAP_LAYER_IDS = ['mapTerrain', 'mapGrid', 'mapSov', 'mapCities'];
 const MAP_HASH_VIEW = /^#\/World\/Map\/(-?\d+)\/(-?\d+)\/(\d+)/;
 
 const fail = (reason) => ({ ok: false, reason });
+
+/** The view a World Map hash names, or null for a bare one. */
+export function hashView(hash) {
+  const m = MAP_HASH_VIEW.exec(hash);
+  return m && { x: Number(m[1]), y: Number(m[2]), zoom: Number(m[3]) };
+}
 
 /**
  * Where the view's tile grid sits on screen, from measurements the caller took.
@@ -40,8 +47,8 @@ export function mapGeometry({ view, hash, hostRect, layerRect }) {
     return fail('no-view');
   }
   // Every move writes the view into the hash; a bare #/World/Map has not moved.
-  const named = MAP_HASH_VIEW.exec(hash);
-  if (named && (Number(named[1]) !== x || Number(named[2]) !== y || Number(named[3]) !== zoom)) {
+  const named = hashView(hash);
+  if (named && (named.x !== x || named.y !== y || named.zoom !== zoom)) {
     return fail('view-moved');
   }
   if (!hostRect) return fail('no-host');
@@ -158,6 +165,7 @@ const CAPTURE_PASSIVE = { capture: true, passive: true };
 const ELSEWHERE = new Set(['not-on-map', 'view-moved']);
 
 const MOVED_TEXT = 'The map has moved; Scan again to number this view.';
+const NONE_TEXT = 'None of the top ten is in the map’s current view.';
 const PLAN_TEXT = 'On the map: the plan is drawn inside its radius.';
 const PLAN_MOVED_TEXT = 'The map has moved; Optimise again to draw the plan on this view.';
 const OFF_TEXT = 'The map markers are off: the game’s map is not laid out the way this '
@@ -296,19 +304,35 @@ function paintPlan(ctx, geom, plan, claims, centre) {
  * @param {(armed: boolean) => void} o.onPicking a pick was armed or disarmed
  * @param {(pane: string, text: string, tooltip?: string) => void} o.onNote what
  *   a pane's map line should say; '' clears it
+ * @param {(view: object, onLoaded: () => void) => (() => void)|null}
+ *   o.whenViewLoaded call `onLoaded` once the client has loaded `view`;
+ *   returns what stops the wait, or null where it cannot wait
  */
-export function createOverlay({ getView, onPickSite, onPickCentre, onPicking, onNote }) {
-  let top = [];          // the last Scan's first ten, until the map moves
-  let selected = null;   // the result selected in the panel, until the map moves
-  let moved = false;     // the top ten were dropped because the map moved
+export function createOverlay({
+  getView, onPickSite, onPickCentre, onPicking, onNote, whenViewLoaded,
+}) {
+  let top = [];          // the last Scan's first ten, until the map is left
+  let selected = null;   // the result selected in the panel, until the map is left
+  let moved = false;     // the top ten were dropped because the map was left
   let marked = false;    // Site Search has a marker in view
-  let plan = null;       // the optimiser's plan, {x, y, radius, marks}, while in view
+  let plan = null;       // the optimiser's plan, {x, y, radius, marks}
   let picking = false;   // the next click on the map names a tile to plan
   let pane = 'scan';     // the pane open in the panel; null while it is folded
   let press = null;      // a primary press on the map, until its release
+  let stopWaiting = null; // stops waiting for the client to load the hash's view
+  let enabled = true;    // the setting is on; off, marks are kept but not drawn
+
+  function note(...args) {
+    if (enabled) onNote(...args);
+  }
 
   function unpaint() {
     document.getElementById(CANVAS_ID)?.remove();
+  }
+
+  function stopWait() {
+    stopWaiting?.();
+    stopWaiting = null;
   }
 
   /** Attach or detach the map listeners to match what is kept, drawn or armed. */
@@ -318,16 +342,16 @@ export function createOverlay({ getView, onPickSite, onPickCentre, onPicking, on
       else target.removeEventListener(type, fn, options);
     };
     const clicks = (pane === 'scan' && marked) || picking;
-    set(window, 'hashchange', onMove, marked || !!plan || picking);
+    set(window, 'hashchange', onMove, top.length || selected || plan || picking);
     set(document, 'pointerdown', onPress, clicks, CAPTURE_PASSIVE);
     set(document, 'pointerup', onRelease, clicks, CAPTURE_PASSIVE);
     if (!clicks) press = null;
   }
 
-  function dropTop(afterMove) {
+  function dropTop() {
     top = [];
     selected = null;
-    moved = afterMove;
+    moved = false;
     marked = false;
   }
 
@@ -339,36 +363,64 @@ export function createOverlay({ getView, onPickSite, onPickCentre, onPicking, on
   }
 
   function forget() {
-    dropTop(false);
+    dropTop();
     plan = null;
+    stopWait();
     unpaint();
     setPicking(false);
     listen();
   }
 
+  function leave() {
+    const hadTop = top.length || selected;
+    const hadPlan = plan;
+    forget();
+    if (hadTop) {
+      moved = true;
+      note('scan', MOVED_TEXT);
+    }
+    if (hadPlan) note('focus', PLAN_MOVED_TEXT);
+  }
+
   function refuse(reason) {
     forget();
-    onNote('scan', OFF_TEXT, reason);
-    onNote('focus', OFF_TEXT, reason);
+    note('scan', OFF_TEXT, reason);
+    note('focus', OFF_TEXT, reason);
   }
 
   function noteTop(numbered, outlined) {
     if (selected && !outlined) {
-      onNote('scan', `${selected.x}|${selected.y} is not in the map’s current view.`);
+      note('scan', `${selected.x}|${selected.y} is not in the map’s current view.`);
     } else if (numbered) {
-      onNote('scan', `On the map: the top ten are numbered — ${numbered} ${
+      note('scan', `On the map: the top ten are numbered — ${numbered} ${
         numbered === 1 ? 'is' : 'are'} in view. Click a numbered tile to open its row.`);
     } else {
-      onNote('scan', moved ? MOVED_TEXT : '');
+      note('scan', top.length ? NONE_TEXT : moved ? MOVED_TEXT : '');
     }
   }
 
   /**
-   * Redraw the open pane's marks on `view`. The other pane's are measured too,
-   * to decide what is kept, but not painted.
+   * Redraw the open pane's marks on the view on screen. The other pane's are
+   * measured too, for its map line, but not painted.
    */
-  function draw(view = getView()) {
-    const geom = measureMap(view);
+  function draw() {
+    stopWait();
+    if (!enabled) {
+      unpaint();
+      marked = false;
+      listen();
+      return;
+    }
+    const geom = measureMap(getView());
+    // The hash names a view the client is still loading.
+    if (geom.reason === 'view-moved') {
+      unpaint();
+      marked = false;
+      stopWaiting = whenViewLoaded(hashView(location.hash), draw);
+      if (stopWaiting) listen();
+      else leave();
+      return;
+    }
     if (!geom.ok && !ELSEWHERE.has(geom.reason)) {
       refuse(geom.reason);
       return;
@@ -377,24 +429,17 @@ export function createOverlay({ getView, onPickSite, onPickCentre, onPicking, on
 
     const discs = top.map((r, i) => ({ r, rank: i + 1, box: boxOf(r) })).filter((d) => d.box);
     const outline = selected && boxOf(selected);
-    // With none of the top ten in view, this is not the view they were ranked on.
-    if (!discs.length) {
-      if (top.length) moved = true;
-      top = [];
-    }
     marked = !!(discs.length || outline);
 
     const claims = (plan?.marks ?? []).map((mark) => ({ mark, box: boxOf(mark) }))
       .filter((c) => c.box);
     const centre = plan && boxOf(plan);
-    if (plan && !centre && !claims.length) {
-      onNote('focus', `${plan.x}|${plan.y} is not in the map’s current view.`);
-      plan = null;
-    } else if (plan) {
-      onNote('focus', PLAN_TEXT);
+    const planned = !!(centre || claims.length);
+    if (plan) {
+      note('focus', planned ? PLAN_TEXT : `${plan.x}|${plan.y} is not in the map’s current view.`);
     }
 
-    if (pane === 'scan' ? marked : pane === 'focus' && plan) {
+    if (pane === 'scan' ? marked : pane === 'focus' && planned) {
       const ctx = canvasOver(geom);
       if (pane === 'focus') {
         paintPlan(ctx, geom, plan, claims, centre);
@@ -413,17 +458,9 @@ export function createOverlay({ getView, onPickSite, onPickCentre, onPicking, on
   }
 
   function onMove() {
-    if (marked) {
-      dropTop(true);
-      onNote('scan', MOVED_TEXT);
-    }
-    if (plan) {
-      plan = null;
-      onNote('focus', PLAN_MOVED_TEXT);
-    }
-    unpaint();
     setPicking(false);
-    listen();
+    if (isWorldMapHash(location.hash)) draw();
+    else leave();
   }
 
   function onPress(e) {
@@ -459,15 +496,15 @@ export function createOverlay({ getView, onPickSite, onPickCentre, onPicking, on
   }
 
   function clearTop() {
-    dropTop(false);
+    dropTop();
     if (pane === 'scan') unpaint();
     listen();
-    onNote('scan', '');
+    note('scan', '');
   }
 
   return {
-    /** Number the first ten results, if `view`, the one scanned, is still on screen. */
-    showTop(results, view) {
+    /** Number the first ten results. */
+    showTop(results) {
       if (!results.length) {
         clearTop();
         return;
@@ -475,7 +512,7 @@ export function createOverlay({ getView, onPickSite, onPickCentre, onPicking, on
       top = results.slice(0, TOP_COUNT);
       selected = null;
       moved = false;
-      draw(view);
+      draw();
     },
     outline(result) {
       selected = result;
@@ -491,7 +528,7 @@ export function createOverlay({ getView, onPickSite, onPickCentre, onPicking, on
       plan = null;
       if (pane === 'focus') unpaint();
       listen();
-      onNote('focus', '');
+      note('focus', '');
     },
     togglePick() {
       setPicking(!picking);
@@ -503,10 +540,16 @@ export function createOverlay({ getView, onPickSite, onPickCentre, onPicking, on
       if (top.length || selected || plan) draw();
     },
     clearTop,
-    clear() {
-      forget();
-      onNote('scan', '');
-      onNote('focus', '');
+    /** Follow the setting. Off hides the marks and disarms a pick; on shows them again. */
+    setEnabled(on) {
+      if (on === enabled) return;
+      if (!on) {
+        onNote('scan', '');
+        onNote('focus', '');
+        setPicking(false);
+      }
+      enabled = on;
+      if (!on || top.length || selected || plan) draw();
     },
   };
 }

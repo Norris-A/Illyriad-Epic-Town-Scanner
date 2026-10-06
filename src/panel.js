@@ -58,7 +58,7 @@ const CSS = `
 .sov-panel,.sov-panel *{color:#e6e6e6;background:transparent;text-shadow:none;
   text-transform:none;letter-spacing:normal;font:12px/1.4 system-ui,sans-serif}
 .sov-panel,.sov-menu{--bg:#1b1b1b;--card:#222;--card-hi:#292929;--line:#333;--line2:#444;
-  --muted:#9a9a9a;--accent:#3a5;--accent-text:#8d8;--blue:#6bf;--amber:#eb8;--red:#e66}
+  --muted:#9a9a9a;--accent:#3a5;--accent-text:#7fdca0;--blue:#6bf;--amber:#eb8;--red:#e66}
 .sov-panel strong,.sov-panel b{font-weight:700}
 /* Lets a glyph's currentColor follow its button instead of the reset. */
 .sov-panel .sov-glyph,.sov-panel .sov-glyph *{color:inherit}
@@ -96,9 +96,12 @@ const CSS = `
 .sov-collapsed{width:auto;max-height:none;overflow:visible;border-left:0;
   background:transparent;box-shadow:none}
 .sov-collapsed .sov-body,.sov-collapsed .sov-tabs{display:none}
-.sov-collapsed h2{padding:8px;border-radius:6px;box-shadow:-2px 0 8px rgba(0,0,0,.5)}
+/* The icon is its own tile, so the header shrinks to it; the radius matches the
+   tile's so the shadow follows its corners. */
+.sov-collapsed h2{padding:0;background:transparent;border-radius:13px;
+  box-shadow:-2px 0 8px rgba(0,0,0,.5)}
 .sov-collapsed h2 .sov-title,.sov-collapsed h2 .sov-h2-actions{display:none}
-.sov-collapsed h2 .sov-app-icon{width:48px;height:48px;margin:0;vertical-align:middle}
+.sov-collapsed h2 .sov-app-icon{width:56px;height:56px;margin:0;vertical-align:middle}
 
 .sov-tabs{flex:none;display:flex;margin:0;padding:0 6px;background:#262626;
   border-bottom:1px solid var(--line2)}
@@ -318,7 +321,7 @@ const CSS = `
 .sov-panel .sov-grid .sov-cell-town{background:#243;border-color:var(--blue)}
 .sov-grid .sov-cell-town .sov-lv{color:var(--blue)}
 .sov-panel .sov-grid .sov-cell-food{background:#1d2a1d;border-color:#3a5}
-.sov-grid .sov-cell-food .sov-lv{color:#8d8}
+.sov-grid .sov-cell-food .sov-lv{color:var(--accent-text)}
 .sov-panel .sov-grid .sov-cell-mil{background:#2a241a;border-color:#a83}
 .sov-grid .sov-cell-mil .sov-lv{color:var(--amber)}
 .sov-grid .sov-cell-free .sov-cv{color:#7d7d7d}
@@ -1300,14 +1303,17 @@ licence and full copyright notice.">ⓘ</a></span></span></h2>
 
   // The title bar is both the collapse control and the drag handle. Position
   // is stored apart from the settings, so Reset to Defaults never moves it.
-  const savedPosition = loadPanelPosition();
+  // Every placement clamps from where the panel was last dropped, not from
+  // where it sits now: the expanded panel is wider than the icon, and keeping
+  // its clamped spot would walk the icon in from the edge it was left at.
+  let anchor = loadPanelPosition();
   let dragged = false;
   let dragPointerId = null;
   let dragOffsetX = 0;
   let dragOffsetY = 0;
   const header = root.querySelector('h2');
 
-  function positionPanel(x, y, persist = false) {
+  function positionPanel(x, y) {
     const viewportHeight = window.innerHeight;
     if (root.classList.contains('sov-collapsed')) {
       // Let the stylesheet's max-height:none apply.
@@ -1327,10 +1333,11 @@ licence and full copyright notice.">ⓘ</a></span></span></h2>
     root.style.left = `${position.x}px`;
     root.style.top = `${position.y}px`;
     root.style.right = 'auto';
-    if (persist) savePanelPosition(position);
   }
 
-  if (savedPosition) positionPanel(savedPosition.x, savedPosition.y);
+  function placeAtAnchor() {
+    if (anchor) positionPanel(anchor.x, anchor.y);
+  }
 
   header.addEventListener('pointerdown', (e) => {
     if (e.target.closest('.sov-about') || e.target.closest('.sov-gear') || e.button !== 0) return;
@@ -1357,7 +1364,8 @@ licence and full copyright notice.">ⓘ</a></span></span></h2>
     if (e.pointerId !== dragPointerId) return;
     if (dragged) {
       const rect = root.getBoundingClientRect();
-      savePanelPosition({ x: rect.left, y: rect.top });
+      anchor = { x: rect.left, y: rect.top };
+      savePanelPosition(anchor);
     }
     root.classList.remove('sov-dragging');
     dragPointerId = null;
@@ -1365,10 +1373,7 @@ licence and full copyright notice.">ⓘ</a></span></span></h2>
 
   header.addEventListener('pointerup', finishDrag);
   header.addEventListener('pointercancel', finishDrag);
-  window.addEventListener('resize', () => {
-    const rect = root.getBoundingClientRect();
-    positionPanel(rect.left, rect.top, true);
-  });
+  window.addEventListener('resize', placeAtAnchor);
 
   // --- collapse / auto-minimise ---
 
@@ -1393,11 +1398,7 @@ licence and full copyright notice.">ⓘ</a></span></span></h2>
     root.classList.toggle('sov-collapsed', collapsed);
     // The gear is hidden when collapsed, so its menu closes.
     if (collapsed) setMenuOpen?.(false);
-    // The width changes, so re-clamp a dragged panel.
-    if (root.style.left) {
-      const rect = root.getBoundingClientRect();
-      positionPanel(rect.left, rect.top);
-    }
+    placeAtAnchor();
     reportPane();
   }
 

@@ -40,6 +40,8 @@ and choose *Utilities → Check for userscript updates*.
   the title, and click again to open it. It remembers where you left it.
 - **Away from the World Map** it folds itself, since there is no map to read
   there.
+- **The changelog**, the page icon beside ⚙, lists what changed in each
+  version.
 - **The ⚙ menu** has two switches: *Minimise when off the World Map*, and *Mark
   sites on the World Map*, which turns off everything the panel draws on the
   game's map.

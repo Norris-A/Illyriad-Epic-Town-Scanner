@@ -42,11 +42,15 @@ the settings validators and store, and the terrain descriptor table.
 so pushing to `main` is the deploy.
 
 1. Branch, work, `npm run build`, test against the live client.
-2. Merge to `main`.
-3. Bump `version` in `package.json`.
-4. `npm run release` — the same bundle, versioned from `package.json` with no
+2. Add what players will notice to the top entry in `src/changelog.js` as you
+   go, named for the coming version with a `null` date, and leave out anything
+   they will not.
+3. Merge to `main`.
+4. Bump `version` in `package.json`, and give the changelog's entry for that
+   version today's date. `npm test` fails until the entry exists.
+5. `npm run release` — the same bundle, versioned from `package.json` with no
    `-dev` suffix, written to `dist/illyriad-sov-scanner.user.js`.
-5. Commit that file along with the bump, and push.
+6. Commit that file along with the bump, and push.
 
 Two rules keep this from going wrong. **Only ever commit the bundle on `main`** —
 a generated 200KB file tracked on feature branches conflicts on every merge; the
@@ -79,7 +83,8 @@ copy.
 | `src/capture.js` | Reads the client's live `window.mapData`, cut to the tiles on screen. Reader only — no requests |
 | `src/worker.js` | Web Worker entry; bundled to a string and inlined |
 | `src/focus.js` | The Optimal Sovereignty calculator — one named tile, planned on the shared engine. No DOM |
-| `src/panel.js` | Side panel UI — the three tabs, the gear menu and the CSV writer |
+| `src/panel.js` | Side panel UI — the three tabs, the gear menu, the changelog and the CSV writer |
+| `src/changelog.js` | The player-facing changes in each version, shown under the panel's changelog button |
 | `src/overlay.js` | What the panel draws on the game's World Map — Site Search's numbered top ten and selected row, and the optimiser's plan — and the clicks on it that open a row or pick a tile to plan. The geometry is DOM-free and tested |
 | `src/app-icons.js` | The tool's own art as inline SVG: the app mark and the panel's line glyphs |
 | `src/game-icons.js` | The game's icons from the Illyriad fansite kit, as data URIs, and which icon each resource, building group and structure shows |

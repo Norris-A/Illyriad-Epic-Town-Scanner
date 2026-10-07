@@ -1,5 +1,6 @@
-// The side panel: the three tabs, the gear menu and the CSV writer. It never
-// touches the game's map; main.js relays between it and overlay.js.
+// The side panel: the three tabs, the gear menu, the changelog and the CSV
+// writer. It never touches the game's map; main.js relays between it and
+// overlay.js.
 //
 // Coordinates are shown as "x|y", as in game, though payload keys are "y|x".
 //
@@ -27,6 +28,7 @@ import {
   descriptorFor,
 } from './constants.js';
 import { APP_ICON_SVG, GLYPHS } from './app-icons.js';
+import { CHANGELOG } from './changelog.js';
 import {
   ICONS, PRODUCTION_ICONS, STRUCTURE_ICONS, UPKEEP_GROUP_ICONS,
 } from './game-icons.js';
@@ -78,15 +80,16 @@ const CSS = `
 .sov-panel.sov-dragging h2{cursor:grabbing}
 .sov-panel h2 .sov-about{color:#8a8a8a;text-decoration:none;font-size:18px;line-height:1}
 .sov-panel h2 .sov-about:hover{color:#fff}
-/* Not a <button>: the game's button rules would give it padding and width. */
-.sov-panel h2 .sov-gear{color:#8a8a8a;font-size:18px;line-height:1;cursor:pointer}
-.sov-panel h2 .sov-gear:hover{color:#fff}
-.sov-panel h2 .sov-gear:focus-visible{outline:1px solid var(--blue)}
+/* Not <button>s: the game's button rules would give them padding and width. */
+.sov-panel h2 .sov-gear,.sov-panel h2 .sov-changelog{color:#8a8a8a;font-size:18px;line-height:1;cursor:pointer}
+.sov-panel h2 .sov-gear:hover,.sov-panel h2 .sov-changelog:hover{color:#fff}
+.sov-panel h2 .sov-gear:focus-visible,.sov-panel h2 .sov-changelog:focus-visible{outline:1px solid var(--blue)}
+.sov-panel h2 .sov-changelog .sov-glyph{display:block;width:16px;height:16px}
 .sov-panel h2 .sov-build{color:#777;font-size:10px;font-weight:normal}
 /* No pointer events, so the icon never takes the header's drag. */
 .sov-panel h2 .sov-app-icon{flex:none;width:18px;height:18px;pointer-events:none}
-/* The gear menu lives outside the panel, so the panel's overflow cannot clip
-   it, and needs its own reset. */
+/* The header's popovers live outside the panel, so the panel's overflow cannot
+   clip them, and need their own reset. */
 .sov-menu,.sov-menu *{color:#e6e6e6;background:transparent;text-shadow:none;
   text-transform:none;letter-spacing:normal;font:12px/1.4 system-ui,sans-serif}
 .sov-menu{position:fixed;z-index:100000;width:260px;box-sizing:border-box;
@@ -94,6 +97,12 @@ const CSS = `
   box-shadow:0 4px 12px rgba(0,0,0,.5)}
 .sov-menu h3{margin:0 0 6px;font-size:13px;font-weight:600;color:#fff}
 .sov-menu[hidden]{display:none}
+.sov-menu.sov-changelog-menu{width:320px}
+.sov-changelog-body{max-height:60vh;overflow:auto}
+.sov-menu h4{margin:8px 0 2px;font-weight:600;color:#fff}
+.sov-menu .sov-changelog-date{margin-left:6px;color:var(--muted)}
+.sov-menu ul{margin:0;padding:0 0 0 16px;list-style:disc}
+.sov-menu li{margin:2px 0}
 .sov-collapsed{width:auto;max-height:none;overflow:visible;border-left:0;
   background:transparent;box-shadow:none}
 .sov-collapsed .sov-body,.sov-collapsed .sov-tabs{display:none}
@@ -1123,6 +1132,16 @@ export function settingsMenuHtml(settings) {
   return `<h3>Settings</h3><form class="sov-menu-form" autocomplete="off">${rows}</form>`;
 }
 
+/** The changelog popover: each version's changes, newest first. */
+export function changelogHtml(entries) {
+  const versions = entries.map((v) => {
+    const date = v.date ? `<span class="sov-changelog-date">${escapeHtml(v.date)}</span>` : '';
+    const changes = v.changes.map((c) => `<li>${escapeHtml(c)}</li>`).join('');
+    return `<h4>${escapeHtml(v.version)}${date}</h4><ul>${changes}</ul>`;
+  }).join('');
+  return `<h3>Changelog</h3><div class="sov-changelog-body">${versions}</div>`;
+}
+
 function focusRadiusTitle(rClaim) {
   return `How far out sovereignty may be placed. Blank follows City Configuration, currently ${rClaim}.`;
 }
@@ -1265,7 +1284,9 @@ export function createPanel({
     <h2 title="Sovereignty Scanner — drag to move, click to collapse"><span
         class="sov-h2-inner">${APP_ICON_SVG}<span
         class="sov-title">Sovereignty Scanner <span class="sov-build"></span></span><span
-      class="sov-h2-actions"><span class="sov-gear" role="button" tabindex="0"
+      class="sov-h2-actions"><span class="sov-changelog" role="button" tabindex="0"
+      title="Changelog" aria-label="Changelog" aria-expanded="false">${GLYPHS.changelog}</span><span
+      class="sov-gear" role="button" tabindex="0"
       title="Settings" aria-label="Settings" aria-expanded="false">⚙</span><a class="sov-about"
       href="https://github.com/Norris-A/Illyriad-Epic-Town-Scanner/blob/main/LICENSE"
       target="_blank" rel="noopener" title="Unofficial fan tool. Illyriad, its game data and
@@ -1346,7 +1367,7 @@ licence and full copyright notice.">ⓘ</a></span></span></h2>
   }
 
   header.addEventListener('pointerdown', (e) => {
-    if (e.target.closest('.sov-about') || e.target.closest('.sov-gear') || e.button !== 0) return;
+    if (e.target.closest('.sov-about,.sov-gear,.sov-changelog') || e.button !== 0) return;
     const rect = root.getBoundingClientRect();
     dragPointerId = e.pointerId;
     dragOffsetX = e.clientX - rect.left;
@@ -1402,8 +1423,8 @@ licence and full copyright notice.">ⓘ</a></span></span></h2>
   function applyCollapsed() {
     const collapsed = shouldCollapse();
     root.classList.toggle('sov-collapsed', collapsed);
-    // The gear is hidden when collapsed, so its menu closes.
-    if (collapsed) setMenuOpen?.(false);
+    // The header's buttons are hidden when collapsed, so their popovers close.
+    if (collapsed) closePopovers?.();
     placeAtAnchor();
     reportPane();
   }
@@ -1436,15 +1457,21 @@ licence and full copyright notice.">ⓘ</a></span></span></h2>
   const form = $('.sov-form');
   const scanBtn = $('.sov-scan');
 
-  // The gear menu is appended to the body so the panel's overflow cannot clip
-  // it. Its fields are read and written like the form's; containerFor picks
-  // which of the two holds a field.
+  // The header's popovers are appended to the body so the panel's overflow
+  // cannot clip them. The gear menu's fields are read and written like the
+  // form's; containerFor picks which of the two holds a field.
+  function addPopover(className, html) {
+    const el = document.createElement('div');
+    el.className = className;
+    el.hidden = true;
+    el.innerHTML = html;
+    document.body.appendChild(el);
+    return el;
+  }
   const gear = $('.sov-gear');
-  const menu = document.createElement('div');
-  menu.className = 'sov-menu';
-  menu.hidden = true;
-  menu.innerHTML = settingsMenuHtml(opening);
-  document.body.appendChild(menu);
+  const menu = addPopover('sov-menu', settingsMenuHtml(opening));
+  const changelog = addPopover('sov-menu sov-changelog-menu', changelogHtml(CHANGELOG));
+  const popovers = [[gear, menu], [$('.sov-changelog'), changelog]];
   guardCheckboxes(root);
   guardCheckboxes(menu);
   const containerFor = (f) => (f.menu ? menu : form);
@@ -1697,7 +1724,7 @@ licence and full copyright notice.">ⓘ</a></span></span></h2>
     }
   });
 
-  // --- settings menu (the gear) ---
+  // --- the header's popovers: the gear's settings and the changelog ---
 
   // Turning auto-minimise on while off the map must not fold the panel mid-edit,
   // so the current state is kept until the next route change.
@@ -1708,38 +1735,46 @@ licence and full copyright notice.">ⓘ</a></span></span></h2>
     applyCollapsed();
   });
 
-  function setMenuOpen(open) {
+  function setPopoverOpen(button, popover, open) {
     if (open) {
       // Placed each time, since the panel can have been dragged.
-      const g = gear.getBoundingClientRect();
+      const b = button.getBoundingClientRect();
       const p = root.getBoundingClientRect();
-      menu.hidden = false;
-      menu.style.top = `${g.bottom + 4}px`;
-      menu.style.left = `${Math.max(4, p.right - menu.offsetWidth)}px`;
+      popover.hidden = false;
+      popover.style.top = `${b.bottom + 4}px`;
+      popover.style.left = `${Math.max(4, p.right - popover.offsetWidth)}px`;
     } else {
-      menu.hidden = true;
+      popover.hidden = true;
     }
-    gear.setAttribute('aria-expanded', String(open));
+    button.setAttribute('aria-expanded', String(open));
   }
 
-  gear.addEventListener('click', (e) => {
-    e.stopPropagation();   // the header click below would toggle the collapse
-    setMenuOpen(menu.hidden);
-  });
-  // A span with role=button is not activated by the keyboard on its own.
-  gear.addEventListener('keydown', (e) => {
-    if (e.key !== 'Enter' && e.key !== ' ') return;
-    e.preventDefault();
-    e.stopPropagation();
-    setMenuOpen(menu.hidden);
-  });
+  function closePopovers() {
+    for (const [button, popover] of popovers) setPopoverOpen(button, popover, false);
+  }
+
+  for (const [button, popover] of popovers) {
+    const toggle = (e) => {
+      e.stopPropagation();   // the header click below would toggle the collapse
+      const open = popover.hidden;
+      closePopovers();
+      setPopoverOpen(button, popover, open);
+    };
+    button.addEventListener('click', toggle);
+    // A span with role=button is not activated by the keyboard on its own.
+    button.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter' && e.key !== ' ') return;
+      e.preventDefault();
+      toggle(e);
+    });
+  }
 
   document.addEventListener('pointerdown', (e) => {
-    if (menu.hidden || e.target.closest('.sov-menu') || e.target.closest('.sov-gear')) return;
-    setMenuOpen(false);
+    if (e.target.closest('.sov-menu,.sov-gear,.sov-changelog')) return;
+    closePopovers();
   });
   document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && !menu.hidden) setMenuOpen(false);
+    if (e.key === 'Escape') closePopovers();
   });
 
   /** Copy the selected result's own plots into the allocation fields. */

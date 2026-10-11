@@ -5,7 +5,7 @@
 export const CHANGELOG = [
   {
     version: '2.0.0',
-    date: null,
+    date: '2026-10-12',
     changes: [
       'Site Search numbers its top ten right on the World Map. Click a row to find its tile, or click a number to jump to its row.',
       'Only want to settle in the hills? Pick the terrain a site must stand on under Site Filters, now on the Site Search tab as well as in City Configuration.',

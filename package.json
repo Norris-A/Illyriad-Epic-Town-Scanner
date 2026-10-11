@@ -3,7 +3,7 @@
   "version": "2.0.0",
   "private": true,
   "type": "module",
-  "description": "Userscript ranking Illyriad world-map tiles by sustainable tax rate.",
+  "description": "Finds the best places on the World Map to build a sovereignty city, and plans which tiles to claim around them.",
   "scripts": {
     "build": "node build.mjs",
     "release": "node build.mjs --release",

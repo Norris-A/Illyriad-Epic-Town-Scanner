@@ -45,7 +45,7 @@ const BANNER = `// ==UserScript==
 // @name         ${NAME}
 // @namespace    https://github.com/Norris-A
 // @version      ${VERSION}
-// @description  Ranks visible world-map tiles by the maximum sustainable tax rate.
+// @description  Finds the best places on the World Map to build a sovereignty city, and plans which tiles to claim around them.
 // @author       Norris A. (Firebolty)
 // @icon         ${ICON}
 ${UPDATE_LINES}// @supportURL   https://github.com/Norris-A/Illyriad-Epic-Town-Scanner/issues

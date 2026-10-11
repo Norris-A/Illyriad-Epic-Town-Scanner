@@ -5,7 +5,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { planGridHtml, cellKey } from '../src/panel.js';
+import { planGridHtml, cellKey, tipPosition } from '../src/panel.js';
 
 /** The grid's rows, each as the list of cell class attributes across it. */
 function rows(html) {
@@ -143,4 +143,14 @@ test('without a radius the grid is sized to reach the furthest claim', () => {
   const grid = rows(html);
   assert.equal(grid.length, 5);
   assert.match(grid[3][4], /sov-cell-food/);
+});
+
+test('a tooltip sits under its tile, above it near the bottom, and never off screen', () => {
+  const view = { width: 1000, height: 800 };
+  const size = { width: 200, height: 60 };
+  const at = (left, top) => ({ left, top, width: 40, height: 40, bottom: top + 40 });
+  assert.deepEqual(tipPosition(at(400, 100), size, view), { left: 320, top: 146 });
+  assert.deepEqual(tipPosition(at(400, 740), size, view), { left: 320, top: 674 });
+  assert.deepEqual(tipPosition(at(980, 100), size, view).left, 794);
+  assert.deepEqual(tipPosition(at(0, 100), size, view).left, 6);
 });

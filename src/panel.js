@@ -60,7 +60,7 @@ const CSS = `
    colour. */
 .sov-panel,.sov-panel *{color:#e6e6e6;background:transparent;text-shadow:none;
   text-transform:none;letter-spacing:normal;font:12px/1.4 system-ui,sans-serif}
-.sov-panel,.sov-menu{--bg:#1b1b1b;--card:#222;--card-hi:#292929;--line:#333;--line2:#444;
+.sov-panel,.sov-menu,.sov-tip{--bg:#1b1b1b;--card:#222;--card-hi:#292929;--line:#333;--line2:#444;
   --muted:#9a9a9a;--accent:#3a5;--accent-text:#7fdca0;--blue:#6bf;--amber:#eb8;--red:#e66}
 .sov-panel strong,.sov-panel b{font-weight:700}
 /* Lets a glyph's currentColor follow its button instead of the reset. */
@@ -98,6 +98,16 @@ const CSS = `
 .sov-menu h3{margin:0 0 6px;font-size:13px;font-weight:600;color:#fff}
 .sov-menu[hidden]{display:none}
 .sov-menu.sov-changelog-menu{width:320px}
+/* Replaces the browser's own tooltip for every title in the panel and its
+   popovers. Outside the panel for the same reason as the popovers. */
+.sov-tip{position:fixed;z-index:100001;max-width:280px;box-sizing:border-box;padding:6px 8px;
+  background:#262626;border:1px solid var(--line2);border-radius:6px;
+  box-shadow:0 4px 12px rgba(0,0,0,.5);pointer-events:none;white-space:pre-line;
+  color:#e6e6e6;text-shadow:none;text-transform:none;letter-spacing:normal;
+  font:12px/1.45 system-ui,sans-serif}
+.sov-tip[hidden]{display:none}
+/* A tooltip of several lines leads with what the thing is. */
+.sov-tip.sov-tip-multi::first-line{font-weight:600;color:#fff}
 .sov-changelog-body{max-height:60vh;overflow:auto}
 .sov-menu h4{margin:8px 0 2px;font-weight:600;color:#fff}
 .sov-menu .sov-changelog-date{margin-left:6px;color:var(--muted)}
@@ -1269,6 +1279,24 @@ function capitalDerivedHtml(s) {
  *   optimiser's claim grid was drawn; null when there is none
  * @param {() => void} [o.onPickOnMap] Pick on map was pressed
  */
+const ABOUT_TIP = 'Unofficial fan tool. Illyriad, its game data and the game’s icon art are '
+  + 'the intellectual property of Illyriad Games Limited — click for the licence and full '
+  + 'copyright notice.';
+
+/**
+ * Where a tooltip of `size` sits for an element at `rect`: centred below it,
+ * or above when it would run off the bottom, and kept `gap` inside the view.
+ */
+export function tipPosition(rect, size, view, gap = 6) {
+  const centred = rect.left + rect.width / 2 - size.width / 2;
+  const left = Math.max(gap, Math.min(centred, view.width - size.width - gap));
+  const below = rect.bottom + gap;
+  const top = below + size.height + gap <= view.height
+    ? below
+    : Math.max(gap, rect.top - gap - size.height);
+  return { left, top };
+}
+
 export function createPanel({
   onScan, onExport, initialSettings, onSettingsChange, getPayload, whenViewLoaded, onSelect,
   onPaneShown, onFocusPlan, onPickOnMap,
@@ -1289,9 +1317,7 @@ export function createPanel({
       class="sov-gear" role="button" tabindex="0"
       title="Settings" aria-label="Settings" aria-expanded="false">⚙</span><a class="sov-about"
       href="https://github.com/Norris-A/Illyriad-Epic-Town-Scanner/blob/main/LICENSE"
-      target="_blank" rel="noopener" title="Unofficial fan tool. Illyriad, its game data and
-the game's icon art are the intellectual property of Illyriad Games Limited — click for the
-licence and full copyright notice.">ⓘ</a></span></span></h2>
+      target="_blank" rel="noopener" title="${ABOUT_TIP}">ⓘ</a></span></span></h2>
     <nav class="sov-tabs">
       <button type="button" data-tab="scan" class="on">${GLYPHS.search}Site Search</button>
       <button type="button" data-tab="focus">${GLYPHS.target}Optimal Sovereignty</button>
@@ -1474,6 +1500,7 @@ licence and full copyright notice.">ⓘ</a></span></span></h2>
   const popovers = [[gear, menu], [$('.sov-changelog'), changelog]];
   guardCheckboxes(root);
   guardCheckboxes(menu);
+  installTooltips();
   const containerFor = (f) => (f.menu ? menu : form);
   let rendered = [];       // the results currently in the table
   let selected = null;     // the row Prefill copies `rs` from
@@ -2044,6 +2071,71 @@ licence and full copyright notice.">ⓘ</a></span></span></h2>
       drawIncomplete();
     },
   };
+}
+
+// Long enough that sweeping the pointer across the panel does not flash them.
+const TIP_DELAY_MS = 250;
+
+/**
+ * Shows every `title` in the panel and its popovers as a styled tooltip. A
+ * title moves to `data-sov-tip` when first hovered, since the browser shows its
+ * own tooltip for any element still carrying one, and to `aria-description`,
+ * which is what a title gave assistive technology.
+ */
+function installTooltips() {
+  const box = document.createElement('div');
+  box.className = 'sov-tip';
+  box.setAttribute('role', 'tooltip');
+  box.hidden = true;
+  document.body.appendChild(box);
+  let shownFor = null;
+  let timer = 0;
+
+  const hide = () => {
+    clearTimeout(timer);
+    shownFor = null;
+    box.hidden = true;
+  };
+  const show = (el) => {
+    shownFor = el;
+    box.textContent = el.dataset.sovTip;
+    box.classList.toggle('sov-tip-multi', box.textContent.includes('\n'));
+    box.hidden = false;
+    const { left, top } = tipPosition(
+      el.getBoundingClientRect(),
+      { width: box.offsetWidth, height: box.offsetHeight },
+      { width: window.innerWidth, height: window.innerHeight },
+    );
+    box.style.left = `${left}px`;
+    box.style.top = `${top}px`;
+  };
+
+  // Every element entered fires this, so moving off a tooltip's element onto
+  // anything without one hides it, even when the element was re-rendered away.
+  document.addEventListener('pointerover', (e) => {
+    const el = e.target.closest?.('.sov-panel [title], .sov-menu [title], [data-sov-tip]');
+    if (!el) {
+      hide();
+      return;
+    }
+    if (el === shownFor) return;
+    if (el.hasAttribute('title')) {
+      el.dataset.sovTip = el.title;
+      el.setAttribute('aria-description', el.title);
+      el.removeAttribute('title');
+    }
+    clearTimeout(timer);
+    // Once one is showing, moving from one element to the next switches straight over.
+    if (shownFor) show(el);
+    else timer = setTimeout(() => show(el), TIP_DELAY_MS);
+  });
+  document.addEventListener('pointerout', (e) => {
+    if (!e.relatedTarget) hide();
+  });
+  for (const type of ['pointerdown', 'keydown', 'wheel']) {
+    document.addEventListener(type, hide, true);
+  }
+  document.addEventListener('scroll', hide, true);
 }
 
 /** Display names for the engine's binding codes, which the CSV keeps as they are. */

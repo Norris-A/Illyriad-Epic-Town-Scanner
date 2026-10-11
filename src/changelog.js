@@ -21,6 +21,7 @@ export const CHANGELOG = [
       'Optimal Sovereignty on another player’s city now counts the sovereignty that city already holds, so you can plan a friend’s town too.',
       'The game’s own styles can no longer creep into the panel.',
       'Tooltips match the panel and appear sooner, and a plan tile’s tooltip lists what the tile is, then its food, distance and cost, each on a line of its own.',
+      'The guide on GitHub now has pictures of every tab, so you can see what each one shows before you try it.',
     ],
   },
   {

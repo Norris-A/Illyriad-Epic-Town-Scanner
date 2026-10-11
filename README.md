@@ -53,6 +53,8 @@ Pan or zoom so the area you care about is on screen, then press **Scan**. Every
 tile there that you could settle is ranked by the highest tax a city on it could
 sustain.
 
+<img src="docs/images/site-search.png" alt="Site Search after a scan, listing the ten best sites" width="420">
+
 A tile is left out if it already has a town or is already claimed, if it is
 closer to another town than the distances you set, if it is not on a terrain you
 ticked, or if it cannot reach your Minimum Tax. If you set a Minimum Military
@@ -82,6 +84,8 @@ The table lists the best 200.
 ### A site's plan
 
 Click a row to open its plan.
+
+<img src="docs/images/site-plan.png" alt="A site's plan: tax slider, balance, military bonus and claim grid" width="420">
 
 - **Tax slider** — drag it down to see what a lower tax buys you, usually a
   bigger military bonus.
@@ -135,6 +139,8 @@ Press **Optimise**. The result shows the tile's maximum tax, radius and how many
 tiles around it can be claimed, then the same plan as a Site Search row: slider,
 balance, military and claim grid.
 
+<img src="docs/images/optimal-sovereignty.png" alt="Optimal Sovereignty planning around one of your towns, keeping its existing claims" width="420">
+
 The whole radius has to be on screen. If it is not, the result says so and offers
 *Centre the map on x|y*, which moves the map there and optimises again once it
 has loaded.
@@ -152,6 +158,8 @@ Scan or Optimise.
 
 Each section folds down to its name and a one-line summary, so you can see the
 whole configuration at a glance. Click a section to open it.
+
+<img src="docs/images/city-configuration.png" alt="City Configuration with every section folded to its summary" width="420">
 
 | Section | What you set |
 |---|---|

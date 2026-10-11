@@ -8,6 +8,7 @@
     "build": "node build.mjs",
     "release": "node build.mjs --release",
     "watch": "node build.mjs --watch",
+    "mockups": "node scripts/mockups.mjs",
     "test": "node --test"
   },
   "engines": {

@@ -36,6 +36,16 @@ Runs the scoring engine against the mechanics worked example, the optimiser, the
 payload reader and capture, the grid, the map markers' geometry, the plan notes,
 the settings validators and store, and the terrain descriptor table.
 
+```bash
+npm run mockups
+```
+
+Renders the README's pictures of the panel into `docs/images/`: the real panel,
+drawn over an invented map in headless Chrome or Edge. Run it after changing how
+the panel looks, and commit the pictures with the change. It needs Node 22+, for
+the built-in WebSocket. If neither browser is installed in its usual place, point
+`CHROME_PATH` at a Chromium-based one.
+
 ## Releasing
 
 `main` is what users run. Tampermonkey polls the built file on `main` by raw URL,
@@ -91,6 +101,8 @@ copy.
 | `src/settings-store.js` | Saving and restoring the City Configuration; sanitizes anything it loads |
 | `src/main.js` | Userscript entry; wires capture, the panel, the overlay, the settings store and the worker together |
 | `build.mjs` | Two-pass esbuild: worker → string → main bundle |
+| `scripts/mockups.mjs` | Renders the README's pictures: bundles the mockup page, opens it in a headless browser and captures each picture over the DevTools Protocol |
+| `scripts/mockup-page.js` | The page it captures — the real panel over a seeded, invented map, set up once per picture |
 
 The product spec and the game-mechanics notes are maintained outside this repo
 and are not tracked here.

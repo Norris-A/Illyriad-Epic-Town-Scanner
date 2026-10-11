@@ -52,7 +52,7 @@ test('a food claim lands on its own tile, north of the town', () => {
   assert.match(grid[0][1], /sov-cell-food/);
   assert.match(grid[1][1], /sov-cell-town/);
   assert.match(html, /<span class="sov-lv">V<\/span>/);
-  assert.match(html, /title="100\|201 — Sov V food claim, food 7, distance 1.00, 50 RP"/);
+  assert.match(html, /title="100\|201 — Sov V food claim\nFood 7 · distance 1.00\n50 RP\/hr"/);
 });
 
 test('a military claim overwrites the free tile it sits on', () => {
@@ -68,7 +68,7 @@ test('a military claim overwrites the free tile it sits on', () => {
   assert.match(grid[2][0], /sov-cell-mil/);
   assert.equal(/sov-cell-free/.test(html), false);
   assert.match(html, /L5/);
-  assert.match(html, /Sov V claim carrying a level 5 Jousting Yard/);
+  assert.match(html, /Sov V military claim\nLevel 5 Jousting Yard · /);
   assert.match(html, /\/hr upkeep/);
 });
 
@@ -83,21 +83,21 @@ test('claimable but unclaimed reads as free, and water says so', () => {
   const grid = rows(html);
   assert.match(grid[1][2], /sov-cell-free/);
   assert.match(grid[1][0], /sov-cell-water/);
-  assert.match(html, /title="99\|200 — unclaimed water, food 0, distance 1.00"/);
+  assert.match(html, /title="99\|200 — Unclaimed\nWater · food 0 · distance 1.00"/);
 });
 
 test('a tile in no list at all is blank, not claimable', () => {
   const html = planGridHtml(EMPTY, { radius: 1, x: 100, y: 200 });
   const grid = rows(html);
   assert.match(grid[0][0], /sov-cell-none/);
-  assert.match(html, /title="99\|201 — not claimable"/);
+  assert.match(html, /title="99\|201 — Not claimable"/);
 });
 
 test('without coordinates the labels fall back to offsets', () => {
   const html = planGridHtml(EMPTY, { radius: 1 });
   assert.deepEqual(xLabels(html), ['-1', '+0', '+1']);
   assert.deepEqual(yLabels(html), ['+1', '+0', '-1']);
-  assert.match(html, /title="\+1,\+1 — not claimable"/);
+  assert.match(html, /title="\+1,\+1 — Not claimable"/);
 });
 
 test('a crossed-out tile is crossed out even if the plan still claims it', () => {
@@ -110,7 +110,7 @@ test('a crossed-out tile is crossed out even if the plan still claims it', () =>
   const grid = rows(html);
   assert.match(grid[1][2], /sov-cell-out/);
   assert.equal(/sov-cell-food/.test(html), false);
-  assert.match(html, /title="101\|200 — crossed out"/);
+  assert.match(html, /title="101\|200 — Crossed out"/);
 });
 
 test('pickable cells carry their offsets, the rest do not', () => {

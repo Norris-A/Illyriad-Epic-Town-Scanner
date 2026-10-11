@@ -95,16 +95,28 @@ export function townIdentity(town) {
 }
 
 /**
- * Whether a claim is held by `town`. Sovereignty belongs to a town, not a
- * player: `rd` only says the claim is yours, not which of your towns holds it.
- * A claim naming no town is attributed to none.
+ * The name of the player who owns a town: `Player` on the record, or the
+ * eleventh field of the pipe string. Blank when neither reads.
+ */
+function townPlayer(town) {
+  const rec = townRecord(town);
+  return String((rec ? rec.Player : townString(town).split('|')[10]) ?? '').trim();
+}
+
+/**
+ * Whether a claim is held by `town`, a `t` block entry: the claim must name both
+ * the town's player and the town itself, since town names are not unique across
+ * players. A claim missing either is attributed to none.
  */
 export function isTownsClaim(claim, town) {
-  if (!claim || claim.rd !== 'Yours' || !town?.length) return false;
+  if (!claim || !town) return false;
+  const player = townPlayer(town);
+  if (!player || String(claim.pn ?? '').trim() !== player) return false;
+  const own = townIdentity(town);
   const names = claim.t && typeof claim.t === 'object'
     ? townIdentity(claim.t)
     : [String(claim.t ?? '').trim()].filter(Boolean);
-  return names.some((n) => town.includes(n));
+  return names.some((n) => own.includes(n));
 }
 
 export function isClaimable(tile, key, idx, settings) {
@@ -113,11 +125,11 @@ export function isClaimable(tile, key, idx, settings) {
 
   const claim = idx.claims.get(key);
   if (claim) {
-    // sov:1 means eligible, not free. Sovereignty is never shared, so only your
-    // own claims can be used: the planning town's, or any of yours when
-    // ownClaimsAvailable says you would give them up.
-    return claim.rd === 'Yours'
-      && (!!settings.ownClaimsAvailable || isTownsClaim(claim, settings?.homeTown));
+    // sov:1 means eligible, not free. Sovereignty is never shared, so the only
+    // claims that can be used are the planning town's, whoever owns it, and any
+    // of yours when ownClaimsAvailable says you would give them up.
+    return isTownsClaim(claim, settings?.homeTown)
+      || (claim.rd === 'Yours' && !!settings.ownClaimsAvailable);
   }
   return true;
 }
@@ -265,9 +277,9 @@ export function collectNeighbourhood(payload, key, rClaim, idx, settings) {
         water: isWaterTile(tile),
         // Costs downstream are for the levels above this.
         held,
-        // Level of a claim of yours here that the plan does not keep and prices
-        // as bare ground: 0 if unreadable, null if there is no such claim.
-        relaid: held === 0 && claim?.rd === 'Yours' ? (claimLevel(claim) ?? 0) : null,
+        // A claim stands here that the plan does not keep and prices as bare
+        // ground.
+        relaid: held === 0 && !!claim,
         descriptor: descriptorFor(tile.i),
       });
     }

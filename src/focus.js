@@ -109,7 +109,8 @@ export function resolvePlots(focus, settings, rs) {
 }
 
 /**
- * The claims `town` already holds inside the radius, and their hourly cost. A
+ * The claims `town`, a `t` block entry, already holds inside the radius, and
+ * their hourly cost. A
  * plan that builds on one is charged only the levels it adds. `otherTown`
  * counts claims held by another town of yours, which this one cannot use.
  *
@@ -126,9 +127,9 @@ export function keptClaims({ payload, centre, radius, idx, chancery, town }) {
       if (dx === 0 && dy === 0) continue;
       const key = tileKey(centre.y + dy, centre.x + dx);
       const claim = idx.claims.get(key);
-      if (!claim || claim.rd !== 'Yours') continue;
+      if (!claim) continue;
       if (!isTownsClaim(claim, town)) {
-        otherTown += 1;
+        if (claim.rd === 'Yours') otherTown += 1;
         continue;
       }
       const level = claimLevel(claim);
@@ -193,30 +194,31 @@ export function focusSite({ payload, focus, settings }) {
   const { plots, source: plotSource, note: plotNote } = resolvePlots(focus, settings, rs);
   let effective = { ...settings, plots, rClaim: radius };
 
-  // Sovereignty belongs to a town: only a town of yours on the centre has claims
-  // to preserve, and only its own.
+  // Sovereignty belongs to a town: only a town on the centre has claims to
+  // preserve, and only its own, whichever player it belongs to.
   const centreTown = idx.towns.get(key);
-  const homeTown = centreTown?.rd === 'Yours' ? townIdentity(centreTown) : [];
-  const preserveTown = focus.preserveSovereignty ? homeTown : [];
+  const homeName = centreTown ? townIdentity(centreTown)[0] : undefined;
+  const homeTown = homeName ? centreTown : null;
+  const preserveTown = focus.preserveSovereignty ? homeTown : null;
 
   // The town's own claims are usable ground either way; not keeping them means
   // laying them out again at full price.
-  if (homeTown.length) effective = { ...effective, homeTown };
+  if (homeTown) effective = { ...effective, homeTown };
 
   // Kept claims are charged as a research minimum, so the ceiling, knapsack and
   // balance all read them from one field. `keptClaimRp` carries the gold side.
-  const kept = preserveTown.length
+  const kept = preserveTown
     ? keptClaims({
       payload, centre: focus, radius, idx, chancery: chanceryFactor(settings), town: preserveTown,
     })
     : { claims: [], rp: 0, unknownLevel: 0, otherTown: 0 };
   // Counted for the note only; their cost is not charged.
-  const released = homeTown.length && !preserveTown.length
+  const released = homeTown && !preserveTown
     ? keptClaims({
       payload, centre: focus, radius, idx, chancery: chanceryFactor(settings), town: homeTown,
     })
     : null;
-  if (preserveTown.length) {
+  if (preserveTown) {
     effective = {
       ...effective,
       preserveTown,
@@ -271,10 +273,11 @@ export function focusSite({ payload, focus, settings }) {
     plotSource,
     plotNote,
     centre: centreFacts(centre, key, idx),
-    // Null where the centre is not a town of yours.
     preserving: !!focus.preserveSovereignty,
-    preserveTown: preserveTown[0] ?? null,
-    homeTown: homeTown[0] ?? null,
+    // The centre town's name, null where there is none. preserveTown is also
+    // null when not preserving.
+    preserveTown: preserveTown ? homeName : null,
+    homeTown: homeTown ? homeName : null,
     // The town's own claims laid out afresh because preserving was off.
     released: released ? released.claims.length + released.unknownLevel : 0,
     // The settings this plan was made with, which differ from the form's.

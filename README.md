@@ -114,7 +114,7 @@ cancel.
 |---|---|
 | Sovereignty Radius | How far out to claim. Leave it blank to use the Claim Radius from City Configuration |
 | Starting Tax | Where the tax slider starts, 60% unless you change it. If the tile cannot hold it, the plan starts at the tile's maximum instead |
-| Preserve Existing Sovereignty | For one of your towns: keep the claims it already holds and plan around them, paying only to raise their levels. Leave it off to plan from scratch, for reworking a layout |
+| Preserve Existing Sovereignty | For a town on the tile, yours or another player's: keep the claims it already holds and plan around them, paying only to raise their levels. Leave it off to plan from scratch, for reworking a layout |
 
 The folded **City Configuration** section below these holds three settings
 shared with that tab — change them in either place:

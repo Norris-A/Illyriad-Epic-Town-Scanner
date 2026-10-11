@@ -1187,7 +1187,7 @@ export function focusFormHtml(focus, settings) {
     label: 'Preserve Existing Sovereignty',
     checked: f.preserveSovereignty,
     hooks: ' data-focus="preserveSovereignty"',
-    row: ' title="On: a town of yours keeps the claims it holds, and the plan pays only to raise them. Off: they are laid out afresh at full price."',
+    row: ' title="On: the town on this tile keeps the claims it holds, and the plan pays only to raise them. Off: they are laid out afresh at full price."',
   })}
       </div>
       ${sectionHtml({
@@ -2259,9 +2259,9 @@ function keptNote(r) {
       + 'planned as empty ground and priced in full, as though given up and laid out again. '
       + 'Turn it on to plan around them instead.';
   }
-  // Sovereignty belongs to a town: a tile with no town of yours has none to keep.
+  // Sovereignty belongs to a town: a tile with no town has none to keep.
   if (!r.preserveTown) {
-    return 'Preserve Existing Sovereignty is on, but this tile carries no town of yours — '
+    return 'Preserve Existing Sovereignty is on, but this tile carries no town — '
       + 'sovereignty belongs to a town, so there is none here to keep and the plan is drawn '
       + 'on empty ground.';
   }
@@ -2370,14 +2370,14 @@ export function descriptorText(tile) {
   // A tile without `i` gets nothing; an unknown `i` is flagged.
   if (typeof tile?.i !== 'number' && !tile?.descriptor) return '';
   const d = tile?.descriptor ?? descriptorFor(tile.i);
-  if (!d) return `, terrain ${tile.i} — unidentified`;
+  if (!d) return `Terrain ${tile.i} — unidentified`;
   const varies = d.nodeClass ? ' (rating varies; not a fixed terrain)' : '';
-  if (d.bonusUnread) return `, ${d.name}${varies} — bonus not read yet`;
-  if (d.nodeClass) return `, ${d.name}${varies}`;
-  if (!d.building) return `, ${d.name} — no sovereignty bonus`;
+  if (d.bonusUnread) return `${d.name}${varies} — bonus not read yet`;
+  if (d.nodeClass) return `${d.name}${varies}`;
+  if (!d.building) return `${d.name} — no sovereignty bonus`;
   const conditional = d.conditional ? `, needs a ${d.building}` : '';
   const disputed = d.disputed ? ' [unconfirmed]' : '';
-  return `, ${d.name}: +${d.bonus}% ${d.product} per level of ${d.building}${conditional}${disputed}`;
+  return `${d.name}: +${d.bonus}% ${d.product} per level of ${d.building}${conditional}${disputed}`;
 }
 
 /**
@@ -2458,17 +2458,18 @@ export function descriptorBadge(tile) {
     escapeHtml(d.product)}</span>`;
 }
 
-/** "your Sov III claim", or "your claim" when its level does not read. */
-function relaidText(t) {
-  return t.relaid > 0 ? `your Sov ${roman(t.relaid)} claim` : 'your claim';
-}
-
-/** A claim's research cost, as an upgrade of a kept claim or a replacement of one of yours. */
+/** A claim's hourly research, counting only the levels it adds to a kept claim. */
 function claimCostText(t) {
   const held = t.held ?? 0;
-  if (held > 0) return `${t.rp.toFixed(0)} RP on top of the Sov ${roman(held)} claim already there`;
-  if (t.relaid != null) return `${t.rp.toFixed(0)} RP, replacing ${relaidText(t)}`;
-  return `${t.rp.toFixed(0)} RP`;
+  const rp = t.rp.toFixed(0);
+  if (held > 0 && t.rp > 0) return `+${rp} RP/hr, raised from Sov ${roman(held)}`;
+  if (held > 0) return 'Already held at this level, no extra RP';
+  return `${rp} RP/hr`;
+}
+
+/** A grid tooltip: the tile and what it is, then one fact per line. */
+function tip(head, ...lines) {
+  return [head, ...lines].filter(Boolean).join('\n');
 }
 
 /**
@@ -2499,25 +2500,25 @@ export function planGridHtml(plan, geom) {
   // Whether any square is drawn as kept, for the legend.
   let anyKept = false;
 
+  const place = (t) => `${t.water ? 'Water · food' : 'Food'} ${t.food} · distance ${t.d.toFixed(2)}`;
+
   // `free` goes first: military claims sit on free tiles and overwrite them.
   for (const t of plan.free ?? []) {
-    // A free tile with a kept claim is one you keep paying for and build nothing on.
+    // A free tile with a kept claim is one the town keeps paying for and builds nothing on.
     const held = t.held ?? 0;
     if (held > 0) anyKept = true;
     specs.set(cellKey(t.dx, t.dy), held > 0 ? {
       cls: 'sov-cell-kept',
       badge: descriptorBadge(t),
-      title: `${name(t.dx, t.dy)} — Sov ${roman(held)} claim you already hold, food ${
-        t.food}, distance ${t.d.toFixed(2)}. Kept as it is${descriptorText(t)}`,
+      title: tip(`${name(t.dx, t.dy)} — Sov ${roman(held)} claim, kept as it is`, place(t),
+        descriptorText(t)),
       level: roman(held),
       body: 'kept',
     } : {
       cls: t.water ? 'sov-cell-free sov-cell-water' : 'sov-cell-free',
       badge: descriptorBadge(t),
-      title: `${name(t.dx, t.dy)} — ${t.relaid != null
-        ? `${relaidText(t)}${t.water ? ' on water' : ''}, given up in this plan`
-        : `unclaimed${t.water ? ' water' : ''}`}, food ${t.food}, `
-        + `distance ${t.d.toFixed(2)}${descriptorText(t)}`,
+      title: tip(`${name(t.dx, t.dy)} — ${t.relaid ? 'Claimed, not used in this plan' : 'Unclaimed'}`,
+        place(t), descriptorText(t)),
       body: `${FOOD_ICON} ${t.food}`,
     });
   }
@@ -2525,8 +2526,8 @@ export function planGridHtml(plan, geom) {
     specs.set(cellKey(t.dx, t.dy), {
       cls: 'sov-cell-food',
       badge: descriptorBadge(t),
-      title: `${name(t.dx, t.dy)} — Sov ${roman(t.level)} food claim, food ${t.food}, `
-        + `distance ${t.d.toFixed(2)}, ${claimCostText(t)}${descriptorText(t)}`,
+      title: tip(`${name(t.dx, t.dy)} — Sov ${roman(t.level)} food claim`, place(t),
+        claimCostText(t), descriptorText(t)),
       level: roman(t.level),
       body: `${FOOD_ICON} ${t.food}`,
     });
@@ -2537,10 +2538,10 @@ export function planGridHtml(plan, geom) {
     specs.set(cellKey(m.dx, m.dy), {
       cls: 'sov-cell-mil',
       badge: descriptorBadge(m),
-      title: `${name(m.dx, m.dy)} — Sov ${roman(m.sovLevel)} claim carrying a level `
-        + `${m.buildingLevel} ${structure.name}, distance ${m.d.toFixed(2)}, `
-        + `${claimCostText(m)}, ${structureUpkeep(m).toLocaleString('en-GB')}/hr upkeep`
-        + descriptorText(m),
+      title: tip(`${name(m.dx, m.dy)} — Sov ${roman(m.sovLevel)} military claim`,
+        `Level ${m.buildingLevel} ${structure.name} · ${
+          structureUpkeep(m).toLocaleString('en-GB')}/hr upkeep`,
+        `Distance ${m.d.toFixed(2)} · ${claimCostText(m)}`, descriptorText(m)),
       level: roman(m.sovLevel),
       body: `${icon ? `<img src="${icon}" alt="${escapeHtml(structure.name)}">` : ''} L${
         m.buildingLevel}`,
@@ -2549,12 +2550,12 @@ export function planGridHtml(plan, geom) {
 
   const cell = (dx, dy) => {
     if (dx === 0 && dy === 0) {
-      return gridCell({ cls: 'sov-cell-town', title: `${name(0, 0)} — the town`, level: 'TOWN' });
+      return gridCell({ cls: 'sov-cell-town', title: `${name(0, 0)} — The town`, level: 'TOWN' });
     }
     if (excluded.has(cellKey(dx, dy))) {
       return gridCell({
         cls: 'sov-cell-out',
-        title: `${name(dx, dy)} — crossed out${pickable ? ', click to put it back' : ''}`,
+        title: tip(`${name(dx, dy)} — Crossed out`, pickable && 'Click to put it back'),
         body: CROSS,
         dx,
         dy,
@@ -2569,13 +2570,13 @@ export function planGridHtml(plan, geom) {
         anyKept = true;
         return gridCell({
           cls: 'sov-cell-kept',
-          title: `${name(dx, dy)} — Sov ${roman(k.level)} claim you already hold, distance ${
-            k.d.toFixed(2)}, ${k.rp.toFixed(0)} RP. Kept as it is.`,
+          title: tip(`${name(dx, dy)} — Sov ${roman(k.level)} claim, kept as it is`,
+            `Distance ${k.d.toFixed(2)} · ${k.rp.toFixed(0)} RP/hr`),
           level: roman(k.level),
           body: 'kept',
         });
       }
-      return gridCell({ cls: 'sov-cell-none', title: `${name(dx, dy)} — not claimable`, body: CROSS });
+      return gridCell({ cls: 'sov-cell-none', title: `${name(dx, dy)} — Not claimable`, body: CROSS });
     }
     return gridCell({ ...spec, dx, dy, pick: pickable });
   };
@@ -2591,7 +2592,7 @@ export function planGridHtml(plan, geom) {
     <div class="sov-keys">
       <span><i class="sov-sw sov-sw-food"></i>Food claim</span>
       <span><i class="sov-sw sov-sw-mil"></i>Military claim</span>${
-  anyKept ? '<span><i class="sov-sw sov-sw-kept"></i>Yours, kept</span>' : ''}
+  anyKept ? '<span><i class="sov-sw sov-sw-kept"></i>Kept claim</span>' : ''}
       <span><i class="sov-sw sov-sw-free"></i>Unclaimed</span>
       <span><i class="sov-sw sov-sw-out">✕</i>Unavailable</span>
     </div>

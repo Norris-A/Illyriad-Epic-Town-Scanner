@@ -83,7 +83,7 @@ copy.
 | `src/capture.js` | Reads the client's live `window.mapData`, cut to the tiles on screen. Reader only — no requests |
 | `src/worker.js` | Web Worker entry; bundled to a string and inlined |
 | `src/focus.js` | The Optimal Sovereignty calculator — one named tile, planned on the shared engine. No DOM |
-| `src/panel.js` | Side panel UI — the three tabs, the gear menu and the changelog |
+| `src/panel.js` | Side panel UI — the three tabs, the gear menu and the changelog. All of it is drawn in a shadow root, so the game's CSS cannot reach it; reach it from the console through `document.querySelector('sov-scanner').shadowRoot` |
 | `src/changelog.js` | The player-facing changes in each version, shown under the panel's changelog button |
 | `src/overlay.js` | What the panel draws on the game's World Map — Site Search's numbered top ten and selected row, and the optimiser's plan — and the clicks on it that open a row or pick a tile to plan. The geometry is DOM-free and tested |
 | `src/app-icons.js` | The tool's own art as inline SVG: the app mark and the panel's line glyphs |

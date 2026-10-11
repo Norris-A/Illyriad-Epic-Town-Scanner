@@ -19,6 +19,7 @@ export const CHANGELOG = [
       'A shiny new crown icon, bigger when the panel is folded. Hover over it for a little sparkle.',
       'The folded panel stays where you left it after a reload, instead of creeping in from the edge.',
       'Optimal Sovereignty on another player’s city now counts the sovereignty that city already holds, so you can plan a friend’s town too.',
+      'The game’s own styles can no longer creep into the panel.',
       'Tooltips match the panel and appear sooner, and a plan tile’s tooltip lists what the tile is, then its food, distance and cost, each on a line of its own.',
     ],
   },

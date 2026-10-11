@@ -54,12 +54,10 @@ import {
 } from './focus.js';
 
 const CSS = `
-/* The game's own stylesheet also matches the panel's elements, and beats any
-   colour or font they would inherit. So every element gets its own here, first,
-   and nested elements need explicit rules: they never inherit size, weight or
-   colour. */
-.sov-panel,.sov-panel *{color:#e6e6e6;background:transparent;text-shadow:none;
-  text-transform:none;letter-spacing:normal;font:12px/1.4 system-ui,sans-serif}
+/* Form controls take the browser's own font and colour rather than inheriting,
+   so every element gets them here, first, and nested elements need explicit
+   rules: they never inherit size, weight or colour. */
+.sov-panel,.sov-panel *{color:#e6e6e6;background:transparent;font:12px/1.4 system-ui,sans-serif}
 .sov-panel,.sov-menu,.sov-tip{--bg:#1b1b1b;--card:#222;--card-hi:#292929;--line:#333;--line2:#444;
   --muted:#9a9a9a;--accent:#3a5;--accent-text:#7fdca0;--blue:#6bf;--amber:#eb8;--red:#e66}
 .sov-panel strong,.sov-panel b{font-weight:700}
@@ -72,7 +70,6 @@ const CSS = `
   border-left:1px solid var(--line2);box-shadow:-2px 0 8px rgba(0,0,0,.5)}
 .sov-panel h2{flex:none;margin:0;padding:8px 10px;font-size:13px;font-weight:600;
   color:#fff;background:#262626;cursor:move;user-select:none}
-/* Laid out on an inner element: the game's stylesheet forces the h2's display. */
 .sov-panel h2 .sov-h2-inner{display:flex;align-items:center;gap:8px}
 .sov-panel h2 .sov-title{min-width:0;font-size:13px;font-weight:600;color:#fff}
 .sov-panel h2 .sov-h2-actions{margin-left:auto;flex:none;display:flex;align-items:center;gap:12px}
@@ -80,7 +77,7 @@ const CSS = `
 .sov-panel.sov-dragging h2{cursor:grabbing}
 .sov-panel h2 .sov-about{color:#8a8a8a;text-decoration:none;font-size:18px;line-height:1}
 .sov-panel h2 .sov-about:hover{color:#fff}
-/* Not <button>s: the game's button rules would give them padding and width. */
+/* Not <button>s, which the panel draws as filled buttons. */
 .sov-panel h2 .sov-gear,.sov-panel h2 .sov-changelog{color:#8a8a8a;font-size:18px;line-height:1;cursor:pointer}
 .sov-panel h2 .sov-gear:hover,.sov-panel h2 .sov-changelog:hover{color:#fff}
 .sov-panel h2 .sov-gear:focus-visible,.sov-panel h2 .sov-changelog:focus-visible{outline:1px solid var(--blue)}
@@ -90,8 +87,7 @@ const CSS = `
 .sov-panel h2 .sov-app-icon{flex:none;width:18px;height:18px;pointer-events:none}
 /* The header's popovers live outside the panel, so the panel's overflow cannot
    clip them, and need their own reset. */
-.sov-menu,.sov-menu *{color:#e6e6e6;background:transparent;text-shadow:none;
-  text-transform:none;letter-spacing:normal;font:12px/1.4 system-ui,sans-serif}
+.sov-menu,.sov-menu *{color:#e6e6e6;background:transparent;font:12px/1.4 system-ui,sans-serif}
 .sov-menu{position:fixed;z-index:100000;width:260px;box-sizing:border-box;
   background:var(--bg);border:1px solid var(--line2);border-radius:8px;padding:8px 10px;
   box-shadow:0 4px 12px rgba(0,0,0,.5)}
@@ -103,8 +99,7 @@ const CSS = `
 .sov-tip{position:fixed;z-index:100001;max-width:280px;box-sizing:border-box;padding:6px 8px;
   background:#262626;border:1px solid var(--line2);border-radius:6px;
   box-shadow:0 4px 12px rgba(0,0,0,.5);pointer-events:none;white-space:pre-line;
-  color:#e6e6e6;text-shadow:none;text-transform:none;letter-spacing:normal;
-  font:12px/1.45 system-ui,sans-serif}
+  color:#e6e6e6;font:12px/1.45 system-ui,sans-serif}
 .sov-tip[hidden]{display:none}
 /* A tooltip of several lines leads with what the thing is. */
 .sov-tip.sov-tip-multi::first-line{font-weight:600;color:#fff}
@@ -164,7 +159,7 @@ const CSS = `
   border-color:var(--accent);
   background:radial-gradient(circle at 19px 50%,#fff 4.5px,transparent 5px) var(--accent)}
 .sov-panel input[type=checkbox]:focus-visible,.sov-menu input[type=checkbox]:focus-visible{
-  outline:1px solid var(--blue)}
+  outline:1px solid var(--blue);outline-offset:1px}
 .sov-panel input:disabled,.sov-panel select:disabled{cursor:not-allowed}
 
 .sov-f{display:flex;align-items:center;justify-content:space-between;gap:8px;
@@ -302,9 +297,7 @@ const CSS = `
 
 .sov-xy{display:flex;align-items:center;gap:4px}
 .sov-panel .sov-xy input{width:58px;text-align:right}
-/* Sized explicitly, overriding the game's own button height and width. */
-.sov-panel .sov-xy button{width:auto;min-width:0;height:auto;min-height:0;margin:0;
-  padding:3px 8px;line-height:1.4;white-space:nowrap}
+.sov-panel .sov-xy button{padding:3px 8px;white-space:nowrap}
 .sov-xy .sov-or{color:#777;font-size:11px}
 .sov-no-map .sov-map-only{display:none}
 .sov-panel a.sov-map-centre{color:var(--blue);text-decoration:underline}
@@ -839,32 +832,6 @@ function checkboxRowHtml({ id, label, checked, hooks = '', row = '' }) {
   });
 }
 
-/** Looked up on use, since Node has no DOM. */
-const nativeChecked = () => Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'checked');
-
-function setChecked(el, value) {
-  nativeChecked().set.call(el, !!value);
-}
-
-/**
- * Make the checkboxes under `container` ignore scripted ticks. The game's own
- * "Check All" sets every checkbox on the page, and the next edit would save
- * those ticks as settings. A user's click does not go through the setter.
- */
-function guardCheckboxes(container) {
-  for (const el of container.querySelectorAll('input[type="checkbox"]')) {
-    // Writing the property first stops the `checked` attribute from applying.
-    setChecked(el, nativeChecked().get.call(el));
-    Object.defineProperty(el, 'checked', {
-      configurable: true,
-      get() {
-        return nativeChecked().get.call(this);
-      },
-      set() {},
-    });
-  }
-}
-
 function numberFieldHtml(f, value) {
   const id = `sov-in-${f.key}`;
   return fieldRowHtml({
@@ -1353,9 +1320,16 @@ export function createPanel({
   onScan, initialSettings, onSettingsChange, getPayload, whenViewLoaded, onSelect,
   onPaneShown, onFocusPlan, onPickOnMap,
 }) {
+  // Everything the panel draws lives in a shadow root, where no rule from the
+  // page can match it. `all` stops the host passing the page's inherited font
+  // and colour in, and !important keeps it ahead of any page rule on the host.
+  const host = document.createElement('sov-scanner');
+  host.style.setProperty('all', 'initial', 'important');
+  const shadow = host.attachShadow({ mode: 'open' });
+  document.body.appendChild(host);
   const style = document.createElement('style');
   style.textContent = CSS;
-  document.head.appendChild(style);
+  shadow.appendChild(style);
 
   const root = document.createElement('div');
   root.className = 'sov-panel';
@@ -1390,7 +1364,7 @@ export function createPanel({
   // Shows which build is running, since Tampermonkey keeps its own copy.
   root.querySelector('.sov-build').textContent =
     typeof __BUILD_VERSION__ === 'undefined' ? 'dev' : __BUILD_VERSION__;
-  document.body.appendChild(root);
+  shadow.appendChild(root);
 
   // Which sections are open is the viewer's own arrangement, not part of the
   // City Configuration, so it has a key of its own that Reset to Defaults
@@ -1534,24 +1508,22 @@ export function createPanel({
   const form = $('.sov-form');
   const scanBtn = $('.sov-scan');
 
-  // The header's popovers are appended to the body so the panel's overflow
-  // cannot clip them. The gear menu's fields are read and written like the
-  // form's; containerFor picks which of the two holds a field.
+  // The header's popovers sit beside the panel, not in it, so the panel's
+  // overflow cannot clip them. The gear menu's fields are read and written like
+  // the form's; containerFor picks which of the two holds a field.
   function addPopover(className, html) {
     const el = document.createElement('div');
     el.className = className;
     el.hidden = true;
     el.innerHTML = html;
-    document.body.appendChild(el);
+    shadow.appendChild(el);
     return el;
   }
   const gear = $('.sov-gear');
   const menu = addPopover('sov-menu', settingsMenuHtml(opening));
   const changelog = addPopover('sov-menu sov-changelog-menu', changelogHtml(CHANGELOG));
   const popovers = [[gear, menu], [$('.sov-changelog'), changelog]];
-  guardCheckboxes(root);
-  guardCheckboxes(menu);
-  installTooltips();
+  installTooltips(shadow);
   const containerFor = (f) => (f.menu ? menu : form);
   let rendered = [];       // the results currently in the table
   let selected = null;     // the row Prefill copies `rs` from
@@ -1673,7 +1645,7 @@ export function createPanel({
       const v = s[f.key];
       switch (f.type) {
         case 'checkbox':
-          setChecked(containerFor(f).querySelector(`input[data-key="${f.key}"]`), v);
+          containerFor(f).querySelector(`input[data-key="${f.key}"]`).checked = !!v;
           break;
         case 'select':
           containerFor(f).querySelector(`select[data-key="${f.key}"]`).value = String(v);
@@ -1687,11 +1659,11 @@ export function createPanel({
         case 'calibration':
           form.querySelector('[data-cal="observedRpPerHour"]').value = v?.observedRpPerHour ?? '';
           form.querySelector('[data-cal="atTax"]').value = v?.atTax ?? 0;
-          setChecked(form.querySelector('[data-cal="prestige"]'), v?.prestige);
+          form.querySelector('[data-cal="prestige"]').checked = !!v?.prestige;
           break;
         case 'boosters':
           for (const res of BASIC_RESOURCES) {
-            setChecked(form.querySelector(`[data-booster="${res}"]`), v?.[res]);
+            form.querySelector(`[data-booster="${res}"]`).checked = !!v?.[res];
           }
           break;
         case 'upkeepBuildings':
@@ -1701,7 +1673,7 @@ export function createPanel({
           break;
         case 'prestige':
           for (const key of PRESTIGE_KEYS) {
-            setChecked(form.querySelector(`[data-prestige="${key}"]`), v?.[key]);
+            form.querySelector(`[data-prestige="${key}"]`).checked = !!v?.[key];
           }
           break;
         case 'minimums':
@@ -1711,7 +1683,7 @@ export function createPanel({
           break;
         case 'terrains':
           for (const el of form.querySelectorAll('[data-terrain]')) {
-            setChecked(el, v?.includes(el.dataset.terrain));
+            el.checked = !!v?.includes(el.dataset.terrain);
           }
           break;
         default:
@@ -1776,7 +1748,7 @@ export function createPanel({
     root.classList.toggle('sov-no-map', !s.mapOverlay);
     for (const el of root.querySelectorAll('[data-mirror-key], [data-mirror-plot], [data-mirror-terrain]')) {
       const own = mirrored(el);
-      if (el.type === 'checkbox') setChecked(el, own.checked);
+      if (el.type === 'checkbox') el.checked = own.checked;
       // Compare as typed, so a value part-way through being typed is left alone.
       else if (el.value !== own.value) el.value = own.value;
     }
@@ -1796,7 +1768,7 @@ export function createPanel({
     root.addEventListener(type, (e) => {
       const own = mirrored(e.target);
       if (!own) return;
-      if (own.type === 'checkbox') setChecked(own, e.target.checked);
+      if (own.type === 'checkbox') own.checked = e.target.checked;
       else own.value = e.target.value;
       own.dispatchEvent(new Event(type, { bubbles: true }));
     });
@@ -1870,7 +1842,7 @@ export function createPanel({
   }
 
   document.addEventListener('pointerdown', (e) => {
-    if (e.target.closest('.sov-menu,.sov-gear,.sov-changelog')) return;
+    if (innerTarget(e).closest('.sov-menu,.sov-gear,.sov-changelog')) return;
     closePopovers();
   });
   document.addEventListener('keydown', (e) => {
@@ -2138,17 +2110,23 @@ export function createPanel({
 const TIP_DELAY_MS = 250;
 
 /**
+ * The element an event happened on. A listener outside the shadow root is given
+ * the root's host as `target` instead.
+ */
+const innerTarget = (e) => e.composedPath()[0];
+
+/**
  * Shows every `title` in the panel and its popovers as a styled tooltip. A
  * title moves to `data-sov-tip` when first hovered, since the browser shows its
  * own tooltip for any element still carrying one, and to `aria-description`,
  * which is what a title gave assistive technology.
  */
-function installTooltips() {
+function installTooltips(shadow) {
   const box = document.createElement('div');
   box.className = 'sov-tip';
   box.setAttribute('role', 'tooltip');
   box.hidden = true;
-  document.body.appendChild(box);
+  shadow.appendChild(box);
   let shownFor = null;
   let timer = 0;
 
@@ -2174,7 +2152,7 @@ function installTooltips() {
   // Every element entered fires this, so moving off a tooltip's element onto
   // anything without one hides it, even when the element was re-rendered away.
   document.addEventListener('pointerover', (e) => {
-    const el = e.target.closest?.('.sov-panel [title], .sov-menu [title], [data-sov-tip]');
+    const el = innerTarget(e).closest?.('.sov-panel [title], .sov-menu [title], [data-sov-tip]');
     if (!el) {
       hide();
       return;
@@ -2196,7 +2174,8 @@ function installTooltips() {
   for (const type of ['pointerdown', 'keydown', 'wheel']) {
     document.addEventListener(type, hide, true);
   }
-  document.addEventListener('scroll', hide, true);
+  // A scroll does not leave the shadow root, so the page never hears the panel's.
+  for (const target of [document, shadow]) target.addEventListener('scroll', hide, true);
 }
 
 /** Display names for the engine's binding codes. */

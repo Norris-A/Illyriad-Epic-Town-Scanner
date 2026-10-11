@@ -1335,9 +1335,9 @@ export function createPanel({
   root.className = 'sov-panel';
   const opening = initialSettings ?? DEFAULT_SETTINGS;
   root.innerHTML = `
-    <h2 title="Sovereignty Scanner — drag to move, click to collapse"><span
+    <h2 title="Sovereignty Site Scanner — drag to move, click to collapse"><span
         class="sov-h2-inner">${APP_ICON_SVG}<span
-        class="sov-title">Sovereignty Scanner <span class="sov-build"></span></span><span
+        class="sov-title">Sovereignty Site Scanner <span class="sov-build"></span></span><span
       class="sov-h2-actions"><span class="sov-changelog" role="button" tabindex="0"
       title="Changelog" aria-label="Changelog" aria-expanded="false">${GLYPHS.changelog}</span><span
       class="sov-gear" role="button" tabindex="0"

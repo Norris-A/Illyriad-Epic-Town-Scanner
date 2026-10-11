@@ -11,7 +11,7 @@ const CROWN_MASK = '<path d="M19.5 39.5 L18 24.5 L26 30.5 L32 20.5 L38 30.5 L46 
 // animates it. The ids are prefixed because the SVG is inlined into the game's
 // page, where ids share one namespace.
 export const APP_ICON_SVG = '<svg class="sov-app-icon" viewBox="0 0 64 64" '
-  + 'xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Sovereignty Scanner">'
+  + 'xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Sovereignty Site Scanner">'
   + '<defs><linearGradient id="sov-app-icon-fill" x1="0" y1="0" x2="0" y2="1">'
   + '<stop offset="0" stop-color="#3fbf6a"/><stop offset="1" stop-color="#11806a"/>'
   + '</linearGradient>'

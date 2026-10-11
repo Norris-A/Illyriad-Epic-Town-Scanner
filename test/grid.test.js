@@ -1,4 +1,4 @@
-// The claim grid. planGridHtml is a string function like toCsv is, so the whole
+// The claim grid. planGridHtml is a string function, so the whole
 // layout — which tile lands in which cell, and which way up — is testable here
 // without a browser.
 

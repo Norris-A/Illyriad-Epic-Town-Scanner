@@ -71,8 +71,7 @@ The line above the table says where the scan looked and how many sites it found.
 If some sites were skipped because their claims would reach off screen, it says
 how many: zoom out or pan, then scan again.
 
-The table lists the best 200. **Export CSV** saves every site the scan found as a
-spreadsheet.
+The table lists the best 200.
 
 ### A site's plan
 

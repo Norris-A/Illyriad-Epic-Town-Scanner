@@ -41,7 +41,6 @@ export const GLYPHS = {
   target: glyph('<circle cx="8" cy="8" r="5.5"/><circle cx="8" cy="8" r="1.8"/>'
     + '<path d="M8 1v2.5M8 12.5V15M1 8h2.5M12.5 8H15"/>'),
   city: glyph('<path d="M2 14V7.5l2-1.5 2 1.5V14M6 14V4l2-2 2 2v10M10 14V7.5l2-1.5 2 1.5V14M1 14h14"/>'),
-  download: glyph('<path d="M8 2v8M4.5 6.5 8 10l3.5-3.5M2.5 13.5h11"/>'),
   chevron: glyph('<path d="M6 4l4 4-4 4"/>'),
   changelog: glyph('<path d="M3.5 1.5h6l3 3v10h-9z"/><path d="M9.5 1.5v3h3M6 8h4M6 11h4"/>'),
 };

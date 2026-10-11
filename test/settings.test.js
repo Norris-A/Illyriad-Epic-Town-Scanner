@@ -1,6 +1,5 @@
 // Settings form. panel.js only touches the DOM inside createPanel, so the field
-// spec and the validators are testable here without a browser — the same
-// property that makes toCsv testable in csv.test.js.
+// spec and the validators are testable here without a browser.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -12,7 +11,6 @@ import {
   clampNumber,
   validatePlots,
   parseMilsovStructure,
-  milsovPlanText,
   MILSOV_BLOCKED_TEXT,
   parseRpCalibration,
   parseResourceBoosters,
@@ -366,8 +364,8 @@ test('a row with no production figure reports no spend rather than NaN', () => {
 });
 
 // Icons are decoration over a name that is already there, so the row keeps a
-// plain-text label for anything that is not rendering markup — the CSV writer
-// and these tests included.
+// plain-text label for anything that is not rendering markup, these tests
+// included.
 test('every production wears its icon, and the label stays plain text', () => {
   for (const r of surplusRows({ food: 1, rp: 1, gold: 1 }, null)) {
     assert.ok(PRODUCTION_ICONS[r.icon], `${r.key} has no icon`);
@@ -463,19 +461,7 @@ test('the picker offers the military structures and a way to ask for none', () =
   assert.ok(/<option value="" selected>None/.test(blank), 'the default should select None');
 });
 
-test('the plan read-out describes what was placed, and blocking says why not', () => {
-  assert.equal(
-    milsovPlanText({
-      milsov: [{ buildingLevel: 2 }, { buildingLevel: 2 }, { buildingLevel: 1 }],
-      milsovBonus: 25,
-      milsovUpkeep: 750,
-    }),
-    '2× Sov II + 1× Sov I — +25% military unit production, upkeep 750/hr of wood, clay, iron and stone.',
-  );
-  assert.equal(milsovPlanText({ milsov: [] }), '');
-  assert.equal(milsovPlanText(null), '');
-
-  // Every reason the engine can return has wording waiting for it.
+test('every reason the engine can block a plan has wording waiting for it', () => {
   for (const reason of ['tiles', 'slots', 'upkeep', 'rp']) {
     assert.ok(MILSOV_BLOCKED_TEXT[reason], `no wording for "${reason}"`);
   }

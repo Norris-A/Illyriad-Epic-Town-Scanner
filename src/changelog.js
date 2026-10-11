@@ -81,7 +81,7 @@ export const CHANGELOG = [
     version: '1.0.0',
     date: '2026-08-22',
     changes: [
-      'First release! Site Search, Optimal Sovereignty, City Configuration and CSV export.',
+      'First release! Site Search, Optimal Sovereignty and City Configuration.',
     ],
   },
 ];

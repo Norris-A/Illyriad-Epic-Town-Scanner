@@ -3,7 +3,7 @@
 // a string by build.mjs.
 
 import { probeInPageData, getLatestPayload, whenViewLoaded } from './capture.js';
-import { createPanel, csvFile, csvFilename } from './panel.js';
+import { createPanel } from './panel.js';
 import { createOverlay } from './overlay.js';
 import { createSettingsStore, decodeSettings, STORAGE_KEY } from './settings-store.js';
 import { DEFAULT_SETTINGS } from './constants.js';
@@ -15,7 +15,6 @@ const workerUrl = URL.createObjectURL(
 
 // What the last scan ran with; the form holds the live values.
 let settings = { ...DEFAULT_SETTINGS };
-let lastResults = [];
 
 const store = createSettingsStore();
 const restored = store.load();
@@ -82,23 +81,6 @@ const panel = createPanel({
   onPickOnMap: () => overlay.togglePick(),
   getPayload: getLatestPayload,
   whenViewLoaded,
-  onExport: () => {
-    if (!lastResults.length) return;
-    const blob = new Blob([csvFile(lastResults)], { type: 'text/csv;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = csvFilename();
-    // Attached, and revoked a tick later: some browsers ignore a click on a
-    // detached anchor, and revoking at once can cancel the download.
-    a.style.display = 'none';
-    document.body.appendChild(a);
-    a.click();
-    setTimeout(() => {
-      a.remove();
-      URL.revokeObjectURL(url);
-    }, 0);
-  },
 });
 
 overlay.setEnabled(panel.getSettings().settings.mapOverlay);
@@ -130,7 +112,6 @@ function runScan() {
       panel.setStatus(`Scanning… ${msg.done}/${msg.total}`);
       return;
     }
-    lastResults = msg.results;
     panel.renderResults(msg.results, { ...view, scanned: msg.scanned });
     overlay.showTop(msg.results);
     panel.renderIncomplete(msg.incomplete);

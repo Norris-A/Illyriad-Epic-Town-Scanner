@@ -1,6 +1,5 @@
-// The side panel: the three tabs, the gear menu, the changelog and the CSV
-// writer. It never touches the game's map; main.js relays between it and
-// overlay.js.
+// The side panel: the three tabs, the gear menu and the changelog. It never
+// touches the game's map; main.js relays between it and overlay.js.
 //
 // Coordinates are shown as "x|y", as in game, though payload keys are "y|x".
 //
@@ -147,7 +146,6 @@ const CSS = `
 .sov-run{margin:8px 0 4px}
 .sov-panel .sov-run button{width:100%;justify-content:center;padding:7px 11px}
 .sov-toolbar{display:flex;align-items:center;gap:6px;margin:0 0 8px}
-.sov-toolbar .sov-export{margin-left:auto}
 
 .sov-panel input[type=number],.sov-panel select,.sov-menu select{background:#121212;color:#ddd;
   border:1px solid var(--line2);border-radius:4px;padding:2px 5px;font:inherit;box-sizing:border-box}
@@ -514,13 +512,6 @@ function milsovSplitText(plan) {
     .sort((a, b) => b[0] - a[0])
     .map(([level, n]) => `${n}× Sov ${SOV_LEVEL_ROMAN[level - 1]}`)
     .join(' + ');
-}
-
-/** The plan's military sovereignty in one line, for the CSV. */
-export function milsovPlanText(plan) {
-  if (!plan?.milsov?.length) return '';
-  return `${milsovSplitText(plan)} — +${plan.milsovBonus}% military unit production, upkeep ${
-    (plan.milsovUpkeep ?? 0).toLocaleString('en-GB')}/hr of wood, clay, iron and stone.`;
 }
 
 /**
@@ -1298,7 +1289,7 @@ export function tipPosition(rect, size, view, gap = 6) {
 }
 
 export function createPanel({
-  onScan, onExport, initialSettings, onSettingsChange, getPayload, whenViewLoaded, onSelect,
+  onScan, initialSettings, onSettingsChange, getPayload, whenViewLoaded, onSelect,
   onPaneShown, onFocusPlan, onPickOnMap,
 }) {
   const style = document.createElement('style');
@@ -1326,9 +1317,7 @@ export function createPanel({
     <div class="sov-body">
       <section data-pane="scan">
         <div class="sov-toolbar"><button class="sov-scan"
-            title="Rank every tile on screen you could settle">${GLYPHS.search}Scan</button>
-          <button class="sov-export sec"
-            title="Every site the last scan found, as a spreadsheet">${GLYPHS.download}Export CSV</button></div>
+            title="Rank every tile on screen you could settle">${GLYPHS.search}Scan</button></div>
         <div class="sov-status"></div>
         <div class="sov-results"></div>
         <div class="sov-diagnostics"></div>
@@ -1517,7 +1506,6 @@ export function createPanel({
     toggleCollapsed();
   });
   scanBtn.addEventListener('click', onScan);
-  $('.sov-export').addEventListener('click', onExport);
 
   // Opening the optimiser re-reads the radius placeholder from the settings.
   function showTab(name) {
@@ -2138,7 +2126,7 @@ function installTooltips() {
   document.addEventListener('scroll', hide, true);
 }
 
-/** Display names for the engine's binding codes, which the CSV keeps as they are. */
+/** Display names for the engine's binding codes. */
 const BINDING_LABEL = {
   cap: 'Tax cap',
   food: 'Food',
@@ -2785,65 +2773,4 @@ function detailBodyHtml(plan, base, geom) {
 
 function escapeHtml(s) {
   return String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-}
-
-// RFC 4180 quoting, applied to every column.
-export function csvField(v) {
-  const s = v === null || v === undefined ? '' : String(v);
-  return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-}
-
-// CRLF between records; Excel on Windows shows LF-only files as one line.
-const CSV_EOL = '\r\n';
-
-// A UTF-8 byte-order mark, without which Excel misreads the em dash.
-export const CSV_BOM = '﻿';
-
-/**
- * `T_res` stays a number or blank so the column can be totalled; `res_status`
- * says why it is blank. Blank status means the ceiling was applied.
- */
-function resColumns(r) {
-  if (!r.resIndicative) {
-    return [num(r.resCeiling, 2), Number.isFinite(r.resCeiling) ? r.resBinding : '', ''];
-  }
-  return r.resImpossible
-    ? ['', r.resBinding, 'impossible']
-    : [num(r.resCeiling, 2), r.resBinding, 'indicative'];
-}
-
-/** A number, or blank (never a sentinel, so columns stay summable). */
-function num(v, dp = 0) {
-  return Number.isFinite(v) ? v.toFixed(dp) : '';
-}
-
-export function toCsv(results) {
-  // `T_max` is the settable whole-number rate, `T_max_exact` the unrounded
-  // ceiling. The free-text field stays last.
-  const head = ['x', 'y', 'T_max', 'T_max_exact', 'binding', 'S_food', 'U_RP', 'U_gold',
-    'Gold_net', 'milsov_buildings', 'milsov_bonus', 'milsov_upkeep', 'milsov_RP',
-    'milsov_gold', 'milsov_price', 'milsov_min_tax', 'milsov_min_bonus',
-    'T_res', 'res_binding', 'res_status', 'milsov_plan'];
-  const lines = results.map((r) =>
-    [r.x, r.y, num(r.tMax), num(r.tMaxExact, 2), r.binding, num(r.sFood),
-     num(r.uRp), num(r.uGold), num(r.goldNet),
-     r.milsov?.length ?? 0, r.milsovBonus ?? 0, r.milsovUpkeep ?? 0,
-     num(r.milsovRp ?? 0), num(r.milsovGold ?? 0), r.milsovPrice ?? 0,
-     // Blank when nothing was asked for or nothing reaches it.
-     num(r.milsovMinTax), num(r.milsovMinBonusAt),
-     ...resColumns(r),
-     milsovPlanText(r)].map(csvField).join(','));
-  return [head.join(','), ...lines].join(CSV_EOL);
-}
-
-/** toCsv with a BOM, so Excel reads UTF-8. */
-export function csvFile(results) {
-  return CSV_BOM + toCsv(results);
-}
-
-/** e.g. `sov-sites-20260808-2043.csv`. */
-export function csvFilename(now = new Date()) {
-  const p = (n) => String(n).padStart(2, '0');
-  return `sov-sites-${now.getFullYear()}${p(now.getMonth() + 1)}${p(now.getDate())}`
-    + `-${p(now.getHours())}${p(now.getMinutes())}.csv`;
 }

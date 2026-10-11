@@ -109,6 +109,14 @@ test('a claimed or occupied tile is no site, whoever holds it', () => {
   assert.equal(isCandidateSite(LAND, SITE, idx, DEFAULT_SETTINGS, []).reason, 'town-tile');
 });
 
+test('a site must stand on a ticked terrain, and none ticked allows any', () => {
+  const hill = { ...LAND, i: 8 };   // Exposed Clay, a Small Hill
+  const on = (...siteTerrains) => ({ ...DEFAULT_SETTINGS, siteTerrains });
+  assert.deepEqual(isCandidateSite(hill, SITE, EMPTY, on(), []), { ok: true });
+  assert.deepEqual(isCandidateSite(hill, SITE, EMPTY, on('Plains', 'Small Hill'), []), { ok: true });
+  assert.equal(isCandidateSite(hill, SITE, EMPTY, on('Large Hill'), []).reason, 'terrain');
+});
+
 // --- the view on screen -----------------------------------------------------
 
 /**

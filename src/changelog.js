@@ -8,6 +8,7 @@ export const CHANGELOG = [
     date: null,
     changes: [
       'Site Search numbers its top ten right on the World Map. Click a row to find its tile, or click a number to jump to its row.',
+      'Only want to settle in the hills? Pick the terrain a site must stand on under Site Filters, now on the Site Search tab as well as in City Configuration.',
       'Optimal Sovereignty draws its whole plan on the World Map: the radius, your food and military claims, the claims you’re keeping and anything you’ve crossed out. Drag the tax slider and watch it redraw.',
       'Prefer a clean map? Untick Mark sites on the World Map under ⚙ and the panel keeps its pens to itself.',
       'New Pick on map button: press it, click a tile, done. No more squinting at coordinates.',

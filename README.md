@@ -54,9 +54,15 @@ tile there that you could settle is ranked by the highest tax a city on it could
 sustain.
 
 A tile is left out if it already has a town or is already claimed, if it is
-closer to another town than the distances you set in City Configuration, or if
-it cannot reach your Minimum Tax. If you set a Minimum Military Bonus, sites that
-cannot reach it at any tax down to your Minimum Tax are left out too.
+closer to another town than the distances you set, if it is not on a terrain you
+ticked, or if it cannot reach your Minimum Tax. If you set a Minimum Military
+Bonus, sites that cannot reach it at any tax down to your Minimum Tax are left
+out too.
+
+The folded **Site Filters** section above **Scan** holds these settings, along
+with Treat Your Own Claims as Available. They are City Configuration's own, so
+change them in either place. Leave every terrain unticked to list sites on any
+terrain.
 
 | Column | Shows |
 |---|---|
@@ -155,7 +161,7 @@ whole configuration at a glance. Click a section to open it.
 | Production | For each production: whether its booster building is built (the Flour Mill, for food), whether prestige is boosting it, and how much per hour the plan must leave spare |
 | City Buildings | How many you have of each building that uses wood, clay, iron or stone every hour. Their upkeep is set aside before any sovereignty is paid for, and Chanceries of Estates also make the first level of every claim cheaper. Hover a building's resource icons for what it uses |
 | Sovereignty | Claim radius, the most buildings to place, which military structure to build, and the smallest military bonus worth having |
-| Site Filters | The Minimum Tax a site needs to be listed, how far a site must be from other players, your own cities and alliance towns, and whether tiles you already claim count as free ground |
+| Site Filters | The Minimum Tax a site needs to be listed, how far a site must be from other players, your own cities and alliance towns, whether tiles you already claim count as free ground, and which terrain a site must stand on |
 
 Your configuration is saved in this browser as you edit it. **Reset to Defaults**
 puts back the starting values; it does not move the panel. If you edit it in two

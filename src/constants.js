@@ -322,9 +322,10 @@ export const TERRAIN_DESCRIPTORS = {
 };
 
 // [V] The client's terrain table (`window.terrain`), matching the server's
-// datafile_terrain.xml. Index is `i`, with 0 unused; each row is [name, combat
-// class]. Names come from here and bonuses from TERRAIN_DESCRIPTORS. The combat
-// class is unused. Trailing spaces in two client names are trimmed.
+// datafile_terrain.xml. Index is `i`, with 0 unused; each row is [name, terrain
+// class], the class being the client's `combat` field. Names come from here and
+// bonuses from TERRAIN_DESCRIPTORS; the terrain class is what Site Search filters
+// by. Trailing spaces in two client names are trimmed.
 export const TERRAIN_NAMES = [
   null,                                             // 0 - unused; the client's array starts at 1
   ['Plains', 'Plains'],                             // 1
@@ -558,6 +559,13 @@ export const TERRAIN_NAMES = [
   ['Shipwreck', 'Buildings'],                       // 229
 ];
 
+// The terrain classes a city can be settled on, as TERRAIN_NAMES spells them.
+// [?] Obsidian Mountains is left out as unsettleable; unconfirmed.
+export const SETTLE_TERRAINS = [
+  'Plains', 'Small Forest', 'Large Forest', 'Small Hill', 'Large Hill',
+  'Small Mountain', 'Large Mountain',
+];
+
 // [V] The six terrains the server's data file marks `npcterrain: Yes`. Their
 // ratings vary tile to tile, so only a tile's own `rs` can be trusted. This is
 // unrelated to a tile's `npc:1` flag, which marks an NPC lair on any terrain.
@@ -579,7 +587,7 @@ export function descriptorFor(i) {
   const base = {
     i,
     name: named?.[0] ?? entry.name,
-    combat: named?.[1],
+    terrainClass: named?.[1],
     nodeClass: NODE_CLASS_TERRAIN.has(i) || undefined,
   };
   if (!entry) return { ...base, bonusUnread: true, conditional: false, sovKey: null };
@@ -735,6 +743,8 @@ export const DEFAULT_SETTINGS = {
   dOwn: 3,
   // Confederates are not allies here, and use dOther.
   dAlliance: 3,
+  // SETTLE_TERRAINS a site must stand on; empty allows any.
+  siteTerrains: [],
   // Key into SOV_STRUCTURES; null plans food only.
   milsovStructure: null,
   // Sites below this military bonus are not listed; it never changes a plan.

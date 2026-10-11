@@ -2,7 +2,7 @@
 // by the `t` sprite name; `i` is used only to look up the terrain descriptor.
 
 import {
-  descriptorFor, WORLD_MIN_X, WORLD_MAX_X, WORLD_MIN_Y, WORLD_MAX_Y,
+  descriptorFor, TERRAIN_NAMES, WORLD_MIN_X, WORLD_MAX_X, WORLD_MIN_Y, WORLD_MAX_Y,
 } from './constants.js';
 
 /** Tile keys are "y|x" — y first. Town strings in `t` are "x|y". Don't mix them up. */
@@ -160,6 +160,10 @@ export function isSettleable(tile) {
 
 export function isCandidateSite(tile, key, idx, settings, towns) {
   if (!isSettleable(tile)) return { ok: false, reason: 'not-settleable' };
+  const terrains = settings.siteTerrains ?? [];
+  if (terrains.length && !terrains.includes(TERRAIN_NAMES[tile.i]?.[1])) {
+    return { ok: false, reason: 'terrain' };
+  }
   if (idx.claims.has(key)) return { ok: false, reason: 'already-claimed' };
   if (idx.towns.has(key)) return { ok: false, reason: 'town-tile' };
 

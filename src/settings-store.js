@@ -13,6 +13,7 @@ import {
   parseUpkeepBuildings,
   parseResourceMinimums,
   parsePrestige,
+  parseSiteTerrains,
 } from './panel.js';
 
 export const STORAGE_KEY = 'illyriad-sov-scanner.settings';
@@ -94,6 +95,9 @@ export function sanitizeSettings(raw) {
         break;
       case 'minimums':
         out.resourceMinimums = parseResourceMinimums(v);
+        break;
+      case 'terrains':
+        out.siteTerrains = parseSiteTerrains(v);
         break;
       default:
         out[f.key] = clampNumber(v, { ...f, fallback: f.fallback ?? fallback ?? 0 });

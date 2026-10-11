@@ -22,6 +22,8 @@ import {
   sectionSummaryHtml,
   plotBarHtml,
   focusFormHtml,
+  scanFormHtml,
+  parseSiteTerrains,
   clampPanelPosition,
   isWorldMapHash,
 } from '../src/panel.js';
@@ -40,6 +42,8 @@ import {
   SOV_STRUCTURE_BY_KEY,
   DEFAULT_SOV_STRUCTURE,
   UPKEEP_BUILDINGS,
+  SETTLE_TERRAINS,
+  TERRAIN_NAMES,
 } from '../src/constants.js';
 import { computeK, computeResearch, milsovUpkeep, computeBasicYield } from '../src/scoring.js';
 
@@ -127,6 +131,7 @@ test('the markup carries every hook createPanel reads back out of it', () => {
     ...PRESTIGE_KEYS.map((k) => `data-prestige="${k}"`),
     'select data-key="milsovStructure"',
     ...PLOT_KEYS.map((p) => `data-plot="${p}"`),
+    ...SETTLE_TERRAINS.map((t) => `data-terrain="${t}"`),
   ];
   for (const hook of hooks) assert.ok(html.includes(hook), `markup is missing ${hook}`);
 
@@ -141,7 +146,7 @@ test('the markup carries every hook createPanel reads back out of it', () => {
     } else if (f.type === 'select') {
       assert.ok(where.includes(`<select data-key="${f.key}"`), `${f.key} is not a select`);
     } else if (!['plots', 'milsov', 'calibration', 'boosters', 'upkeepBuildings', 'prestige',
-      'minimums'].includes(f.type)) {
+      'minimums', 'terrains'].includes(f.type)) {
       assert.ok(where.includes(`<input type="number" data-key="${f.key}"`), `${f.key} is not a number input`);
     }
   }
@@ -178,11 +183,12 @@ test('the plot bar draws a cell per plot, and marks any past the 25th', () => {
 // --- what a click on a row is allowed to mean ---
 
 // Every form the panel draws. A control in any of them is one an edit here
-// saves, so the rules below hold for all three.
+// saves, so the rules below hold for all of them.
 const markups = () => [
   ['the settings form', settingsFormHtml(DEFAULT_SETTINGS)],
   ['the gear menu', settingsMenuHtml(DEFAULT_SETTINGS)],
   ['the optimiser form', focusFormHtml(DEFAULT_FOCUS, DEFAULT_SETTINGS)],
+  ['the Site Search form', scanFormHtml()],
 ];
 
 const controls = (html) => html.match(/<(?:input|select)\b[^>]*>/g) ?? [];
@@ -554,4 +560,37 @@ test('an upkeep building count reads back as a whole number, blank as none', () 
   assert.equal(parsed.spearmensBillets, 2);
   assert.equal(parsed.infantryQuarters, 0, 'a missing row is none built');
   assert.deepEqual(parseUpkeepBuildings(DEFAULT_SETTINGS.upkeepBuildings), DEFAULT_SETTINGS.upkeepBuildings);
+});
+
+// --- the terrain filter ---
+
+test('every terrain offered is a terrain class the terrain table uses', () => {
+  const classes = new Set(TERRAIN_NAMES.slice(1).map(([, terrainClass]) => terrainClass));
+  for (const t of SETTLE_TERRAINS) assert.ok(classes.has(t), `${t} is no terrain class`);
+});
+
+test('ticked terrains read back in table order, and anything else is dropped', () => {
+  assert.deepEqual(DEFAULT_SETTINGS.siteTerrains, [], 'a fresh install filters nothing');
+  assert.deepEqual(
+    parseSiteTerrains(['Large Hill', 'Obsidian Mountains', 'Plains']),
+    ['Plains', 'Large Hill'],
+  );
+  assert.deepEqual(parseSiteTerrains('Plains'), []);
+});
+
+test('the Site Filters summary names one terrain and counts several', () => {
+  const sum = (siteTerrains) => sectionSummaryHtml('Site Filters', { ...DEFAULT_SETTINGS, siteTerrains });
+  assert.doesNotMatch(sum([]), /terrain|Plains/);
+  assert.match(sum(['Small Hill']), / · Small Hill$/);
+  assert.match(sum(['Plains', 'Small Hill']), / · 2 terrains$/);
+});
+
+test('Site Search mirrors every Site Filters control', () => {
+  const html = scanFormHtml();
+  for (const f of SETTINGS_FIELDS.filter((s) => s.group === 'Site Filters')) {
+    const hooks = f.type === 'terrains'
+      ? SETTLE_TERRAINS.map((t) => `data-mirror-terrain="${t}"`)
+      : [`data-mirror-key="${f.key}"`];
+    for (const hook of hooks) assert.ok(html.includes(hook), `Site Search is missing ${hook}`);
+  }
 });

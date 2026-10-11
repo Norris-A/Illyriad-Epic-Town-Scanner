@@ -24,6 +24,7 @@ import {
   PLOT_TOTAL,
   PRODUCTION_LABEL,
   UPKEEP_BUILDINGS,
+  SETTLE_TERRAINS,
   descriptorFor,
 } from './constants.js';
 import { APP_ICON_SVG, GLYPHS } from './app-icons.js';
@@ -245,6 +246,10 @@ const CSS = `
 .sov-panel .sov-uses img{width:12px;height:12px;image-rendering:pixelated}
 .sov-panel [data-upkeep-row] input[type=number]{width:52px}
 .sov-panel .sov-has>label{color:#fff;font-weight:600}
+.sov-f-head{margin:8px 0 2px;color:#d4d4d4}
+.sov-terrains{display:grid;grid-template-columns:1fr 1fr;column-gap:16px}
+/* Plains alone, then each Small beside its Large. */
+.sov-terrains>:nth-child(2){grid-column:1}
 
 /* Framed in red even when empty, as a warning that a reading here overrides
    the settings above. */
@@ -655,6 +660,12 @@ export function parsePrestige(raw) {
   return out;
 }
 
+/** The ticked terrains in SETTLE_TERRAINS order; anything else is dropped. */
+export function parseSiteTerrains(raw) {
+  const ticked = Array.isArray(raw) ? raw : [];
+  return SETTLE_TERRAINS.filter((t) => ticked.includes(t));
+}
+
 /**
  * One control per setting. The keys must match DEFAULT_SETTINGS', which a test
  * checks.
@@ -769,6 +780,13 @@ export const SETTINGS_FIELDS = [
     type: 'checkbox',
     hint: 'On: tiles you already claim count as free ground, as if you gave them up. '
       + 'Off: they are off limits, except to the town that holds them.',
+  },
+  {
+    key: 'siteTerrains',
+    group: 'Site Filters',
+    label: 'Terrain',
+    type: 'terrains',
+    hint: 'List only sites on the ticked terrain. With none ticked, every terrain is listed.',
   },
 
   {
@@ -1018,6 +1036,33 @@ function milsovFieldHtml(f, structure) {
     </div>`;
 }
 
+/** One switch per settleable terrain, each carrying `hook` with its name. */
+function terrainsFieldHtml(f, terrains, hook, idPrefix) {
+  const rows = SETTLE_TERRAINS.map((t) => checkboxRowHtml({
+    id: `${idPrefix}-${t.replaceAll(' ', '-')}`,
+    label: escapeHtml(t),
+    checked: terrains?.includes(t),
+    hooks: ` ${hook}="${t}"`,
+  })).join('');
+  return `<div class="sov-f-block" data-key="${f.key}"${attr('title', f.hint)}>
+      <p class="sov-f-head">${escapeHtml(f.label)}</p>
+      <div class="sov-terrains">${rows}</div>
+    </div>`;
+}
+
+/**
+ * Another tab's copy of a City Configuration number or checkbox. It has no
+ * value of its own: the panel keeps it in step with the original.
+ */
+function mirrorFieldHtml(f, tab) {
+  const id = `${f.type === 'checkbox' ? 'sov-cb' : 'sov-in'}-${tab}-${f.key}`;
+  const control = f.type === 'checkbox'
+    ? `<input type="checkbox" data-mirror-key="${f.key}" id="${id}">`
+    : `<input type="number" data-mirror-key="${f.key}"${attr('min', f.min)}${attr('max', f.max)}
+      step="${f.integer ? 1 : 'any'}" id="${id}">`;
+  return fieldRowHtml({ id, label: escapeHtml(f.label), control, row: attr('title', f.hint) });
+}
+
 function fieldHtml(f, settings) {
   const v = settings[f.key];
   switch (f.type) {
@@ -1027,6 +1072,7 @@ function fieldHtml(f, settings) {
     case 'calibration': return calibrationFieldHtml(f, v);
     case 'upkeepBuildings': return upkeepBuildingsFieldHtml(f, v);
     case 'milsov': return milsovFieldHtml(f, v);
+    case 'terrains': return terrainsFieldHtml(f, v, 'data-terrain', 'sov-cb-terrain');
     default: return numberFieldHtml(f, v ?? f.fallback);
   }
 }
@@ -1089,8 +1135,14 @@ export function sectionSummaryHtml(name, s) {
       const structure = MILSOV_STRUCTURES.find((m) => m.key === s.milsovStructure);
       return `radius ${s.rClaim} · ${escapeHtml(structure?.name ?? 'food only')}`;
     }
-    case 'Site Filters':
-      return `tax ≥ ${s.tMin}% · apart ${s.dOther}/${s.dOwn}/${s.dAlliance}`;
+    case 'Site Filters': {
+      const terrains = s.siteTerrains ?? [];
+      return [
+        `tax ≥ ${s.tMin}%`,
+        `apart ${s.dOther}/${s.dOwn}/${s.dAlliance}`,
+        terrains.length > 1 ? `${terrains.length} terrains` : terrains[0],
+      ].filter(Boolean).join(' · ');
+    }
     default:
       return '';
   }
@@ -1207,12 +1259,7 @@ export function focusFormHtml(focus, settings) {
           <div class="sov-plotbar"></div>
           <div class="sov-plot-sum"><span class="sov-plot-total"></span></div>
         </div>
-        ${checkboxRowHtml({
-      id: 'sov-cb-focus-ownClaimsAvailable',
-      label: 'Treat Your Own Claims as Available',
-      hooks: ' data-mirror-key="ownClaimsAvailable"',
-      row: attr('title', SETTINGS_FIELDS.find((s) => s.key === 'ownClaimsAvailable').hint),
-    })}
+        ${mirrorFieldHtml(SETTINGS_FIELDS.find((s) => s.key === 'ownClaimsAvailable'), 'focus')}
         <p class="sov-hint">These are City Configuration's own, as is everything else the plan uses.</p>`,
   })}
       <div class="sov-run"><button type="button" class="sov-focus-run">${GLYPHS.target}Optimise</button></div>
@@ -1220,6 +1267,20 @@ export function focusFormHtml(focus, settings) {
     <p class="sov-legend sov-map-note"></p>
     <div class="sov-focus-status"></div>
     <div class="sov-focus-out"></div>`;
+}
+
+/** Site Search's form: City Configuration's Site Filters, mirrored. */
+export function scanFormHtml() {
+  const body = SETTINGS_FIELDS.filter((f) => f.group === 'Site Filters').map((f) => (
+    f.type === 'terrains'
+      ? terrainsFieldHtml(f, [], 'data-mirror-terrain', 'sov-cb-scan-terrain')
+      : mirrorFieldHtml(f, 'scan'))).join('');
+  return `<form class="sov-scan-form" autocomplete="off">${sectionHtml({
+    name: 'Site Filters',
+    icons: SECTION_ICONS['Site Filters'],
+    sum: 'Site Filters',
+    body: `${body}<p class="sov-hint">These are City Configuration's own; change them in either place.</p>`,
+  })}</form>`;
 }
 
 /**
@@ -1316,6 +1377,7 @@ export function createPanel({
     </nav>
     <div class="sov-body">
       <section data-pane="scan">
+        ${scanFormHtml()}
         <div class="sov-toolbar"><button class="sov-scan"
             title="Rank every tile on screen you could settle">${GLYPHS.search}Scan</button></div>
         <div class="sov-status"></div>
@@ -1591,6 +1653,10 @@ export function createPanel({
           out.resourceMinimums = parseResourceMinimums(raw);
           break;
         }
+        case 'terrains':
+          out.siteTerrains = parseSiteTerrains([...form.querySelectorAll('[data-terrain]')]
+            .filter((el) => el.checked).map((el) => el.dataset.terrain));
+          break;
         default:
           out[f.key] = clampNumber(containerFor(f).querySelector(`input[data-key="${f.key}"]`).value, f);
       }
@@ -1641,6 +1707,11 @@ export function createPanel({
         case 'minimums':
           for (const key of MINIMUM_KEYS) {
             form.querySelector(`[data-minimum="${key}"]`).value = v?.[key] ?? 0;
+          }
+          break;
+        case 'terrains':
+          for (const el of form.querySelectorAll('[data-terrain]')) {
+            setChecked(el, v?.includes(el.dataset.terrain));
           }
           break;
         default:
@@ -1703,7 +1774,7 @@ export function createPanel({
     scanBtn.title = plots.ok ? '' : 'Settle plot allocation must sum to 25';
 
     root.classList.toggle('sov-no-map', !s.mapOverlay);
-    for (const el of root.querySelectorAll('[data-mirror-key], [data-mirror-plot]')) {
+    for (const el of root.querySelectorAll('[data-mirror-key], [data-mirror-plot], [data-mirror-terrain]')) {
       const own = mirrored(el);
       if (el.type === 'checkbox') setChecked(el, own.checked);
       // Compare as typed, so a value part-way through being typed is left alone.
@@ -1711,16 +1782,30 @@ export function createPanel({
     }
   }
 
-  /** The City Configuration control that a mirrored optimiser control stands for. */
+  /** The City Configuration control that a mirrored control on another tab stands for. */
   function mirrored(el) {
-    const { mirrorKey, mirrorPlot } = el.dataset;
+    const { mirrorKey, mirrorPlot, mirrorTerrain } = el.dataset;
     if (mirrorKey) return form.querySelector(`input[data-key="${mirrorKey}"]`);
-    return mirrorPlot ? form.querySelector(`input[data-plot="${mirrorPlot}"]`) : null;
+    if (mirrorPlot) return form.querySelector(`input[data-plot="${mirrorPlot}"]`);
+    return mirrorTerrain ? form.querySelector(`input[data-terrain="${mirrorTerrain}"]`) : null;
+  }
+
+  // A mirrored control hands each edit to City Configuration's own, whose
+  // refresh brings it back in line.
+  for (const type of ['input', 'change']) {
+    root.addEventListener(type, (e) => {
+      const own = mirrored(e.target);
+      if (!own) return;
+      if (own.type === 'checkbox') setChecked(own, e.target.checked);
+      else own.value = e.target.value;
+      own.dispatchEvent(new Event(type, { bubbles: true }));
+    });
   }
 
   // Handlers are bound here, not inline, since the game's CSP may block inline
   // ones. The form never submits.
   form.addEventListener('submit', (e) => e.preventDefault());
+  $('.sov-scan-form').addEventListener('submit', (e) => e.preventDefault());
   form.addEventListener('input', () => refresh());
   form.addEventListener('change', (e) => {
     // Clamp on commit, not per keystroke, which would turn "12" into "1" mid-typing.
@@ -1958,18 +2043,6 @@ export function createPanel({
   // its popup opens, focus before keyboard selection.
   townPick.addEventListener('pointerdown', syncTownPicker);
   townPick.addEventListener('focus', syncTownPicker);
-
-  // A mirrored control hands each edit to City Configuration's own, whose
-  // refresh brings it back in line.
-  for (const type of ['input', 'change']) {
-    focusForm.addEventListener(type, (e) => {
-      const own = mirrored(e.target);
-      if (!own) return;
-      if (own.type === 'checkbox') setChecked(own, e.target.checked);
-      else own.value = e.target.value;
-      own.dispatchEvent(new Event(type, { bubbles: true }));
-    });
-  }
 
   focusForm.addEventListener('change', (e) => {
     const el = e.target;

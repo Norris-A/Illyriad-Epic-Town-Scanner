@@ -400,9 +400,9 @@ test('the sprite-guessed names stay corrected', () => {
 });
 
 // Not scored, and not read by anything — kept because nothing else records it.
-test('the combat class rides along with the descriptor', () => {
-  assert.equal(descriptorFor(52).combat, 'Large Forest');
-  assert.equal(descriptorFor(4).combat, 'Buildings');
+test('the terrain class rides along with the descriptor', () => {
+  assert.equal(descriptorFor(52).terrainClass, 'Large Forest');
+  assert.equal(descriptorFor(4).terrainClass, 'Buildings');
   // The four the payload flags `imp` are the four the client calls Impassable.
   const impassable = TERRAIN_NAMES
     .map((n, i) => (n && n[1] === 'Impassable' ? i : null)).filter((i) => i !== null);

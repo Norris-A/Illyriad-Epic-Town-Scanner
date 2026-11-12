@@ -28,7 +28,10 @@ export const CLAIM_DISTANCE_DECIMALS = 2;
 // whether the game applies it before the distance rounding is unmeasured.
 export const CHANCERY_DISCOUNT_L20 = 0.4;
 
-// [F] Food sovereignty requires a level 5 claim carrying a level 5 building.
+// [V] A food claim adds its tile's food rating x level / 5 to production, so a
+// 10-food tile gives +2% at level 1 and +10% at level 5. Claims are planned at
+// level 5 only: RP per point is the same at every level (bar the Chancery's
+// first-level discount), and level 5 gets the most from each building slot.
 export const FOOD_CLAIM_LEVEL = 5;
 
 // [F] Military structure upkeep per hour, of each of wood, clay, iron and

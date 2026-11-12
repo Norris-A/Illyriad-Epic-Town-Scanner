@@ -7,9 +7,10 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  tileKey, indexPayload, isClaimable, isCandidateSite, extractTowns, onScreen,
+  tileKey, indexPayload, isClaimable, isCandidateSite, meetsSurroundings, terrainId,
+  extractTowns, onScreen,
 } from '../src/payload.js';
-import { DEFAULT_SETTINGS } from '../src/constants.js';
+import { DEFAULT_SETTINGS, WORLD_MAX_X } from '../src/constants.js';
 
 /** Plain claimable, settleable ground, as the live payload sends it. */
 const LAND = { sov: 1, hos: 1, b: 5, l: 2, rs: '5|5|5|5|5', i: 1 };
@@ -115,6 +116,61 @@ test('a site must stand on a ticked terrain, and none ticked allows any', () => 
   assert.deepEqual(isCandidateSite(hill, SITE, EMPTY, on(), []), { ok: true });
   assert.deepEqual(isCandidateSite(hill, SITE, EMPTY, on('Plains', 'Small Hill'), []), { ok: true });
   assert.equal(isCandidateSite(hill, SITE, EMPTY, on('Large Hill'), []).reason, 'terrain');
+});
+
+// As the live payload sends them: claimable and unflagged, though the server's
+// data marks both impassable.
+test('a lake or loch is no site', () => {
+  for (const i of [18, 19]) {
+    const lake = { b: 5, l: 1, rs: '0|0|0|0|6', i, sov: 1, hos: 1 };
+    const site = isCandidateSite(lake, SITE, EMPTY, DEFAULT_SETTINGS, []);
+    assert.equal(site.reason, 'not-settleable', `i:${i}`);
+    assert.equal(isClaimable(lake, SITE, EMPTY, DEFAULT_SETTINGS), true, `i:${i} claimable`);
+  }
+});
+
+const RIVER_BANK = { b: 20, l: 0, rs: '0|0|0|0|8', i: 59, sov: 1, hos: 1 };
+const RIVER = { b: 20, l: 0, rs: '0|0|0|0|0', i: 59 };
+
+test('a river bank comes as Fresh Water, and its food gives it away', () => {
+  assert.equal(terrainId(RIVER_BANK), 172);
+  assert.equal(terrainId(RIVER), 59);
+  assert.equal(terrainId(LAND), 1);
+});
+
+/** A site at x|y with its eight surrounding tiles on terrain `i`, bar `others`. */
+function ringed(x, y, i, others = {}) {
+  const data = {};
+  for (let dy = -1; dy <= 1; dy++) {
+    for (let dx = -1; dx <= 1; dx++) {
+      const key = tileKey(y + dy, x + dx);
+      data[key] = { ...LAND, i: others[key] ?? i };
+    }
+  }
+  return { data };
+}
+
+test('enough of the surrounding tiles must be on a ticked terrain', () => {
+  const around = (surroundTerrains, surroundMin) =>
+    ({ ...DEFAULT_SETTINGS, surroundTerrains, surroundMin });
+  // A river bank is Plains; the river itself and the Ocean are not.
+  const payload = ringed(100, 100, 1, { [tileKey(99, 99)]: 62, [tileKey(99, 100)]: 8 });
+  payload.data[tileKey(101, 101)] = RIVER;
+  payload.data[tileKey(101, 99)] = RIVER_BANK;
+  assert.equal(meetsSurroundings(payload, SITE, around([], 8)), true, 'none ticked allows any');
+  assert.equal(meetsSurroundings(payload, SITE, around(['Plains'], 5)), true);
+  assert.equal(meetsSurroundings(payload, SITE, around(['Plains'], 6)), false);
+  assert.equal(meetsSurroundings(payload, SITE, around(['Plains', 'Small Hill'], 6)), true);
+  assert.equal(meetsSurroundings(payload, SITE, around(['Plains'], 0)), true);
+});
+
+test('tiles past the edge of the world are not on any terrain', () => {
+  const key = tileKey(0, WORLD_MAX_X);
+  const payload = ringed(WORLD_MAX_X, 0, 1);
+  for (const dy of [-1, 0, 1]) delete payload.data[tileKey(dy, WORLD_MAX_X + 1)];
+  const settings = { ...DEFAULT_SETTINGS, surroundTerrains: ['Plains'] };
+  assert.equal(meetsSurroundings(payload, key, { ...settings, surroundMin: 5 }), true);
+  assert.equal(meetsSurroundings(payload, key, { ...settings, surroundMin: 6 }), false);
 });
 
 // --- the view on screen -----------------------------------------------------

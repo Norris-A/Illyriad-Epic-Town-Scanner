@@ -1,8 +1,9 @@
-// Reading the map payload. Tiles are classified by their flags and `rs`, never
-// by the `t` sprite name; `i` is used only to look up the terrain descriptor.
+// Reading the map payload. Tiles are classified by their flags, `rs` and `i`
+// (through terrainId), never by the `t` sprite name.
 
 import {
-  descriptorFor, TERRAIN_NAMES, WORLD_MIN_X, WORLD_MAX_X, WORLD_MIN_Y, WORLD_MAX_Y,
+  descriptorFor, IMPASSABLE_TERRAIN, TERRAIN_NAMES,
+  WORLD_MIN_X, WORLD_MAX_X, WORLD_MIN_Y, WORLD_MAX_Y,
 } from './constants.js';
 
 /** Tile keys are "y|x" — y first. Town strings in `t` are "x|y". Don't mix them up. */
@@ -42,6 +43,18 @@ export function parseRs(tile) {
 export function foodOf(tile) {
   const rs = parseRs(tile);
   return rs ? rs.food : 0;
+}
+
+const FRESH_WATER = 59;
+const BANKSIDE = 172;
+
+/**
+ * A tile's terrain `i`. The payload sends river banks as Fresh Water when they
+ * are Bankside, and real Fresh Water never has food, so a Fresh Water tile with
+ * food is read as Bankside.
+ */
+export function terrainId(tile) {
+  return tile?.i === FRESH_WATER && foodOf(tile) > 0 ? BANKSIDE : tile?.i;
 }
 
 /** Water is a biome group of its own; every other value of `b` is land. */
@@ -153,7 +166,7 @@ export function heldLevel(key, idx, settings) {
 export function isSettleable(tile) {
   if (!tile) return false;
   if (tile.set !== undefined) return tile.set === 1;
-  if (tile.imp || tile.brg || tile.npc) return false;
+  if (tile.imp || tile.brg || tile.npc || IMPASSABLE_TERRAIN.has(tile.i)) return false;
   if (isWaterTile(tile)) return false;
   return tile.sov === 1 && tile.hos === 1;
 }
@@ -161,7 +174,7 @@ export function isSettleable(tile) {
 export function isCandidateSite(tile, key, idx, settings, towns) {
   if (!isSettleable(tile)) return { ok: false, reason: 'not-settleable' };
   const terrains = settings.siteTerrains ?? [];
-  if (terrains.length && !terrains.includes(TERRAIN_NAMES[tile.i]?.[1])) {
+  if (terrains.length && !terrains.includes(TERRAIN_NAMES[terrainId(tile)]?.[1])) {
     return { ok: false, reason: 'terrain' };
   }
   if (idx.claims.has(key)) return { ok: false, reason: 'already-claimed' };
@@ -179,6 +192,26 @@ export function isCandidateSite(tile, key, idx, settings, towns) {
     }
   }
   return { ok: true };
+}
+
+/**
+ * Whether at least surroundMin of the eight tiles around a site are on one of
+ * surroundTerrains. A tile the payload lacks, including one past the world's
+ * edge, does not match.
+ */
+export function meetsSurroundings(payload, key, settings) {
+  const terrains = settings.surroundTerrains ?? [];
+  if (!terrains.length) return true;
+  const { x, y } = parseKey(key);
+  let matched = 0;
+  for (let dy = -1; dy <= 1; dy++) {
+    for (let dx = -1; dx <= 1; dx++) {
+      if (dx === 0 && dy === 0) continue;
+      const tile = payload.data[tileKey(y + dy, x + dx)];
+      if (terrains.includes(TERRAIN_NAMES[terrainId(tile)]?.[1])) matched += 1;
+    }
+  }
+  return matched >= settings.surroundMin;
 }
 
 /**
@@ -277,14 +310,14 @@ export function collectNeighbourhood(payload, key, rClaim, idx, settings) {
         dy,
         food: foodOf(tile),
         key: nKey,
-        i: tile.i,
+        i: terrainId(tile),
         water: isWaterTile(tile),
         // Costs downstream are for the levels above this.
         held,
         // A claim stands here that the plan does not keep and prices as bare
         // ground.
         relaid: held === 0 && !!claim,
-        descriptor: descriptorFor(tile.i),
+        descriptor: descriptorFor(terrainId(tile)),
       });
     }
   }

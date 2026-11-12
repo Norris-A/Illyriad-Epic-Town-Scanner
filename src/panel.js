@@ -233,15 +233,16 @@ const CSS = `
 .sov-panel .sov-matrix input[type=number]{width:72px;text-align:right}
 .sov-matrix .sov-none{color:#555}
 
-.sov-upkeep-group{display:flex;align-items:center;gap:6px;margin:10px 0 2px;padding-bottom:3px;
+.sov-heading{display:flex;align-items:center;gap:6px;margin:10px 0 2px;padding-bottom:3px;
   border-bottom:1px solid var(--line);color:var(--accent-text);font-weight:600}
-.sov-upkeep-group:first-child{margin-top:0}
-.sov-panel .sov-upkeep-group img{width:18px;height:18px;image-rendering:pixelated}
+.sov-heading:first-child{margin-top:0}
+.sov-panel .sov-heading img{width:18px;height:18px;image-rendering:pixelated}
+.sov-subheading{margin:10px 0 3px;color:var(--muted);font-size:10px;font-weight:600;
+  text-transform:uppercase;letter-spacing:.06em}
 .sov-f>.sov-uses{flex:none;display:inline-flex;gap:3px;margin-left:auto;cursor:help}
 .sov-panel .sov-uses img{width:12px;height:12px;image-rendering:pixelated}
 .sov-panel [data-upkeep-row] input[type=number]{width:52px}
 .sov-panel .sov-has>label{color:#fff;font-weight:600}
-.sov-f-head{margin:8px 0 2px;color:#d4d4d4}
 .sov-terrains{display:grid;grid-template-columns:1fr 1fr;column-gap:16px}
 /* Plains alone, then each Small beside its Large. */
 .sov-terrains>:nth-child(2){grid-column:1}
@@ -654,7 +655,7 @@ export function parsePrestige(raw) {
 }
 
 /** The ticked terrains in SETTLE_TERRAINS order; anything else is dropped. */
-export function parseSiteTerrains(raw) {
+export function parseTerrains(raw) {
   const ticked = Array.isArray(raw) ? raw : [];
   return SETTLE_TERRAINS.filter((t) => ticked.includes(t));
 }
@@ -777,9 +778,30 @@ export const SETTINGS_FIELDS = [
   {
     key: 'siteTerrains',
     group: 'Site Filters',
-    label: 'Terrain',
+    subsection: 'Terrain',
+    label: 'Site Tile',
     type: 'terrains',
     hint: 'List only sites on the ticked terrain. With none ticked, every terrain is listed.',
+  },
+  {
+    key: 'surroundTerrains',
+    group: 'Site Filters',
+    label: 'Surrounding Tiles',
+    type: 'terrains',
+    hint: 'List only sites with enough of the 8 tiles around them on the ticked terrain. '
+      + 'River banks count as Plains. With none ticked, every site is listed.',
+  },
+  {
+    key: 'surroundMin',
+    group: 'Site Filters',
+    label: 'Minimum on Ticked Terrain (of 8)',
+    type: 'number',
+    min: 0,
+    max: 8,
+    integer: true,
+    fallback: 8,
+    hint: 'How many of the 8 tiles around a site must be on the terrain ticked above. '
+      + 'Tiles past the edge of the world count as none.',
   },
 
   {
@@ -837,7 +859,7 @@ function numberFieldHtml(f, value) {
   return fieldRowHtml({
     id,
     label: escapeHtml(f.label),
-    row: ` data-key="${f.key}"`,
+    row: ` data-key="${f.key}"${attr('title', f.hint)}`,
     control: `<input type="number" data-key="${f.key}"${attr('min', f.min)}${attr('max', f.max)}
       step="${f.integer ? 1 : 'any'}"${attr('value', value)} id="${id}">`,
   });
@@ -936,7 +958,7 @@ function upkeepBuildingsFieldHtml(f, buildings) {
       `${count(n)} ${PRODUCTION_LABEL[res].toLowerCase()}`).join(', ')} an hour`;
     const icons = uses.map(([res]) => `<img src="${PRODUCTION_ICONS[res]}" alt="">`).join('');
     const heading = b.group !== UPKEEP_BUILDINGS[i - 1]?.group
-      ? `<p class="sov-upkeep-group"><img src="${UPKEEP_GROUP_ICONS[b.group]}" alt="">${
+      ? `<p class="sov-heading"><img src="${UPKEEP_GROUP_ICONS[b.group]}" alt="">${
         escapeHtml(b.group)}</p>`
       : '';
     return heading + fieldRowHtml({
@@ -1006,15 +1028,20 @@ function milsovFieldHtml(f, structure) {
 /** One switch per settleable terrain, each carrying `hook` with its name. */
 function terrainsFieldHtml(f, terrains, hook, idPrefix) {
   const rows = SETTLE_TERRAINS.map((t) => checkboxRowHtml({
-    id: `${idPrefix}-${t.replaceAll(' ', '-')}`,
+    id: `${idPrefix}-${f.key}-${t.replaceAll(' ', '-')}`,
     label: escapeHtml(t),
     checked: terrains?.includes(t),
     hooks: ` ${hook}="${t}"`,
   })).join('');
   return `<div class="sov-f-block" data-key="${f.key}"${attr('title', f.hint)}>
-      <p class="sov-f-head">${escapeHtml(f.label)}</p>
+      <p class="sov-subheading">${escapeHtml(f.label)}</p>
       <div class="sov-terrains">${rows}</div>
     </div>`;
+}
+
+/** The subsection heading drawn above a field, or nothing if it starts none. */
+function subsectionHtml(f) {
+  return f.subsection ? `<p class="sov-heading">${escapeHtml(f.subsection)}</p>` : '';
 }
 
 /**
@@ -1103,11 +1130,13 @@ export function sectionSummaryHtml(name, s) {
       return `radius ${s.rClaim} · ${escapeHtml(structure?.name ?? 'food only')}`;
     }
     case 'Site Filters': {
-      const terrains = s.siteTerrains ?? [];
+      const terrains = (list) => (list.length > 1 ? `${list.length} terrains` : list[0]);
+      const around = s.surroundTerrains ?? [];
       return [
         `tax ≥ ${s.tMin}%`,
         `apart ${s.dOther}/${s.dOwn}/${s.dAlliance}`,
-        terrains.length > 1 ? `${terrains.length} terrains` : terrains[0],
+        terrains(s.siteTerrains ?? []),
+        around.length && s.surroundMin > 0 && `${s.surroundMin}/8 around ${terrains(around)}`,
       ].filter(Boolean).join(' · ');
     }
     default:
@@ -1126,7 +1155,7 @@ export function settingsFormHtml(settings) {
   const body = groups.map((g) => {
     const fields = g.name === 'Production'
       ? productionMatrixHtml(settings)
-      : g.fields.map((f) => fieldHtml(f, settings)).join('');
+      : g.fields.map((f) => subsectionHtml(f) + fieldHtml(f, settings)).join('');
     const extra = g.fields.some((f) => f.key === 'isCapital')
       ? '<div class="sov-derived"></div><p class="sov-derived-food"></p>'
       : '';
@@ -1238,8 +1267,8 @@ export function focusFormHtml(focus, settings) {
 
 /** Site Search's form: City Configuration's Site Filters, mirrored. */
 export function scanFormHtml() {
-  const body = SETTINGS_FIELDS.filter((f) => f.group === 'Site Filters').map((f) => (
-    f.type === 'terrains'
+  const body = SETTINGS_FIELDS.filter((f) => f.group === 'Site Filters')
+    .map((f) => subsectionHtml(f) + (f.type === 'terrains'
       ? terrainsFieldHtml(f, [], 'data-mirror-terrain', 'sov-cb-scan-terrain')
       : mirrorFieldHtml(f, 'scan'))).join('');
   return `<form class="sov-scan-form" autocomplete="off">${sectionHtml({
@@ -1626,7 +1655,7 @@ export function createPanel({
           break;
         }
         case 'terrains':
-          out.siteTerrains = parseSiteTerrains([...form.querySelectorAll('[data-terrain]')]
+          out[f.key] = parseTerrains([...terrainInputs(f.key)]
             .filter((el) => el.checked).map((el) => el.dataset.terrain));
           break;
         default:
@@ -1682,7 +1711,7 @@ export function createPanel({
           }
           break;
         case 'terrains':
-          for (const el of form.querySelectorAll('[data-terrain]')) {
+          for (const el of terrainInputs(f.key)) {
             el.checked = !!v?.includes(el.dataset.terrain);
           }
           break;
@@ -1692,6 +1721,10 @@ export function createPanel({
     }
     refresh({ save });
     applyCollapsed();
+  }
+
+  function terrainInputs(key) {
+    return form.querySelectorAll(`.sov-f-block[data-key="${key}"] [data-terrain]`);
   }
 
   function writePlots(plots) {
@@ -1759,7 +1792,9 @@ export function createPanel({
     const { mirrorKey, mirrorPlot, mirrorTerrain } = el.dataset;
     if (mirrorKey) return form.querySelector(`input[data-key="${mirrorKey}"]`);
     if (mirrorPlot) return form.querySelector(`input[data-plot="${mirrorPlot}"]`);
-    return mirrorTerrain ? form.querySelector(`input[data-terrain="${mirrorTerrain}"]`) : null;
+    if (!mirrorTerrain) return null;
+    const { key } = el.closest('.sov-f-block').dataset;
+    return [...terrainInputs(key)].find((own) => own.dataset.terrain === mirrorTerrain);
   }
 
   // A mirrored control hands each edit to City Configuration's own, whose

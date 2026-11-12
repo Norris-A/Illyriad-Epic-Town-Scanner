@@ -569,6 +569,11 @@ export const SETTLE_TERRAINS = [
   'Small Mountain', 'Large Mountain',
 ];
 
+// [V] The terrains the server's data file marks `impassableterrain: Yes`. The
+// map payload flags only 20-23 `imp`, and gives Lake and Loch `sov` and `hos`,
+// so by their flags alone those two would pass as settleable.
+export const IMPASSABLE_TERRAIN = new Set([18, 19, 20, 21, 22, 23]);
+
 // [V] The six terrains the server's data file marks `npcterrain: Yes`. Their
 // ratings vary tile to tile, so only a tile's own `rs` can be trusted. This is
 // unrelated to a tile's `npc:1` flag, which marks an NPC lair on any terrain.
@@ -748,6 +753,10 @@ export const DEFAULT_SETTINGS = {
   dAlliance: 3,
   // SETTLE_TERRAINS a site must stand on; empty allows any.
   siteTerrains: [],
+  // At least surroundMin of the eight tiles around a site must be on one of
+  // surroundTerrains; empty allows any.
+  surroundTerrains: [],
+  surroundMin: 8,
   // Key into SOV_STRUCTURES; null plans food only.
   milsovStructure: null,
   // Sites below this military bonus are not listed; it never changes a plan.

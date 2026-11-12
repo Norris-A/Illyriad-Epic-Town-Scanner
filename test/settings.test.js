@@ -23,7 +23,7 @@ import {
   plotBarHtml,
   focusFormHtml,
   scanFormHtml,
-  parseSiteTerrains,
+  parseTerrains,
   clampPanelPosition,
   isWorldMapHash,
 } from '../src/panel.js';
@@ -132,6 +132,7 @@ test('the markup carries every hook createPanel reads back out of it', () => {
     'select data-key="milsovStructure"',
     ...PLOT_KEYS.map((p) => `data-plot="${p}"`),
     ...SETTLE_TERRAINS.map((t) => `data-terrain="${t}"`),
+    'class="sov-heading">Terrain<',
   ];
   for (const hook of hooks) assert.ok(html.includes(hook), `markup is missing ${hook}`);
 
@@ -571,11 +572,12 @@ test('every terrain offered is a terrain class the terrain table uses', () => {
 
 test('ticked terrains read back in table order, and anything else is dropped', () => {
   assert.deepEqual(DEFAULT_SETTINGS.siteTerrains, [], 'a fresh install filters nothing');
+  assert.deepEqual(DEFAULT_SETTINGS.surroundTerrains, [], 'a fresh install filters nothing');
   assert.deepEqual(
-    parseSiteTerrains(['Large Hill', 'Obsidian Mountains', 'Plains']),
+    parseTerrains(['Large Hill', 'Obsidian Mountains', 'Plains']),
     ['Plains', 'Large Hill'],
   );
-  assert.deepEqual(parseSiteTerrains('Plains'), []);
+  assert.deepEqual(parseTerrains('Plains'), []);
 });
 
 test('the Site Filters summary names one terrain and counts several', () => {
@@ -583,6 +585,15 @@ test('the Site Filters summary names one terrain and counts several', () => {
   assert.doesNotMatch(sum([]), /terrain|Plains/);
   assert.match(sum(['Small Hill']), / · Small Hill$/);
   assert.match(sum(['Plains', 'Small Hill']), / · 2 terrains$/);
+});
+
+test('the Site Filters summary gives the surroundings only when they filter', () => {
+  const sum = (surroundTerrains, surroundMin) =>
+    sectionSummaryHtml('Site Filters', { ...DEFAULT_SETTINGS, surroundTerrains, surroundMin });
+  assert.doesNotMatch(sum([], 8), /around/);
+  assert.doesNotMatch(sum(['Plains'], 0), /around/);
+  assert.match(sum(['Plains'], 8), / · 8\/8 around Plains$/);
+  assert.match(sum(['Plains', 'Small Hill'], 6), / · 6\/8 around 2 terrains$/);
 });
 
 test('Site Search mirrors every Site Filters control', () => {

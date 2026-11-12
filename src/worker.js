@@ -6,6 +6,7 @@ import {
   indexPayload,
   extractTowns,
   isCandidateSite,
+  meetsSurroundings,
   neighbourhood,
   parseKey,
   parseRs,
@@ -27,7 +28,9 @@ self.onmessage = (e) => {
       const neighbours = neighbourhood(payload, key, settings.rClaim, idx, settings);
       if (neighbours === null) {
         incomplete.push({ key, ...parseKey(key) });
-      } else {
+      } else if (meetsSurroundings(payload, key, settings)) {
+        // The claim ring is complete here, so a tile the payload lacks cannot
+        // pass for a mismatch.
         const plan = scoreSite({ neighbours, settings });
         // milsovShortfall: no tax down to tMin reaches the minimum military bonus.
         if (plan && !plan.milsovShortfall && plan.tMax >= settings.tMin) {

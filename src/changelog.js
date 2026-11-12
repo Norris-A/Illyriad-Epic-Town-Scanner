@@ -4,6 +4,14 @@
 
 export const CHANGELOG = [
   {
+    version: '2.1.0',
+    date: null,
+    changes: [
+      'Want a site ringed by open plains? Site Filters has a new Terrain part: tick what the 8 tiles around a site should be, and say how many of them must be. River banks count as Plains.',
+      'Lakes and lochs are no longer offered as places to settle.',
+    ],
+  },
+  {
     version: '2.0.0',
     date: '2026-10-12',
     changes: [

@@ -371,10 +371,10 @@ const CSS = `
 .sov-panel [hidden]{display:none}
 `;
 
-export const PANEL_POSITION_KEY = 'illyriad-sov-scanner.panel-position';
-export const PANEL_COLLAPSED_KEY = 'illyriad-sov-scanner.panel-collapsed';
+const PANEL_POSITION_KEY = 'illyriad-sov-scanner.panel-position';
+const PANEL_COLLAPSED_KEY = 'illyriad-sov-scanner.panel-collapsed';
 
-export const WORLD_MAP_HASH = '#/World/Map';
+const WORLD_MAP_HASH = '#/World/Map';
 
 /** Whether a location hash is the World Map, including deep links to a tile. */
 export function isWorldMapHash(hash) {
@@ -456,9 +456,6 @@ function savePanelCollapsed(collapsed) {
 }
 
 // --- Settings model ---------------------------------------------------------
-
-// Defined in constants.js; re-exported for the form and its tests.
-export { PLOT_KEYS, PLOT_TOTAL };
 
 /** A production's name with its icon; alt is empty since the name is beside it. */
 export function productionLabel(key) {
@@ -548,10 +545,10 @@ export const MILSOV_BLOCKED_TEXT = {
 
 /**
  * A plan's per-hour balance as rows of `{label, base, spent, value, note}`,
- * where base - spent = value. At the plan's own tax the binding ceiling reads 0;
- * `note` names it ('binds'), a deficit, or an indicative figure.
+ * where base - spent = value. `note` names the binding ceiling's row ('binds')
+ * and a deficit; `resBinding` is the basic resource a 'res' ceiling binds on.
  */
-export function surplusRows(surplus, binding) {
+export function surplusRows(surplus, binding, resBinding) {
   if (!surplus) return [];
   // `key` indexes the surplus; `icon` names the production (research is `rp` there).
   const rows = [
@@ -569,11 +566,8 @@ export function surplusRows(surplus, binding) {
     const value = surplus[r.key] ?? 0;
     const base = surplus.base?.[r.key];
     const notes = [];
-    if (binding === r.key || (binding === 'res' && r.basic && Math.abs(value) < 0.5)) {
-      notes.push('binds');
-    }
+    if (binding === r.key || (binding === 'res' && r.key === resBinding)) notes.push('binds');
     if (value < 0) notes.push('deficit');
-    if (r.basic && surplus.indicative) notes.push('indicative');
     return {
       ...r,
       value,
@@ -582,32 +576,6 @@ export function surplusRows(surplus, binding) {
       note: notes.join(', '),
     };
   });
-}
-
-/**
- * A row's note for a resource ceiling the engine reported without applying,
- * since it does not affect the ranking. Null when there is none, or when the
- * upkeep is covered at the site's tax.
- *
- * @returns {{text: string, title: string} | null}
- */
-export function resFlag(r) {
-  if (!r?.resIndicative) return null;
-  const caveat = 'Indicative only — per-plot yields for wood, clay, iron and '
-    + 'stone are unmeasured, so this figure does not affect the ranking.';
-  if (r.resImpossible) {
-    return {
-      text: `no ${r.resBinding} plots`,
-      title: `The settle allocation has no ${r.resBinding} plots, so the sovereignty `
-        + `upkeep cannot be paid at any tax rate. ${caveat}`,
-    };
-  }
-  if (!(r.resCeiling < r.tMax - 1e-9)) return null;
-  return {
-    text: `${r.resBinding} ${r.resCeiling.toFixed(1)}%`,
-    title: `Sovereignty upkeep exhausts ${r.resBinding} above ${r.resCeiling.toFixed(1)}% tax, `
-      + `below this site's ceiling of ${r.tMax.toFixed(1)}%. ${caveat}`,
-  };
 }
 
 /**
@@ -664,9 +632,8 @@ export function parseTerrains(raw) {
  * One control per setting. The keys must match DEFAULT_SETTINGS', which a test
  * checks.
  *
- * `enabledWhen` disables a control whose precondition is off; `overriddenWhen`
- * greys out one that an override below is replacing. `menu: true` puts a
- * setting in the gear menu instead of the City Configuration form.
+ * `enabledWhen` disables a control whose precondition is off. `menu: true` puts
+ * a setting in the gear menu instead of the City Configuration form.
  */
 export const SETTINGS_FIELDS = [
   { key: 'plots', group: 'Settle Tile', label: 'Settle Plot Allocation', type: 'plots' },
@@ -1182,7 +1149,7 @@ export function settingsMenuHtml(settings) {
 }
 
 /** The changelog popover: each version's changes, newest first. */
-export function changelogHtml(entries) {
+function changelogHtml(entries) {
   const versions = entries.map((v) => {
     const date = v.date ? `<span class="sov-changelog-date">${escapeHtml(v.date)}</span>` : '';
     const changes = v.changes.map((c) => `<li>${escapeHtml(c)}</li>`).join('');
@@ -1310,23 +1277,6 @@ function capitalDerivedHtml(s) {
 
 // --- Panel ------------------------------------------------------------------
 
-/**
- * @param {object} o
- * @param {object} [o.initialSettings] already sanitized; defaults on first run
- * @param {(s: object) => void} [o.onSettingsChange] every committed edit, with
- *   the settings as read from the form, invalid ones included
- * @param {() => object|null} [o.getPayload] the map payload on screen, read
- *   afresh for each Optimise and town picker rebuild
- * @param {(view: object, onLoaded: () => void) => (() => void)|null}
- *   [o.whenViewLoaded] call `onLoaded` once the client has loaded `view`;
- *   returns what stops the wait, or null where it cannot wait
- * @param {(result: object) => void} [o.onSelect] a result row was selected
- * @param {(pane: string|null) => void} [o.onPaneShown] the pane on screen
- *   changed, null when folded; called once at the start
- * @param {(plan: object|null, geom: object) => void} [o.onFocusPlan] the
- *   optimiser's claim grid was drawn; null when there is none
- * @param {() => void} [o.onPickOnMap] Pick on map was pressed
- */
 const ABOUT_TIP = 'Unofficial fan tool. Illyriad, its game data and the game’s icon art are '
   + 'the intellectual property of Illyriad Games Limited — click for the licence and full '
   + 'copyright notice.';
@@ -1345,6 +1295,23 @@ export function tipPosition(rect, size, view, gap = 6) {
   return { left, top };
 }
 
+/**
+ * @param {object} o
+ * @param {object} [o.initialSettings] already sanitized; defaults on first run
+ * @param {(s: object) => void} [o.onSettingsChange] every committed edit, with
+ *   the settings as read from the form, invalid ones included
+ * @param {() => object|null} [o.getPayload] the map payload on screen, read
+ *   afresh for each Optimise and town picker rebuild
+ * @param {(view: object, onLoaded: () => void) => (() => void)|null}
+ *   [o.whenViewLoaded] call `onLoaded` once the client has loaded `view`;
+ *   returns what stops the wait, or null where it cannot wait
+ * @param {(result: object) => void} [o.onSelect] a result row was selected
+ * @param {(pane: string|null) => void} [o.onPaneShown] the pane on screen
+ *   changed, null when folded; called once at the start
+ * @param {(plan: object|null, geom: object) => void} [o.onFocusPlan] the
+ *   optimiser's claim grid was drawn; null when there is none
+ * @param {() => void} [o.onPickOnMap] Pick on map was pressed
+ */
 export function createPanel({
   onScan, initialSettings, onSettingsChange, getPayload, whenViewLoaded, onSelect,
   onPaneShown, onFocusPlan, onPickOnMap,
@@ -1504,7 +1471,7 @@ export function createPanel({
     const collapsed = shouldCollapse();
     root.classList.toggle('sov-collapsed', collapsed);
     // The header's buttons are hidden when collapsed, so their popovers close.
-    if (collapsed) closePopovers?.();
+    if (collapsed) closePopovers();
     placeAtAnchor();
     reportPane();
   }
@@ -1555,6 +1522,7 @@ export function createPanel({
   installTooltips(shadow);
   const containerFor = (f) => (f.menu ? menu : form);
   let rendered = [];       // the results currently in the table
+  let scanSettings = null; // the settings they were scanned with
   let selected = null;     // the row Prefill copies `rs` from
   let incomplete = [];     // sites the last scan could not see all of
 
@@ -1738,11 +1706,11 @@ export function createPanel({
     const { settings: s } = readSettings();
     if (save) onSettingsChange?.(s);
 
-  // Disable controls whose precondition is off or that an override replaces.
-  // Disabled inputs still read back, so nothing is lost.
+    // Disable controls whose precondition is off. Disabled inputs still read
+    // back, so nothing is lost.
     for (const f of SETTINGS_FIELDS) {
-      if (!f.enabledWhen && !f.overriddenWhen) continue;
-      const on = (f.enabledWhen?.(s) ?? true) && !f.overriddenWhen?.(s);
+      if (!f.enabledWhen) continue;
+      const on = f.enabledWhen(s);
       const wrap = form.querySelector(`[data-key="${f.key}"]`);
       wrap.classList.toggle('sov-gated', !on);
       wrap.querySelectorAll('input,select').forEach((el) => { el.disabled = !on; });
@@ -1910,7 +1878,6 @@ export function createPanel({
       onSelect?.(selected);
     }
   }
-
 
   /** Say how many sites were skipped because their claim radius runs off screen. */
   function drawIncomplete() {
@@ -2095,11 +2062,12 @@ export function createPanel({
     },
     /**
      * @param {object[]} results ranked sites
-     * @param {object} scan `{x, y, zoom, scanned}`
+     * @param {object} scan `{x, y, zoom, scanned, settings}`
      */
     renderResults(results, scan) {
       const el = root.querySelector('.sov-results');
       rendered = results;
+      scanSettings = scan.settings;
       selected = null;
       const summary = { ...scan, candidates: results.length };
       $('.sov-prefill-src').textContent = '';   // the old selection is gone
@@ -2108,7 +2076,7 @@ export function createPanel({
       el.querySelectorAll('.sov-row').forEach((row) => {
         row.addEventListener('click', () => {
           select(Number(row.dataset.n));
-          toggleDetail(row, results[Number(row.dataset.n)], readSettings().settings, optimiseSite);
+          toggleDetail(row, results[Number(row.dataset.n)], scanSettings, optimiseSite);
         });
       });
     },
@@ -2122,7 +2090,7 @@ export function createPanel({
       if (!row) return false;
       select(n);
       if (!row.nextElementSibling?.classList.contains('sov-detail')) {
-        toggleDetail(row, rendered[n], readSettings().settings, optimiseSite);
+        toggleDetail(row, rendered[n], scanSettings, optimiseSite);
       }
       row.scrollIntoView({ block: 'nearest' });
       return true;
@@ -2235,20 +2203,10 @@ export function scanSummaryText(scan) {
     scan.candidates === 1 ? '' : 's'}.`;
 }
 
-
 /** The Military column: the free bonus, then warning pills, each led by an icon. */
 function militaryCellHtml(r) {
   const troops = `<img src="${ICONS.troops}" alt="">`;
   const flags = [];
-  const res = resFlag(r);
-  if (res) {
-    const icon = PRODUCTION_ICONS[r.resBinding] ? `<img src="${PRODUCTION_ICONS[r.resBinding]}" alt="">` : '';
-    flags.push({
-      cls: 'sov-pill-bad',
-      html: `${icon}${r.resImpossible ? 'no plots' : `${r.resCeiling.toFixed(1)}%`}`,
-      title: res.title,
-    });
-  }
   if (r.milsovBlocked) {
     flags.push({
       cls: 'sov-pill-bad',
@@ -2265,17 +2223,6 @@ function militaryCellHtml(r) {
       title: `This site reaches your minimum military bonus (+${r.milsovMinBonusAt}%) `
         + `at ${r.milsovMinTax.toFixed(0)}% tax, against the ${r.tMax.toFixed(0)}% it holds `
         + `on food alone. Open the row and drag the tax slider to see the trade.`,
-    });
-  }
-  // Terrain bonuses tied to a building SOV_STRUCTURES does not know. None are
-  // today, but the descriptor table comes from the game.
-  const conditional = conditionalDescriptors(r);
-  if (conditional.size) {
-    flags.push({
-      cls: 'sov-pill-warn',
-      html: 'conditional',
-      title: `${[...conditional].map(([b, n]) => `${n}× ${b}`).join(', ')} — these tiles carry a `
-        + `terrain bonus that only pays if the city has that building. Not scored either way.`,
     });
   }
   return `${r.milsovBonus ? `<b class="sov-mil-v">+${r.milsovBonus}%</b>` : ''}${flags
@@ -2542,9 +2489,7 @@ export function descriptorText(tile) {
   if (d.bonusUnread) return `${d.name}${varies} — bonus not read yet`;
   if (d.nodeClass) return `${d.name}${varies}`;
   if (!d.building) return `${d.name} — no sovereignty bonus`;
-  const conditional = d.conditional ? `, needs a ${d.building}` : '';
-  const disputed = d.disputed ? ' [unconfirmed]' : '';
-  return `${d.name}: +${d.bonus}% ${d.product} per level of ${d.building}${conditional}${disputed}`;
+  return `${d.name}: +${d.bonus}% ${d.product} per level of ${d.building}`;
 }
 
 /**
@@ -2583,7 +2528,7 @@ export function resultsHtml(results, summary) {
           <td class="sov-tax-cell"${Number.isFinite(r.tMaxExact)
     ? ` title="The arithmetic reaches ${r.tMaxExact.toFixed(2)}%, but tax is whole numbers only, so the plan is made at this rate."`
     : ''}><b>${Number.isFinite(r.tMax) ? r.tMax.toFixed(0) : r.tMax}%</b>${limitHtml(r)}</td>
-          <td>${r.sFood.toFixed(0)}</td>
+          <td>${r.surplus ? count(Math.round(r.surplus.food)) : ''}</td>
           <td>${r.uRp.toFixed(0)}</td>
           <td>${Math.round(r.goldNet).toLocaleString()}</td>
           <td class="sov-mil-cell">${militaryCellHtml(r)}</td>
@@ -2600,16 +2545,6 @@ export function resultsHtml(results, summary) {
             ${iconHeading(ICONS.troops, 'Military', 'Free military unit production bonus — costs this site no tax — and anything to know about it')}</tr></thead>
           <tbody>${rows}</tbody>
         </table>`;
-}
-
-/** Which planned tiles' terrain bonuses name a building SOV_STRUCTURES lacks. */
-function conditionalDescriptors(plan) {
-  const out = new Map();
-  for (const t of [...(plan?.tiles ?? []), ...(plan?.milsov ?? [])]) {
-    const d = t.descriptor ?? descriptorFor(t.i);
-    if (d?.conditional) out.set(d.building, (out.get(d.building) ?? 0) + 1);
-  }
-  return out;
 }
 
 /**
@@ -2788,7 +2723,6 @@ function spanOf(plan) {
 const NOTE_PILLS = {
   binds: ['limit', 'sov-pill-warn', 'The ceiling that sets the tax: this production runs out first'],
   deficit: ['deficit', 'sov-pill-bad', 'The plan spends more than the city makes'],
-  indicative: ['estimate', '', 'Per-plot yields for wood, clay, iron and stone are unmeasured'],
 };
 
 function notePills(note) {
@@ -2813,9 +2747,9 @@ function useCellHtml(r) {
  * say what the lower tax bought and cost.
  */
 function detailBodyHtml(plan, base, geom) {
-  // A ceiling only binds at the tax it was solved for.
-  const atCeiling = Math.abs(plan.tax - plan.tMax) < 0.05;
-  const rows = surplusRows(plan.surplus, atCeiling ? plan.binding : null);
+  // Below the site's highest tax nothing has run out yet.
+  const atCeiling = plan.tax >= base.tMax;
+  const rows = surplusRows(plan.surplus, atCeiling ? plan.binding : null, plan.resBinding);
   const num = (v) => (Number.isFinite(v) ? Math.round(v).toLocaleString('en-GB') : '');
   const balance = rows.length
     ? `<table class="sov-balance"><thead><tr><th>At ${plan.tax.toFixed(0)}% Tax</th>
@@ -2843,11 +2777,11 @@ function detailBodyHtml(plan, base, geom) {
   // What this tax cost against the plan at the ceiling.
   const claimDelta = plan.tiles.length - base.tiles.length;
   const goldDelta = Math.round(plan.goldNet - base.goldNet);
-  const signed = (v) => `${v >= 0 ? '+' : ''}${v.toLocaleString('en-GB')}`;
+  const delta = (v) => `${v >= 0 ? '+' : ''}${v.toLocaleString('en-GB')}`;
   const trade = plan.tax < base.tMax - 0.05
     ? `<p class="sov-hint">Against the ${base.tMax.toFixed(1)}% ceiling, which fits ${
       base.milsovBonus ? `+${base.milsovBonus}%` : 'no military bonus'}: ${
-      signed(claimDelta)} food claims, ${signed(goldDelta)} gold/hr.</p>`
+      delta(claimDelta)} food claims, ${delta(goldDelta)} gold/hr.</p>`
     : '';
 
   const short = plan.holds === false

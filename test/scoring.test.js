@@ -8,15 +8,17 @@ import assert from 'node:assert/strict';
 import {
   computeK, computeBOther, computeConsumption, computeResearch, researchAt,
   tFood, tRp, tMax, goldNet, claimUpkeep, distance, knapsack, recoverSet, scoreSite,
-  milsovHeadroom, planMilsov, tRes, surplusAt, computeBasicYield,
+  milsovHeadroom, planMilsov, tRes, surplusAt, milsovUpkeep,
   prepareSite, planSiteAt, settableTax, buildingUpkeep, chanceryFactor,
 } from '../src/scoring.js';
 import {
-  DEFAULT_SETTINGS, BASIC_YIELD_L20, BASIC_RESOURCES,
-  MILSOV_UPKEEP_BY_LEVEL, MILSOV_BONUS_PER_LEVEL,
+  DEFAULT_SETTINGS, BASIC_YIELD_L20, FARM_YIELD_L20, BASIC_RESOURCES, PLOT_KEYS,
+  MILSOV_UPKEEP_BY_LEVEL, MILSOV_UPKEEP_STEP, MILSOV_BONUS_PER_LEVEL,
+  SOV_STRUCTURES, MILSOV_STRUCTURES, SOV_STRUCTURE_BY_KEY, DEFAULT_SOV_STRUCTURE,
   PRESTIGE_PRODUCTION_BONUS, PRESTIGE_KEYS, RESOURCE_BOOSTER_BONUS,
   CLAIM_RP_PER_LEVEL_DISTANCE, descriptorFor,
 } from '../src/constants.js';
+import { validatePlots } from '../src/panel.js';
 
 const close = (a, b, eps = 0.05) =>
   assert.ok(Math.abs(a - b) < eps, `expected ${a} ≈ ${b}`);
@@ -38,6 +40,17 @@ const withMil = (extra = {}) => ({ ...worked, milsovStructure: 'trainingGround',
 test('K = 7 x 2014 / 100 = 140.98', () => {
   close(computeK(7), 140.98);
   close(computeK(5), 100.70);
+});
+
+test('food plots drive K, which is why the allocation is not cosmetic', () => {
+  // Two food plots either way is 40 points of K, and K scales every food figure.
+  close(computeK(validatePlots(DEFAULT_SETTINGS.plots).plots.food), 140.98);
+  close(computeK(validatePlots({ ...DEFAULT_SETTINGS.plots, food: 5, stone: 5 }).plots.food), 100.70);
+});
+
+test('the basic yield is the measured 2,538, not the farm figure', () => {
+  assert.equal(BASIC_YIELD_L20, 2538);
+  assert.notEqual(BASIC_YIELD_L20, FARM_YIELD_L20);
 });
 
 test("B_other = Flour Mill 40 + Nature's Bounty 20 = 60", () => {
@@ -120,6 +133,10 @@ test('calibration back-solves the base after removing the flat bonuses', () => {
   // every other tax.
   const fitted = computeResearch({ ...worked, rpCalibration: { observedRpPerHour: 1366, atTax: 50 } });
   close(fitted.base, 1013, 0.5);
+
+  // 800 read at 25% tax with only Allembine running: 100 of it was never scaled.
+  const allembineOnly = { ...DEFAULT_SETTINGS, rpCalibration: { observedRpPerHour: 800, atTax: 25 } };
+  close(computeResearch(allembineOnly).base, 700);
 });
 
 test('S_food 100 at 1,000 RP is food-bound at 56.6%', () => {
@@ -301,7 +318,8 @@ test('scoreSite still reports its tile plan when the building cap binds', () => 
   assert.ok(plan.tiles.length > 0, 'the plan must not come back empty');
   assert.ok(plan.tiles.length <= 20, 'the building cap must hold');
   close(sumBy(plan.tiles, 'food'), plan.sFood, 1e-9);
-  assert.ok(sumBy(plan.tiles, 'weight') <= plan.uRp + 1e-9, 'plan must fit its own RP spend');
+  assert.ok(sumBy(plan.tiles, 'weight') <= plan.spend, 'plan must fit its own RP spend');
+  assert.ok(plan.uRp <= plan.spend + 1e-9, 'the claims cost no more than the spend');
 });
 
 test('the optimum is where ceilings cross, not maximum food', () => {
@@ -484,7 +502,6 @@ test('no structure asked for means no buildings and no bill', () => {
   assert.equal(plan.milsovBonus, 0);
   assert.equal(plan.milsovUpkeep, 0);
   assert.equal(plan.milsovBlocked, null, 'nothing was asked for, so nothing is blocked');
-  assert.equal(plan.milsovPrice, 0);
   assert.equal(plan.resCeiling, Infinity, 'nothing is charged hourly');
 });
 
@@ -542,15 +559,15 @@ test('a site that reaches the minimum for free is never charged tax for it', () 
   close(met.tMax, plan.tMax, 1e-9);
 });
 
-test('a minimum with no structure asked for falls short rather than passing', () => {
-  // Wanting military and not naming one is a contradiction; the honest reading
-  // is that no site meets it, not that every site does.
+test('a minimum left set with no structure asked for filters nothing', () => {
+  // The form disables the field without clearing it, so the value still arrives.
   const plan = scoreSite({
     neighbours: spare,
     settings: { ...worked, tMin: -1000, milsovMinBonus: 50 },
   });
   assert.equal(plan.milsovBonus, 0);
-  assert.equal(plan.milsovShortfall, true);
+  assert.equal(plan.milsovShortfall, false);
+  assert.equal(plan.milsovMinTax, null);
 });
 
 // --- The headroom, and why a site sometimes has none ------------------------
@@ -668,9 +685,8 @@ test('a site whose spare tiles are all water says which of the two it is', () =>
 
 test('milsovHeadroom prices the scarcest resource, not the average', () => {
   const settings = { ...worked, plots: { wood: 5, clay: 5, iron: 5, stone: 1, food: 9 } };
-  const { yield: y } = computeBasicYield(settings);
   const h = milsovHeadroom({ tax: 50, settings, uRp: 0, buildingsUsed: 0 });
-  close(h.upkeep, (1 * y * (125 - 50)) / 100, 1e-6);
+  close(h.upkeep, (1 * BASIC_YIELD_L20 * (125 - 50)) / 100, 1e-6);
   const r = computeResearch(settings);
   close(h.rp, (r.base * (125 - 50)) / 100 + r.flat, 1e-6);
   assert.equal(h.slots, settings.maxBuildings);
@@ -697,51 +713,19 @@ test('a site with no finite tax has no budget to spend', () => {
   assert.equal(h.upkeep, 0);
 });
 
-// --- The price of going further --------------------------------------------
-
-test('the quoted price is what a point of tax actually buys', () => {
-  // Priced by re-solving one point down, so it accounts for tiles and slots
-  // running out — not by a formula that assumes they never do.
-  const neighbours = ring((dx, dy) => (Math.abs(dx) <= 1 && Math.abs(dy) <= 1 ? 9 : 0));
-  const settings = withMil({ tMin: -1000 });
-  const plan = scoreSite({ neighbours, settings });
-
-  const cheaper = planMilsov({
-    tiles: neighbours
-      .map((n) => ({ ...n, d: distance(n.dx, n.dy) }))
-      .filter((t) => !plan.tiles.some((c) => c.dx === t.dx && c.dy === t.dy))
-      .sort((a, b) => a.d - b.d || a.food - b.food),
-    headroom: milsovHeadroom({
-      tax: plan.tMax - 1, settings, uRp: plan.spend, buildingsUsed: plan.tiles.length,
-    }),
-  });
-  assert.equal(plan.milsovPrice, cheaper.bonus - plan.milsovBonus);
-  assert.ok(plan.milsovPrice >= 0, 'a lower tax can never buy less');
-});
-
-test('a site with nothing left to claim prices at nothing', () => {
-  // Every tile already spoken for, so no tax rate buys another building.
-  const plan = scoreSite({
-    neighbours: [{ dx: 1, dy: 0, food: 7 }],
-    settings: withMil({ tMin: -1000 }),
-  });
-  assert.equal(plan.milsovPrice, 0);
-});
-
 // --- The resource ceiling ---------------------------------------------------
 
 test('a resource with no plots is flagged impossible, not returned as a number', () => {
   const milsovAssignments = [{ sovLevel: 5, buildingLevel: 5 }];
   const r = tRes({ milsovAssignments, plots: { wood: 5, clay: 5, iron: 5, stone: 0, food: 10 } });
   assert.equal(r.impossible, true);
-  assert.equal(r.indicative, false);
   assert.equal(r.binding, 'stone', 'the worst resource is named, not the first checked');
   assert.equal(r.ceiling, -Infinity, 'no production pays no upkeep at any tax');
 });
 
-test('with nothing placed the ceiling is absent rather than indicative', () => {
+test('with nothing placed the ceiling is absent, even with no plots to pay from', () => {
   const r = tRes({ milsovAssignments: [], plots: { wood: 0, clay: 0, iron: 0, stone: 0, food: 25 } });
-  assert.deepEqual(r, { ceiling: Infinity, indicative: false, binding: null, impossible: false });
+  assert.deepEqual(r, { ceiling: Infinity, binding: null, impossible: false });
 });
 
 test('the claim is charged on its sovereignty level, the structure on its own', () => {
@@ -753,17 +737,21 @@ test('the claim is charged on its sovereignty level, the structure on its own', 
     milsovAssignments: [{ sovLevel: 5, buildingLevel: 1 }],
     plots: worked.plots,
   }).ceiling, 125 - (100 * 150) / (3 * BASIC_YIELD_L20), 0.01);
+  assert.equal(milsovUpkeep([{ sovLevel: 5, buildingLevel: 1 }]), 150);
+  assert.equal(milsovUpkeep([{ sovLevel: 1, buildingLevel: 1 }]), 150);
+  assert.equal(milsovUpkeep([]), 0);
 });
 
 test('a Resource Structure pays its claim but no hourly bill', () => {
   // The picker does not offer them — nothing would stop the search
   // claiming every spare tile with one — but the engine still knows them, and
   // knowing them must not mean a special case.
-  const none = { ceiling: Infinity, indicative: false, binding: null, impossible: false };
-  for (const structure of ['farmstead', 'fishery', 'loggingCamp', 'mineshaft']) {
+  const none = { ceiling: Infinity, binding: null, impossible: false };
+  for (const structure of ['gravelPit', 'loggingCamp', 'mineshaft', 'earthworks', 'farmstead', 'fishery']) {
     const milsovAssignments = [{ structure, sovLevel: 5, buildingLevel: 5 }];
     assert.deepEqual(tRes({ milsovAssignments, plots: worked.plots }), none, structure);
   }
+  assert.equal(milsovUpkeep(Array(4).fill({ structure: 'targetRange', buildingLevel: 5 })), 9600);
 });
 
 test('a mixed set is charged for its Production Structures alone', () => {
@@ -780,6 +768,60 @@ test('the ceiling binds T_max like any other', () => {
   const t = tMax({ food: 60, rp: 70, res: 20 });
   close(t.value, 20);
   assert.equal(t.binding, 'res');
+});
+
+// --- The structure table ----------------------------------------------------
+
+test('the upkeep steps are the table read as increments, and are convex', () => {
+  // The planner spends against the steps, not the totals. They have to add back
+  // up to the table, and they have to RISE — that convexity is the whole reason
+  // several low-level buildings can be cheaper to run than one high one.
+  let running = 0;
+  for (let level = 1; level <= 5; level++) {
+    running += MILSOV_UPKEEP_STEP[level - 1];
+    assert.equal(running, MILSOV_UPKEEP_BY_LEVEL[level], `level ${level} does not add up`);
+  }
+  for (let i = 1; i < MILSOV_UPKEEP_STEP.length; i++) {
+    assert.ok(MILSOV_UPKEEP_STEP[i] >= MILSOV_UPKEEP_STEP[i - 1], 'the steps must not fall');
+  }
+  assert.ok(MILSOV_UPKEEP_STEP.at(-1) > MILSOV_UPKEEP_STEP[0], 'and must actually rise');
+});
+
+test('every structure in the table is one kind or the other, and named', () => {
+  for (const s of SOV_STRUCTURES) {
+    assert.ok(['production', 'resource'].includes(s.type), `${s.key} has no upkeep class`);
+    assert.ok(s.name && s.key, 'a structure needs both a key and a name');
+    // Only resource structures raise a resource, and each raises a real one.
+    if (s.type === 'production') assert.equal(s.boosts, undefined, `${s.key} should boost nothing`);
+    else assert.ok(PLOT_KEYS.includes(s.boosts), `${s.key} boosts ${s.boosts}`);
+  }
+  assert.equal(new Set(SOV_STRUCTURES.map((s) => s.key)).size, SOV_STRUCTURES.length, 'duplicate key');
+  assert.ok(SOV_STRUCTURE_BY_KEY[DEFAULT_SOV_STRUCTURE], 'the default must be in the table');
+  assert.equal(SOV_STRUCTURE_BY_KEY[DEFAULT_SOV_STRUCTURE].type, 'production',
+    'the fallback has to be the charged kind');
+
+  // The picker is the five military structures, derived rather than retyped. It
+  // is NARROWER than the Production Structures: the thirteen crafting ones are
+  // in the table because the terrain descriptors name them and the engine has
+  // to cost them, but the question the form asks is which unit the city makes.
+  assert.deepEqual(
+    MILSOV_STRUCTURES.map((s) => s.key),
+    ['trainingGround', 'targetRange', 'militaryAcademy', 'joustingYard', 'assemblyYard'],
+  );
+  // Narrower, but still only ever the charged kind — a Resource Structure has no
+  // hourly bill, so nothing would stop the planner claiming every spare tile
+  // with one for a bonus that is not scored.
+  assert.ok(MILSOV_STRUCTURES.every((s) => s.type === 'production'),
+    'the picker must never offer a Resource Structure');
+  assert.ok(MILSOV_STRUCTURES.every((s) => milsovUpkeep([{ structure: s.key, buildingLevel: 5 }]) === 2400),
+    'every offered structure must actually be charged');
+  // The crafting structures stay costable even though nothing selects them:
+  // a descriptor names one, and a plan that ever carried one must be billed.
+  assert.equal(milsovUpkeep([{ structure: 'bowyer', buildingLevel: 5 }]), 2400);
+  assert.deepEqual(
+    SOV_STRUCTURES.filter((s) => s.boosts === 'food').map((s) => s.name),
+    ['Farmstead', 'Fishery'],
+  );
 });
 
 // --- Boosters, calibrated yields and the surplus read-out -------------------
@@ -839,14 +881,12 @@ test('the binding ceiling has exactly zero left over at the exact ceiling', () =
 test('the surplus states the military bill against every basic resource', () => {
   const settings = withMil({ tMin: -1000 });
   const plan = scoreSite({ neighbours: spare, settings });
-  const { yield: y } = computeBasicYield(settings);
   assert.ok(plan.milsov.length > 0, 'precondition: something was placed');
   assert.equal(plan.surplus.upkeep, plan.milsovUpkeep);
   for (const r of BASIC_RESOURCES) {
-    const expected = (worked.plots[r] * y * (125 - plan.tMax)) / 100 - plan.milsovUpkeep;
+    const expected = (worked.plots[r] * BASIC_YIELD_L20 * (125 - plan.tMax)) / 100 - plan.milsovUpkeep;
     close(plan.surplus[r], expected, 1e-6);
   }
-  assert.equal(plan.surplus.indicative, false, 'the yield behind them is measured');
 });
 
 test('surplusAt is callable on its own, at any tax the user asks about', () => {
@@ -892,7 +932,7 @@ test('the integer plan spends the rounding, and never buys less military', () =>
   // never-worse half.
   const fixtures = [
     spare, ring8, ring(() => 9), ring((dx) => (dx > 0 ? 7 : 0)),
-    ring((dx, dy) => (Math.abs(dx) <= 1 && Math.abs(dy) <= 1 ? 9 : 2)),
+    ring((dx, dy) => (Math.abs(dx) <= 1 && Math.abs(dy) <= 1 ? 8 : 2)),
   ];
   for (const neighbours of fixtures) {
     const ctx = prepareSite({ neighbours, settings });
@@ -1081,9 +1121,8 @@ test('a floor takes military sovereignty out of the budget, not out of the tax',
 
   // milsovHeadroom is where that comes from: the budget is production less floor.
   const settings = { ...worked, resourceMinimums: { wood: 0, clay: 0, iron: 0, stone: 4000 } };
-  const { yield: y } = computeBasicYield(settings);
   const h = milsovHeadroom({ tax: 50, settings, uRp: 0, buildingsUsed: 0 });
-  close(h.upkeep, (worked.plots.stone * y * (125 - 50)) / 100 - 4000, 1e-6);
+  close(h.upkeep, (worked.plots.stone * BASIC_YIELD_L20 * (125 - 50)) / 100 - 4000, 1e-6);
 
   // A floor above the whole production leaves nothing rather than a negative.
   const starved = milsovHeadroom({
@@ -1332,7 +1371,7 @@ test('the tie-break never costs bonus, and only ever lowers the research', () =>
 test('gold upkeep still tracks research at exactly 10:1 with military in the plan', () => {
   const plan = scoreSite({ neighbours: ring(() => 9), settings: withMil({ tMin: -1000 }) });
   close(plan.uGold, plan.uRp * 10, 1e-6);
-  close(plan.uRp, plan.spend + plan.milsovRp, 1e-9);
+  close(plan.uRp, sumBy(plan.tiles, 'rp') + plan.milsovRp, 1e-9);
   close(plan.milsovGold, plan.milsovRp * 10, 1e-6);
 });
 
@@ -1340,8 +1379,7 @@ test('gold upkeep still tracks research at exactly 10:1 with military in the pla
 
 // A tile whose terrain names the structure being built raises that structure's
 // rate per level: a Training Ground on Wooded Glade runs at 7 points a level,
-// not 5. Nothing read this before — the engine charged every tile 5 flat — so a
-// site with matching terrain was ranked as if its terrain said nothing.
+// not 5.
 test('a matching descriptor raises the tile rate, a non-matching one does not', () => {
   const headroom = { slots: 1, rp: 1e9, upkeep: 1e9 };
   const tile = (descriptor) => [{ d: 1, idx: 0, descriptor }];

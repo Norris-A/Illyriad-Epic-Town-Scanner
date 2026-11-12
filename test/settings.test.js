@@ -6,8 +6,6 @@ import assert from 'node:assert/strict';
 
 import {
   SETTINGS_FIELDS,
-  PLOT_KEYS,
-  PLOT_TOTAL,
   clampNumber,
   validatePlots,
   parseMilsovStructure,
@@ -32,20 +30,15 @@ import { PRODUCTION_ICONS, UPKEEP_GROUP_ICONS } from '../src/game-icons.js';
 import {
   DEFAULT_SETTINGS,
   BASIC_RESOURCES,
-  BASIC_YIELD_L20,
-  FARM_YIELD_L20,
+  PLOT_KEYS,
+  PLOT_TOTAL,
   PRESTIGE_KEYS,
-  SOV_STRUCTURES,
   MILSOV_STRUCTURES,
-  MILSOV_UPKEEP_BY_LEVEL,
-  MILSOV_UPKEEP_STEP,
-  SOV_STRUCTURE_BY_KEY,
-  DEFAULT_SOV_STRUCTURE,
   UPKEEP_BUILDINGS,
   SETTLE_TERRAINS,
   TERRAIN_NAMES,
 } from '../src/constants.js';
-import { computeK, computeResearch, milsovUpkeep, computeBasicYield } from '../src/scoring.js';
+import { computeResearch } from '../src/scoring.js';
 
 const close = (a, b, eps = 0.05) =>
   assert.ok(Math.abs(a - b) < eps, `expected ${a} ≈ ${b}`);
@@ -288,12 +281,6 @@ test('a missing field is 0, not NaN — the total stays a number', () => {
   assert.ok(PLOT_KEYS.every((p) => r.plots[p] === 0));
 });
 
-test('food plots drive K, which is why the allocation is not cosmetic', () => {
-  // Two food plots either way is 40 points of K, and K scales every food figure.
-  close(computeK(validatePlots(DEFAULT_SETTINGS.plots).plots.food), 140.98);
-  close(computeK(validatePlots({ ...DEFAULT_SETTINGS.plots, food: 5, stone: 5 }).plots.food), 100.70);
-});
-
 test('a prefilled water tile is flagged rather than silently scored', () => {
   // Water tiles carry food only, so prefilling from one cannot reach 25. The
   // form has to reject that, not scale it to fit.
@@ -340,20 +327,12 @@ test('the minimum bonus is disabled until a structure is named', () => {
   assert.equal(field.enabledWhen({ milsovStructure: 'trainingGround' }), true);
 });
 
-test('upkeep is charged on the building, never on the claim', () => {
-  // A Sov V claim carrying a level 1 building costs 150/hr, not 2,400 — the
-  // sovereignty level is paid in RP and gold instead.
-  assert.equal(milsovUpkeep([{ sovLevel: 5, buildingLevel: 1 }]), 150);
-  assert.equal(milsovUpkeep([{ sovLevel: 1, buildingLevel: 1 }]), 150);
-  assert.equal(milsovUpkeep([]), 0);
-});
-
 // --- the per-hour balance ---------------------------------------------------
 
 test('the balance carries gold, and every row states what the plan spent', () => {
   const surplus = {
     food: 1000, rp: 200, gold: 5000, wood: 300, clay: 300, iron: 300, stone: 300,
-    upkeep: 900, indicative: false,
+    upkeep: 900,
     base: { food: 33200, rp: 1200, gold: 15000, wood: 1200, clay: 1200, iron: 1200, stone: 1200 },
   };
   const rows = surplusRows(surplus, null);
@@ -363,6 +342,11 @@ test('the balance carries gold, and every row states what the plan spent', () =>
   // A basic resource spends the sovereignty upkeep; gold spends the claim price.
   assert.equal(rows.find((r) => r.key === 'stone').spent, 900);
   assert.equal(rows.find((r) => r.key === 'gold').spent, 10000);
+});
+
+test('a resource ceiling marks the resource it binds on, whatever is left of it', () => {
+  const rows = surplusRows({ wood: 300, stone: 500 }, 'res', 'stone');
+  assert.deepEqual(rows.filter((r) => r.note).map((r) => [r.key, r.note]), [['stone', 'binds']]);
 });
 
 test('a row with no production figure reports no spend rather than NaN', () => {
@@ -388,68 +372,7 @@ test('every production wears its icon, and the label stays plain text', () => {
   assert.equal(productionLabel('mystery'), 'mystery');
 });
 
-// --- the structure table ----------------------------------------------------
-
-test('the upkeep steps are the table read as increments, and are convex', () => {
-  // The planner spends against the steps, not the totals. They have to add back
-  // up to the table, and they have to RISE — that convexity is the whole reason
-  // several low-level buildings can be cheaper to run than one high one.
-  let running = 0;
-  for (let level = 1; level <= 5; level++) {
-    running += MILSOV_UPKEEP_STEP[level - 1];
-    assert.equal(running, MILSOV_UPKEEP_BY_LEVEL[level], `level ${level} does not add up`);
-  }
-  for (let i = 1; i < MILSOV_UPKEEP_STEP.length; i++) {
-    assert.ok(MILSOV_UPKEEP_STEP[i] >= MILSOV_UPKEEP_STEP[i - 1], 'the steps must not fall');
-  }
-  assert.ok(MILSOV_UPKEEP_STEP.at(-1) > MILSOV_UPKEEP_STEP[0], 'and must actually rise');
-});
-
-test('every structure in the table is one kind or the other, and named', () => {
-  for (const s of SOV_STRUCTURES) {
-    assert.ok(['production', 'resource'].includes(s.type), `${s.key} has no upkeep class`);
-    assert.ok(s.name && s.key, 'a structure needs both a key and a name');
-    // Only resource structures raise a resource, and each raises a real one.
-    if (s.type === 'production') assert.equal(s.boosts, undefined, `${s.key} should boost nothing`);
-    else assert.ok(PLOT_KEYS.includes(s.boosts), `${s.key} boosts ${s.boosts}`);
-  }
-  assert.equal(new Set(SOV_STRUCTURES.map((s) => s.key)).size, SOV_STRUCTURES.length, 'duplicate key');
-  assert.ok(SOV_STRUCTURE_BY_KEY[DEFAULT_SOV_STRUCTURE], 'the default must be in the table');
-  assert.equal(SOV_STRUCTURE_BY_KEY[DEFAULT_SOV_STRUCTURE].type, 'production',
-    'the fallback has to be the charged kind');
-
-  // The picker is the five military structures, derived rather than retyped. It
-  // is NARROWER than the Production Structures: the thirteen crafting ones are
-  // in the table because the terrain descriptors name them and the engine has
-  // to cost them, but the question the form asks is which unit the city makes.
-  assert.deepEqual(
-    MILSOV_STRUCTURES.map((s) => s.key),
-    ['trainingGround', 'targetRange', 'militaryAcademy', 'joustingYard', 'assemblyYard'],
-  );
-  // Narrower, but still only ever the charged kind — a Resource Structure has no
-  // hourly bill, so nothing would stop the planner claiming every spare tile
-  // with one for a bonus that is not scored.
-  assert.ok(MILSOV_STRUCTURES.every((s) => s.type === 'production'),
-    'the picker must never offer a Resource Structure');
-  assert.ok(MILSOV_STRUCTURES.every((s) => milsovUpkeep([{ structure: s.key, buildingLevel: 5 }]) === 2400),
-    'every offered structure must actually be charged');
-  // The crafting structures stay costable even though nothing selects them:
-  // a descriptor names one, and a plan that ever carried one must be billed.
-  assert.equal(milsovUpkeep([{ structure: 'bowyer', buildingLevel: 5 }]), 2400);
-  assert.deepEqual(
-    SOV_STRUCTURES.filter((s) => s.boosts === 'food').map((s) => s.name),
-    ['Farmstead', 'Fishery'],
-  );
-});
-
-test('a Resource Structure still pays its claim but no hourly bill', () => {
-  // Out of the picker, not out of the engine: the table is what the cost model
-  // reads, and it must not grow a special case just because nothing selects it.
-  for (const key of ['gravelPit', 'loggingCamp', 'mineshaft', 'earthworks', 'farmstead', 'fishery']) {
-    assert.equal(milsovUpkeep([{ structure: key, buildingLevel: 5 }]), 0, key);
-  }
-  assert.equal(milsovUpkeep(Array(4).fill({ structure: 'targetRange', buildingLevel: 5 })), 9600);
-});
+// --- the military structure picker ------------------------------------------
 
 test('the picker offers the military structures and a way to ask for none', () => {
   const html = settingsFormHtml({ ...DEFAULT_SETTINGS, milsovStructure: 'joustingYard' });
@@ -469,12 +392,12 @@ test('the picker offers the military structures and a way to ask for none', () =
 });
 
 test('every reason the engine can block a plan has wording waiting for it', () => {
-  for (const reason of ['tiles', 'slots', 'upkeep', 'rp']) {
+  for (const reason of ['tiles', 'water', 'slots', 'upkeep', 'rp']) {
     assert.ok(MILSOV_BLOCKED_TEXT[reason], `no wording for "${reason}"`);
   }
 });
 
-// --- basic resource boosters and the yield calibration ---
+// --- basic resource boosters ---
 
 test('the four boosters read back as booleans, defaulting to off', () => {
   assert.deepEqual(parseResourceBoosters({}), { wood: false, clay: false, iron: false, stone: false });
@@ -485,37 +408,16 @@ test('the four boosters read back as booleans, defaulting to off', () => {
     'the default city has none of them');
 });
 
-test('the default yield is the measured 2,538, not the farm figure', () => {
-  const { yield: y, measured } = computeBasicYield(DEFAULT_SETTINGS);
-  assert.equal(measured, true);
-  close(y, 2538, 1e-9);
-  assert.notEqual(BASIC_YIELD_L20, FARM_YIELD_L20,
-    'borrowing the farm yield is the mistake this constant exists to end');
-
-  // 25% tax with no booster is M = 100, so a reading taken there IS the yield —
-  // which is why a figure quoted as "per hour per plot" needs no adjustment.
-  const atQuarter = computeBasicYield({
-    resourceCalibration: { observedPerHour: 2538 * 5, atTax: 25, plots: 5, booster: false },
-  });
-  close(atQuarter.yield, BASIC_YIELD_L20, 1e-9);
-});
-
 // --- RP calibration override ---
 
-test('a blank calibration is null, so the base falls back to the measured figure', () => {
+test('a calibration reads back whole, and blank is null so the base falls back to the measured figure', () => {
+  assert.deepEqual(parseRpCalibration('800', '25'), { observedRpPerHour: 800, atTax: 25, prestige: false });
   assert.equal(parseRpCalibration('', ''), null);
   assert.equal(parseRpCalibration('0', '25'), null);
   assert.equal(parseRpCalibration('nonsense', '25'), null);
   const r = computeResearch({ ...DEFAULT_SETTINGS, rpCalibration: parseRpCalibration('', '') });
   close(r.base, 1013);
   close(r.flat, 100);  // Allembine defaults on
-});
-
-test('a calibration reading back-solves the base, net of the flat bonuses', () => {
-  const cal = parseRpCalibration('800', '25');
-  assert.deepEqual(cal, { observedRpPerHour: 800, atTax: 25, prestige: false });
-  // 800 read at 25% tax with Allembine running: 100 of it was never scaled.
-  close(computeResearch({ ...DEFAULT_SETTINGS, rpCalibration: cal }).base, 700);
 });
 
 test('a reading smaller than the flat bonuses floors at zero rather than going negative', () => {

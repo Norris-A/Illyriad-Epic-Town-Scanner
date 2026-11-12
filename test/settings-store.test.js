@@ -220,9 +220,6 @@ test('the store writes what it reads back', () => {
   assert.equal(store.save({ ...DEFAULT_SETTINGS, tMin: 44 }), '', 'a good write says nothing');
   assert.equal(store.load().settings.tMin, 44);
   assert.ok(mem.getItem(STORAGE_KEY), 'stored under the documented key');
-
-  store.clear();
-  assert.equal(store.load().settings, null);
 });
 
 test('a browser that refuses storage still hands back usable settings', () => {
@@ -230,7 +227,6 @@ test('a browser that refuses storage still hands back usable settings', () => {
   const { settings, note } = store.load();
   assert.deepEqual(settings, DEFAULT_SETTINGS);
   assert.match(note, /this session only/);
-  assert.equal(store.available, false);
   assert.equal(store.save(DEFAULT_SETTINGS), '', 'and saving is quietly a no-op');
 });
 
@@ -238,12 +234,10 @@ test('a storage that throws is reported, never propagated', () => {
   const throwing = {
     getItem() { throw new Error('nope'); },
     setItem() { throw new Error('quota'); },
-    removeItem() { throw new Error('nope'); },
   };
   const store = createSettingsStore(throwing);
   const { settings, note } = store.load();
   assert.deepEqual(settings, DEFAULT_SETTINGS);
   assert.match(note, /could not be read/);
   assert.match(store.save(DEFAULT_SETTINGS), /could not be saved/);
-  store.clear();   // must not throw
 });

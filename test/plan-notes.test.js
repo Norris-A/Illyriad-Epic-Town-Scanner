@@ -1,21 +1,21 @@
-// A result row's flag and the plan's military and upkeep notes. panel.js only
+// The plan's military and upkeep notes. panel.js only
 // touches the DOM inside createPanel, so these are testable here without a
 // browser.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { resFlag, milsovPlanHtml, upkeepLimitHtml } from '../src/panel.js';
+import { milsovPlanHtml, upkeepLimitHtml } from '../src/panel.js';
 
-// The no-military shape: T_res is Infinity and carries no flag, which is what
-// scoreSite returns for the common case. The tax is the whole number the plan is
-// made at; the ceiling it was floored from travels beside it.
+// The no-military shape: T_res is Infinity, which is what scoreSite returns for
+// the common case. The tax is the whole number the plan is made at; the ceiling
+// it was floored from travels beside it.
 const row = (over = {}) => ({
   x: 360, y: -3178, tMax: 56, tMaxExact: 56.6, binding: 'food', sFood: 100,
   uRp: 1000, uGold: 10000, goldNet: 62901,
-  milsov: [], milsovBonus: 0, milsovUpkeep: 0, milsovRp: 0, milsovGold: 0, milsovPrice: 0,
+  milsov: [], milsovBonus: 0, milsovUpkeep: 0, milsovRp: 0, milsovGold: 0,
   milsovMinTax: null, milsovMinBonusAt: null,
-  resCeiling: Infinity, resIndicative: false, resBinding: null, resImpossible: false,
+  resCeiling: Infinity, resBinding: null, resImpossible: false,
   ...over,
 });
 
@@ -26,7 +26,7 @@ const withMil = (over = {}) => row({
     { buildingLevel: 1, sovLevel: 1 },
     { buildingLevel: 1, sovLevel: 1 },
   ],
-  milsovBonus: 25, milsovUpkeep: 900, milsovRp: 120.4, milsovGold: 1204, milsovPrice: 5,
+  milsovBonus: 25, milsovUpkeep: 900, milsovRp: 120.4, milsovGold: 1204,
   ...over,
 });
 
@@ -63,31 +63,4 @@ test('an unpayable upkeep is flagged, not silenced', () => {
   assert.match(html, /class="sov-flag"/, 'this one is a warning, not a hint');
   assert.match(html, /no stone plots/);
   assert.match(html, /cannot be paid at any tax/);
-});
-
-// --- the row flag -----------------------------------------------------------
-
-test('a ceiling above the tax the site reaches says nothing', () => {
-  assert.equal(resFlag(row()), null, 'no structure asked for, no flag');
-  assert.equal(
-    resFlag(row({ resCeiling: 90, resIndicative: true, resBinding: 'stone' })),
-    null,
-    'the upkeep is already covered at 56.6% tax',
-  );
-});
-
-test('a binding indicative ceiling flags the row it did not rank', () => {
-  const flag = resFlag(row({ resCeiling: 5.83416, resIndicative: true, resBinding: 'stone' }));
-  assert.equal(flag.text, 'stone 5.8%');
-  assert.match(flag.title, /stone/);
-  assert.match(flag.title, /does not affect the ranking/);
-});
-
-test('an impossible ceiling names the missing resource rather than showing -Infinity', () => {
-  const flag = resFlag(row({
-    resCeiling: -Infinity, resIndicative: true, resBinding: 'stone', resImpossible: true,
-  }));
-  assert.equal(flag.text, 'no stone plots');
-  assert.ok(!flag.title.includes('Infinity'));
-  assert.match(flag.title, /any tax rate/);
 });

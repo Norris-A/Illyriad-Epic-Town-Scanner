@@ -244,6 +244,10 @@ test('preserving charges the research and gold the kept claims already cost', ()
   close(held.base.uGold, (held.base.uRp + held.kept.rp) * 10, 1e-6);
   close(free.base.uGold, free.base.uRp * 10, 1e-6);
   assert.ok(held.base.goldNet < free.base.goldNet, 'and must cost it gold');
+
+  // The balance spends the kept claims' research along with the plan's own.
+  const { surplus } = held.plan;
+  close(surplus.base.rp - surplus.rp, held.plan.uRp + held.kept.rp, 1e-6);
 });
 
 test('a kept claim is ground the plan may still use, and is charged the upgrade only', () => {
@@ -774,8 +778,8 @@ test('the neighbourhood still respects claimability', () => {
 
 test('barren land is land, whatever its resource ratings say', () => {
   // Barren Wastes rate 0|0|0|0|0 and are ordinary Plains to the game: they take
-  // a Production Structure, which water does not. Reading the zeros as water
-  // struck them off every military plan and told the user the leftovers were sea.
+  // a Production Structure, which water does not. Read as water, they would be
+  // struck off every military plan.
   const payload = payloadAround();
   payload.data[tileKey(101, 101)] = { sov: 1, hos: 1, b: 1, l: 2, rs: '0|0|0|0|0' };
   const r = run({ radius: 3 }, settings, payload);

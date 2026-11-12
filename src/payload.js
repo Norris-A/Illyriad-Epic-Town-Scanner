@@ -40,7 +40,7 @@ export function parseRs(tile) {
   return { wood: parts[0], clay: parts[1], iron: parts[2], stone: parts[3], food: parts[4] };
 }
 
-export function foodOf(tile) {
+function foodOf(tile) {
   const rs = parseRs(tile);
   return rs ? rs.food : 0;
 }
@@ -62,7 +62,7 @@ const WATER_BIOME = 20;
 
 /**
  * Water, from the biome. Zero basic resources does not mean water — Barren
- * Wastes, Marsh and Fen rate the same — so that test is only a fallback for a
+ * Wastes, Marsh and Bog rate the same — so that test is only a fallback for a
  * tile with no biome.
  */
 export function isWaterTile(tile) {
@@ -152,7 +152,7 @@ export function isClaimable(tile, key, idx, settings) {
  * which the plan builds on instead of paying for again. Zero otherwise,
  * including when the level does not read.
  */
-export function heldLevel(key, idx, settings) {
+function heldLevel(key, idx, settings) {
   const claim = idx.claims.get(key);
   if (!isTownsClaim(claim, settings?.preserveTown)) return 0;
   return claimLevel(claim) ?? 0;
@@ -160,8 +160,8 @@ export function heldLevel(key, idx, settings) {
 
 /**
  * Can a city sit on this tile? `set` decides where present; the live payload
- * omits it, so otherwise the tile must not be impassable, a bridge, an NPC lair
- * or water. `hos` is also set on water and lairs, so it cannot decide alone.
+ * omits it, so otherwise the tile must not be impassable, dead water, an NPC
+ * lair or water. `hos` is also set on water and lairs, so it cannot decide alone.
  */
 export function isSettleable(tile) {
   if (!tile) return false;

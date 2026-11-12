@@ -179,7 +179,6 @@ export function memoryStorage() {
   return {
     getItem: (k) => (map.has(k) ? map.get(k) : null),
     setItem: (k, v) => map.set(k, String(v)),
-    removeItem: (k) => map.delete(k),
   };
 }
 
@@ -187,7 +186,7 @@ export function memoryStorage() {
  * localStorage if it can be written to, else null. Some privacy settings make
  * the property itself throw, so it is probed.
  */
-export function defaultStorage() {
+function defaultStorage() {
   try {
     const ls = globalThis.localStorage;
     const probe = `${STORAGE_KEY}.probe`;
@@ -202,16 +201,15 @@ export function defaultStorage() {
 /**
  * The store main.js talks to.
  *
- * @param {object|null} [storage] anything with getItem/setItem/removeItem
- * @returns {{available: boolean, load: function, save: function, clear: function}}
- *   `load` never throws and never returns a partial object; `save` returns a
- *   note when it could not write, and '' when it did.
+ * @param {object|null} [storage] anything with getItem and setItem
+ * @returns {{load: function, save: function}} `load` never throws and never
+ *   returns a partial object; `save` returns a note when it could not write,
+ *   and '' when it did.
  */
 export function createSettingsStore(storage = defaultStorage()) {
   const unavailable = !storage;
   const store = storage ?? memoryStorage();
   return {
-    available: !unavailable,
     load() {
       if (unavailable) {
         return {
@@ -233,11 +231,6 @@ export function createSettingsStore(storage = defaultStorage()) {
       } catch {
         return 'Settings could not be saved — this browser refused the write.';
       }
-    },
-    clear() {
-      try {
-        store.removeItem(STORAGE_KEY);
-      } catch { /* ignore */ }
     },
   };
 }

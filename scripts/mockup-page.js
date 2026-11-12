@@ -104,7 +104,9 @@ function scan() {
     worker.onmessage = ({ data: msg }) => {
       if (msg.type !== 'done') return;
       worker.terminate();
-      panel.renderResults(msg.results, { x: CX, y: CY, zoom: ZOOM, scanned: msg.scanned });
+      panel.renderResults(msg.results, {
+        x: CX, y: CY, zoom: ZOOM, scanned: msg.scanned, settings,
+      });
       panel.renderIncomplete(msg.incomplete);
       resolve(msg.results);
     };

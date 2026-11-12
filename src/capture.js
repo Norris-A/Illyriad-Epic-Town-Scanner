@@ -6,9 +6,8 @@
 
 import { onScreen } from './payload.js';
 
-// window.mapData is the one the client uses; the rest are guesses in case an
-// update renames it.
-const IN_PAGE_NAMES = ['mapData', 'MapData', 'gameMap', 'Map', 'worldMap', 'lastMapResponse', 'tiles'];
+// The globals the client keeps its map data in.
+const IN_PAGE_NAMES = ['mapData'];
 
 function looksLikeMapPayload(obj) {
   return (
@@ -23,14 +22,7 @@ function looksLikeMapPayload(obj) {
 
 /** The client's map data, or null if no known global holds any. */
 function readInPageData() {
-  if (typeof window !== 'undefined') {
-    for (const n of IN_PAGE_NAMES) {
-      try {
-        if (looksLikeMapPayload(window[n])) return window[n];
-      } catch (_) { /* cross-origin or getter throw — ignore */ }
-    }
-  }
-  return null;
+  return probeInPageData()[0]?.value ?? null;
 }
 
 /**

@@ -58,9 +58,9 @@ sustain.
 A tile is left out if it already has a town or is already claimed, if it is
 closer to another town than the distances you set, if it is not on a terrain you
 ticked, if too few of the 8 tiles around it are on the surrounding terrain you
-ticked, or if it cannot reach your Minimum Tax. If you set a Minimum Military
-Bonus, sites that cannot reach it at any tax down to your Minimum Tax are left
-out too.
+ticked, or if it cannot reach your Minimum Tax. If you chose a military
+structure and set a Minimum Military Bonus, sites that cannot reach it at any
+tax down to your Minimum Tax are left out too.
 
 The folded **Site Filters** section above **Scan** holds these settings, along
 with Treat Your Own Claims as Available. They are City Configuration's own, so
@@ -70,17 +70,18 @@ Surrounding Tiles, to list sites on any terrain.
 | Column | Shows |
 |---|---|
 | Site | The rank and the tile's coordinates. The top ten are ringed, matching the numbers drawn on the World Map |
-| Max Tax | The highest tax the site can hold on its food claims alone. The small icon beside it shows what stops it going higher: food, research, a basic resource running out, or the game's tax cap |
+| Max Tax | The highest whole-number tax the site can hold on its food claims alone. The small icon beside it shows what stops it going higher: food, research, a basic resource running out, or the game's tax cap |
 | Food icon | Food per hour left over at that tax |
 | Research icon | Research per hour the claims cost |
 | Gold icon | Gold per hour after paying for the claims |
 | Military icon | The military unit production bonus the site fits for free, if you chose a military structure. Small tags flag anything worth knowing — hover them for the details |
 
 The line above the table says where the scan looked and how many sites it found.
-If some sites were skipped because their claims would reach off screen, it says
-how many: zoom out or pan, then scan again.
+If some sites were skipped because their claims would reach off screen, a note
+under the table says how many: zoom out or pan, then scan again.
 
-The table lists the best 200.
+The table lists the best 200, ordered by Max Tax and then by gold. Pressing
+**Scan** while a scan is still running starts it over.
 
 ### A site's plan
 
@@ -90,15 +91,18 @@ Click a row to open its plan.
 
 - **Tax slider** — drag it down to see what a lower tax buys you, usually a
   bigger military bonus.
-- **Balance** — for each production, a bar of how much is spent out of what the
-  city makes, and what is left over each hour. *limit* marks the one that sets
-  the tax.
+- **Balance** — for food, research, gold and the four basic resources, a bar of
+  how much is spent out of what the city makes, and what is left over each hour.
+  At the site's highest tax, *limit* marks the one that sets it.
 - **Military** — the bonus, the buildings that give it, and their hourly upkeep.
 - **Claim grid** — the tiles around the site, showing what to claim and at what
   level: green for food claims, amber for military, ✕ for tiles you cannot have.
   A tile's small text is its terrain bonus. Click a tile to cross it out and
   re-plan without it; hover for its distance, research cost and upkeep.
 - **Optimise x|y →** — takes the site to Optimal Sovereignty.
+
+An open row keeps the settings its scan ran with; change City Configuration and
+Scan again to see a change there.
 
 ### On the World Map
 
@@ -113,7 +117,8 @@ only while Site Search is open, and leaving the World Map clears them.
 
 Where Site Search asks "which of these tiles is best?", this asks "what should I
 build on *this* one?" It plans any tile, even one that is settled, claimed or too
-close to a town — it just tells you which.
+close to a town, and warns you when the tile cannot be settled or another town
+holds it.
 
 **Choose the tile** in one of three ways: pick one of your towns from the list,
 type its coordinates, or press **Pick on map** and click it on the World Map.
@@ -123,8 +128,8 @@ cancel.
 | Option | What it does |
 |---|---|
 | Sovereignty Radius | How far out to claim. Leave it blank to use the Claim Radius from City Configuration |
-| Starting Tax | Where the tax slider starts, 60% unless you change it. If the tile cannot hold it, the plan starts at the tile's maximum instead |
-| Preserve Existing Sovereignty | For a town on the tile, yours or another player's: keep the claims it already holds and plan around them, paying only to raise their levels. Leave it off to plan from scratch, for reworking a layout |
+| Starting Tax | Where the tax slider starts, 60% unless you change it. If the tile cannot hold it, the plan starts at the tile's maximum instead, and it never starts below your Minimum Tax |
+| Preserve Existing Sovereignty | For a town on the tile, yours or another player's: keep the claims it already holds and plan around them, paying only to raise their levels. What the kept claims already cost is counted on the balance. Leave it off to plan from scratch, for reworking a layout |
 
 The folded **City Configuration** section below these holds three settings
 shared with that tab — change them in either place:
@@ -166,7 +171,7 @@ whole configuration at a glance. Click a section to open it.
 |---|---|
 | Settle Tile | How the settle tile's 25 plots will be split once terraformed. **Prefill from Selected Tile** copies the plots of the result row you last clicked |
 | City Food | Food eaten per hour, Nature's Bounty and Geomancer Retreats, how many cities you have, and whether this one is your capital |
-| Research | Allembine Research, Overflowing Insight, and an optional reading of your city's actual research output, which replaces the estimate |
+| Research | Allembine Research, Overflowing Insight, and an optional reading of your city's actual research output, which replaces the Library's estimated output |
 | Production | For each production: whether its booster building is built (the Flour Mill, for food), whether prestige is boosting it, and how much per hour the plan must leave spare |
 | City Buildings | How many you have of each building that uses wood, clay, iron or stone every hour. Their upkeep is set aside before any sovereignty is paid for, and Chanceries of Estates also make the first level of every claim cheaper. Hover a building's resource icons for what it uses |
 | Sovereignty | Claim radius, the most buildings to place, which military structure to build, and the smallest military bonus worth having |
@@ -197,9 +202,17 @@ each site. To trade tax for a bigger military bonus, drag the tax slider down.
 ## Terrain bonuses
 
 Most tiles give a small bonus — 1% to 3% of one product per level of a matching
-building — shown on the tile as, say, `+3% Bows`. These bonuses are **not
-scored**, since those products are outside what the planner models. Treat them as
-a hint about what a tile is good for.
+building — shown on the tile as, say, `+3% Bows`.
+
+A bonus for the **military structure you chose is scored**: each building on such
+a tile counts its terrain bonus on top of the usual 5% a level, so a Training
+Ground on a `+2% Spear Units` tile gives 7% a level. The planner still fills the
+nearest tiles first, so it can pass over a matching tile a little further out
+and understate the bonus a site could reach.
+
+Bonuses for crafting structures are **not scored**, since those products are
+outside what the planner models. Treat them as a hint about what a tile is good
+for.
 
 A few terrain types have never been found in the game world, so their bonus is
 unknown. Hovering a tile says whether its terrain gives nothing or simply has not
@@ -210,7 +223,8 @@ been recorded yet.
 - **Only the five military structures are offered** — Training Ground, Target
   Range, Military Academy, Jousting Yard and Assembly Yard. Crafting structures
   are not offered.
-- **Terrain bonuses are not scored**, as above.
+- **Only military terrain bonuses are scored**, and only on the tiles the
+  planner picks nearest-first, as above.
 - **Buildings are assumed to be at level 20**, the level a finished city runs
   them at.
 - **Only what is on screen is scanned.** Pan or zoom out to cover more ground.

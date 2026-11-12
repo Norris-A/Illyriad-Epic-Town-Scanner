@@ -8,10 +8,7 @@ import {
   descriptorFor,
   sharedRungs,
 } from '../src/constants.js';
-import {
-  descriptorText, descriptorBadge, resultsHtml,
-  scanSummaryText, bindingLabel,
-} from '../src/panel.js';
+import { descriptorText, descriptorBadge } from '../src/panel.js';
 
 // A rung is NOT unique to one terrain: i:6 and i:120 both grant Papermill +3%
 // and were read in the same biome. The list is pinned so a new duplicate is
@@ -48,13 +45,6 @@ test('a rung held once is not reported, a rung held twice is', () => {
   }), ['Bowyer +3%: i:1, i:2']);
 });
 
-test('two terrains can hold the same rung', () => {
-  // Lichen and Alluvial Plain, both Cattle Rancher +1%.
-  assert.equal(descriptorFor(87).building, descriptorFor(16).building);
-  assert.equal(descriptorFor(87).bonus, descriptorFor(16).bonus);
-  assert.equal(descriptorFor(87).family, undefined);
-});
-
 test('the ladder is 1/2/3 — no bonus outside it', () => {
   for (const [i, d] of Object.entries(TERRAIN_DESCRIPTORS)) {
     if (!d.building) continue;
@@ -63,16 +53,12 @@ test('the ladder is 1/2/3 — no bonus outside it', () => {
   }
 });
 
-// Every building a descriptor names is a Production Structure — the crafting
-// ones as much as the military ones — so a descriptor never rides on something
-// the city might not have. This once read the other way round, because the
-// structure table carried one generic "Crafting structure" row.
+// Every building a descriptor names, crafting or military, is in SOV_STRUCTURES,
+// so its bonus is costed and scored like any other structure's.
 test('every descriptor names a structure the tool knows', () => {
   for (const [i, d] of Object.entries(TERRAIN_DESCRIPTORS)) {
     if (!d.building) continue;
-    const got = descriptorFor(Number(i));
-    assert.ok(got.sovKey, `i:${i} names ${d.building}, which SOV_STRUCTURES lacks`);
-    assert.equal(got.conditional, false, `i:${i} should not be conditional`);
+    assert.ok(descriptorFor(Number(i)).sovKey, `i:${i} names ${d.building}, which SOV_STRUCTURES lacks`);
   }
 });
 
@@ -81,13 +67,6 @@ test('the structure key resolves for military and crafting alike', () => {
   assert.equal(descriptorFor(52).sovKey, 'bowyer');          // crafting
   assert.equal(descriptorFor(30).sovKey, 'finishingSchool');
   assert.equal(descriptorFor(87).sovKey, 'cattleRancher');   // glacial
-});
-
-// The flag is unused today but not dead: the table is read off the game, and a
-// row naming something the structure table lacks has to be visible.
-test('conditional still fires for a building the tool does not know', () => {
-  const made = { i: 999, name: 'Somewhere', bonus: 2, product: 'Pies', building: 'Bakery' };
-  assert.match(descriptorText({ descriptor: { ...made, conditional: true } }), /needs a Bakery/);
 });
 
 test('Poleturner is spelt one way', () => {
@@ -118,9 +97,8 @@ test('an unread bonus, a node class and an id off the table read differently', (
   assert.equal(descriptorFor(45).name, 'Dolmen');
   assert.match(descriptorText({ i: 45 }), /varies/);
 
-  // A Geyser is ordinary terrain. It was in the node-class set until the
-  // server's data file said otherwise — tiles carrying `npc:1` had been read
-  // as if the terrain itself were an NPC class.
+  // A Geyser is ordinary terrain: the `npc:1` some of its tiles carry marks an
+  // NPC lair, not a node class.
   assert.ok(!NODE_CLASS_TERRAIN.has(123));
   assert.doesNotMatch(descriptorText({ i: 123 }), /varies/);
 
@@ -131,14 +109,13 @@ test('an unread bonus, a node class and an id off the table read differently', (
 
 test('descriptorText names the bonus, its product and its structure', () => {
   assert.match(descriptorText({ i: 52 }), /Thick Forest: \+3% Bows per level of Bowyer/);
-  assert.doesNotMatch(descriptorText({ i: 52 }), /needs a/);
 });
 
 // The badge is the same fact on the tile itself rather than in hover text.
 test('the badge names the product, and shows nothing for plain terrain', () => {
   assert.match(descriptorBadge({ i: 52 }), /\+3% Bows/);
   assert.equal(descriptorBadge({ i: 58 }), '');   // Plains, no bonus
-  assert.equal(descriptorBadge({ i: 3 }), '');    // unidentified
+  assert.equal(descriptorBadge({ i: 300 }), '');  // unidentified
   assert.equal(descriptorBadge({}), '');          // no `i` at all
 });
 
@@ -158,19 +135,6 @@ test('no descriptor badge carries an image', () => {
   }
 });
 
-// No row is marked. The flag is kept because the table is read off the game and
-// the next row added may need it, so the rendering is tested on a made-up
-// descriptor rather than on a real id.
-test('no row is disputed, and the mark still renders when one is', () => {
-  assert.deepEqual(
-    Object.entries(TERRAIN_DESCRIPTORS).filter(([, d]) => d.disputed).map(([i]) => Number(i)),
-    [],
-  );
-  const made = { i: 999, name: 'Somewhere', bonus: 2, product: 'Pies', building: 'Bakery' };
-  assert.match(descriptorText({ descriptor: { ...made, disputed: 'read once' } }),
-    /\[unconfirmed\]/);
-});
-
 // Two rungs reach +3 on a military structure and the rest stop at +2, so the
 // pair is pinned: a third would mean a row was read against the wrong building.
 test('exactly two military rungs exceed +2', () => {
@@ -182,8 +146,7 @@ test('exactly two military rungs exceed +2', () => {
   assert.deepEqual(high, [68, 71]);
 });
 
-// Rivers were recorded as carrying two innate crafting bonuses. They carry
-// neither — a river is worth its food rating and nothing else.
+// A river is worth its food rating and nothing else.
 test('rivers grant no descriptor bonus', () => {
   assert.equal(descriptorFor(59).building, undefined);
   assert.equal(descriptorFor(59).water, true);
@@ -213,8 +176,8 @@ test('Scrubland is a Finishing School rung on land and nothing on ice', () => {
   assert.match(descriptorText({ i: 83 }), /no sovereignty bonus/);
 });
 
-// Read off the tiles as granting nothing. That is an answer, and it has to keep
-// reading as one rather than lapsing back to "unidentified".
+// Read off the tiles as granting nothing. That is an answer, and has to read as
+// one rather than as "unidentified".
 test('the ice terrains are known to grant nothing', () => {
   for (const [i, name] of [[73, 'Icefield'], [75, 'Ice cave'], [82, 'Ice Holes']]) {
     const d = descriptorFor(i);
@@ -234,80 +197,14 @@ test('the six NPC terrains are read', () => {
   }
 });
 
-// A region with no candidate site is where the summary matters most: it is
-// unsettled ground, so it is the least explored.
-test('the summary survives a scan that found no site', () => {
-  const html = resultsHtml([], 'Centre -877|-2848, zoom 2, 25 tiles, 0 candidates.');
-  assert.match(html, /Centre -877\|-2848/);
-  assert.match(html, /No available sites met the minimum tax/);
-});
-
-test('the summary is shown above the table when there are results', () => {
-  const html = resultsHtml([{
-    x: 1, y: 2, tMax: 62, binding: 'food', sFood: 10, uRp: 3, goldNet: 400,
-  }], 'Centre 1|2.');
-  assert.match(html, /Centre 1\|2\./);
-  assert.ok(html.indexOf('Centre 1|2.') < html.indexOf('<table>'));
-  assert.doesNotMatch(html, /No sites met/);
-});
-
-// The map markers report on this line, so it starts empty. A scan that lists no
-// site has no table and no markers, so it has no line either.
-test('a table gets an empty map line between the summary and the rows', () => {
-  const html = resultsHtml([{
-    x: 1, y: 2, tMax: 62, binding: 'food', sFood: 10, uRp: 3, goldNet: 400,
-  }], 'Centre 1|2.');
-  const line = html.indexOf('<p class="sov-legend sov-map-note"></p>');
-  assert.ok(line > html.indexOf('Centre 1|2.') && line < html.indexOf('<table>'));
-  assert.doesNotMatch(resultsHtml([], 'Centre 1|2.'), /sov-map-note/);
-});
-
-// Where the scan looked and what it found. Why the other tiles were dropped is
-// deliberately not here: it is a question about the tool, not about the map.
-test('the scan summary states the area covered and the count found', () => {
-  assert.equal(
-    scanSummaryText({ x: -877, y: -2848, zoom: 2, scanned: 25, candidates: 1 }),
-    'Centred on -877|-2848, 5×5 tiles. Checked 25 tiles and found 1 candidate.',
-  );
-  assert.match(
-    scanSummaryText({ x: 0, y: 0, zoom: 20, scanned: 1681, candidates: 0 }),
-    /41×41 tiles\. Checked 1,681 tiles and found 0 candidates\./,
-  );
-});
-
-test('the Max Tax cell names the ceiling rather than its code', () => {
-  assert.equal(bindingLabel('rp'), 'Research');
-  assert.equal(bindingLabel('res'), 'Resources');
-  assert.equal(bindingLabel('cap'), 'Tax cap');
-  // Unknown codes pass through: showing one raw beats showing nothing.
-  assert.equal(bindingLabel('mystery'), 'mystery');
-
-  const row = (over) => resultsHtml([{
-    x: 1, y: 2, tMax: 62, binding: 'rp', sFood: 10, uRp: 3, goldNet: 400, ...over,
-  }], 'Centre 1|2.');
-  assert.match(row(), /alt="Research" title="Limited by research"/);
-  // A resource ceiling names the resource that ran out, not the class of them.
-  assert.match(row({ binding: 'res', resBinding: 'stone' }), /alt="Resources" title="Limited by stone"/);
-  // The tax cap has no art, so it says so in a word.
-  assert.match(row({ binding: 'cap' }), /title="Limited by tax cap">tax cap</);
-});
-
-// Marsh holds Poleturner +3%, and so does i:55 Wooded Land. One rung, two
-// terrains — reported, not rejected.
-test('Marsh and Wooded Land hold one rung between them', () => {
-  assert.equal(descriptorFor(90).building, descriptorFor(55).building);
-  assert.equal(descriptorFor(90).bonus, descriptorFor(55).bonus);
-  assert.ok(sharedRungs().includes('Poleturner +3%: i:55, i:90, i:119'));
-});
-
 test('the wetland rows are read', () => {
   assert.equal(descriptorFor(89).bonus, 2);
   assert.equal(descriptorFor(89).product, 'Bows');
   for (const i of [91, 92]) assert.equal(descriptorFor(i).building, undefined);
 });
 
-// i:89 is a Swamp that is nothing like the impassable Swamps at 22 and 23: it
-// is claimable, rates 10 plots and carries a bonus. As with Scrubland, the id
+// i:89 Swamp is nothing like the impassable Canyon and Swampland at 22 and 23:
+// it is claimable, rates 10 plots and carries a bonus. As with Scrubland, the id
 // identifies a terrain and the name does not.
 test('the wetland Swamp is not the impassable one', () => {
   assert.equal(descriptorFor(22).impassable, true);
@@ -316,10 +213,9 @@ test('the wetland Swamp is not the impassable one', () => {
   assert.match(descriptorText({ i: 89 }), /\+2% Bows per level of Bowyer/);
 });
 
-// The rainforests, read in the Jungle biome. i:120 is the row that ended the
-// one-terrain-per-rung rule: it holds Papermill +3% and so does i:6, read in
-// that same biome, so no scoping explains it away.
-test('the rainforest rows are read, including the one that broke the rule', () => {
+// The rainforests, read in the Jungle biome. i:120 holds Papermill +3%, as does
+// i:6, read in that same biome.
+test('the rainforest rows are read', () => {
   assert.equal(descriptorFor(117).building, undefined);
   assert.match(descriptorText({ i: 119 }), /\+3% Spears per level of Poleturner/);
   assert.equal(descriptorFor(120).building, 'Papermill');
@@ -335,15 +231,6 @@ test('the NPC terrain class is exactly 40-45', () => {
   for (const i of [88, 117, 118, 119, 123, 139, 143]) {
     assert.ok(!NODE_CLASS_TERRAIN.has(i), `i:${i} is ordinary terrain`);
   }
-});
-
-// Three terrains hold Poleturner +3%, which ties it with Farrier +3% and
-// Poleturner +1% as the most-shared rung in the table.
-test('three terrains hold Poleturner +3%', () => {
-  const holders = Object.entries(TERRAIN_DESCRIPTORS)
-    .filter(([, d]) => d.building === 'Poleturner' && d.bonus === 3)
-    .map(([i]) => Number(i));
-  assert.deepEqual(holders.sort((a, b) => a - b), [55, 90, 119]);
 });
 
 // Three rows whose only source is the client's Sovereignty Bonuses table, no
@@ -363,10 +250,9 @@ test('the rows the client table alone sources read as it has them', () => {
 
 // --- the client's own table -------------------------------------------------
 
-// TERRAIN_DESCRIPTORS still carries a name per row, purely so the table reads
-// as terrain rather than as numbers. The client's table is what the tool
-// actually shows, so the two have to agree or the comments describe a row the
-// user never sees. Nine rows disagreed when the client table arrived.
+// TERRAIN_DESCRIPTORS carries a name per row so the table reads as terrain
+// rather than as numbers. The client's table is what the tool shows, so the two
+// have to agree or the table describes a row the user never sees.
 test('every hand-written name matches the client table', () => {
   for (const [i, d] of Object.entries(TERRAIN_DESCRIPTORS)) {
     const named = TERRAIN_NAMES[i];
@@ -380,16 +266,13 @@ test('the name table is indexed by i, with 0 unused', () => {
   assert.equal(TERRAIN_NAMES[0], null);
   assert.equal(TERRAIN_NAMES[1][0], 'Plains');
   assert.equal(TERRAIN_NAMES[229][0], 'Shipwreck');
-  // The one off-by-one that matters: i:6 anchors the table against the
-  // descriptors, which were read independently and long before it.
+  // i:6 anchors the table against the descriptors, which were read from tiles
+  // independently of it.
   assert.equal(TERRAIN_NAMES[6][0], 'Rich Clay Seam');
   assert.equal(descriptorFor(6).name, 'Rich Clay Seam');
 });
 
-// Four rows were named from sprite context before the client table existed,
-// and all four were wrong. They are pinned because the old names are still
-// scattered through this project's history and a revert would be silent.
-test('the sprite-guessed names stay corrected', () => {
+test('the impassable land terrains carry the client table names', () => {
   assert.equal(descriptorFor(20).name, 'Volcanic Peak');
   assert.equal(descriptorFor(21).name, 'Fiery Mountain');
   assert.equal(descriptorFor(22).name, 'Canyon');
@@ -399,10 +282,9 @@ test('the sprite-guessed names stay corrected', () => {
   assert.equal(swamps, 1);
 });
 
-// Not scored, and not read by anything — kept because nothing else records it.
-test('the terrain class rides along with the descriptor', () => {
-  assert.equal(descriptorFor(52).terrainClass, 'Large Forest');
-  assert.equal(descriptorFor(4).terrainClass, 'Buildings');
+test('the terrain class is the second column of the client table', () => {
+  assert.equal(TERRAIN_NAMES[52][1], 'Large Forest');
+  assert.equal(TERRAIN_NAMES[4][1], 'Buildings');
   // The four the payload flags `imp` are the four the client calls Impassable.
   const impassable = TERRAIN_NAMES
     .map((n, i) => (n && n[1] === 'Impassable' ? i : null)).filter((i) => i !== null);

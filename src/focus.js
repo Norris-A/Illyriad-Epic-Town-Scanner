@@ -80,7 +80,7 @@ function plotsFromRs(rs) {
 }
 
 /** Which allocation to plan on, with a note for the user saying which. */
-export function resolvePlots(focus, settings, rs) {
+function resolvePlots(focus, settings, rs) {
   const configured = settings.plots;
   if (focus.useConfiguredPlots) {
     return {
@@ -110,9 +110,9 @@ export function resolvePlots(focus, settings, rs) {
 
 /**
  * The claims `town`, a `t` block entry, already holds inside the radius, and
- * their hourly cost. A
- * plan that builds on one is charged only the levels it adds. `otherTown`
- * counts claims held by another town of yours, which this one cannot use.
+ * their hourly cost. A plan that builds on one is charged only the levels it
+ * adds. `otherTown` counts claims held by another town of yours, which this one
+ * cannot use.
  *
  * @returns {{claims: object[], rp: number, unknownLevel: number,
  *   otherTown: number}} `rp` is the hourly research the kept claims already spend
@@ -163,7 +163,6 @@ function centreFacts(tile, key, idx) {
  *   - `no-payload`     there is no map data on screen to read
  *   - `centre-missing` the named tile is off screen
  *   - `incomplete`     part of the claim radius is off screen; carries a count
- *   - `unplannable`    the engine found no plan
  *
  * On success `ctx` is the prepared site, so the caller can re-plan at any tax
  * without rebuilding the knapsack.
@@ -205,8 +204,9 @@ export function focusSite({ payload, focus, settings }) {
   // laying them out again at full price.
   if (homeTown) effective = { ...effective, homeTown };
 
-  // Kept claims are charged as a research minimum, so the ceiling, knapsack and
-  // balance all read them from one field. `keptClaimRp` carries the gold side.
+  // Kept claims are charged as a research minimum, so the ceiling and the
+  // military budget read them from one field. `keptClaimRp` puts them on the
+  // balance, as research and as gold.
   const kept = preserveTown
     ? keptClaims({
       payload, centre: focus, radius, idx, chancery: chanceryFactor(settings), town: preserveTown,
@@ -245,13 +245,6 @@ export function focusSite({ payload, focus, settings }) {
 
   const ctx = prepareSite({ neighbours, settings: effective });
   const base = scoreSiteFrom(ctx);
-  if (!base) {
-    return {
-      ok: false,
-      reason: 'unplannable',
-      message: `Nothing could be planned at ${focus.x}|${focus.y}.`,
-    };
-  }
 
   // Clamped rather than rejected, since planSiteAt returns null above the
   // ceiling. A ceiling below 0% is planned at 0%, the lowest rate the game takes.
@@ -259,7 +252,7 @@ export function focusSite({ payload, focus, settings }) {
   const floor = Math.max(0, Math.min(settings.tMin ?? 0, ceiling));
   const requested = focus.tax;
   const tax = Math.max(0, Math.min(ceiling, Math.max(floor, requested)));
-  const plan = planSiteAt(ctx, tax, { bestEffort: true }) ?? base;
+  const plan = planSiteAt(ctx, tax, { bestEffort: true });
 
   return {
     ok: true,
@@ -280,8 +273,8 @@ export function focusSite({ payload, focus, settings }) {
     homeTown: homeTown ? homeName : null,
     // The town's own claims laid out afresh because preserving was off.
     released: released ? released.claims.length + released.unknownLevel : 0,
-    // The settings this plan was made with, which differ from the form's.
     neighbours,
+    // The settings this plan was made with, which differ from the form's.
     settings: effective,
     kept,
     claimable: neighbours.length,

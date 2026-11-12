@@ -13,9 +13,6 @@ const workerUrl = URL.createObjectURL(
   new Blob([__WORKER_SOURCE__], { type: 'text/javascript' }),
 );
 
-// What the last scan ran with; the form holds the live values.
-let settings = { ...DEFAULT_SETTINGS };
-
 const store = createSettingsStore();
 const restored = store.load();
 
@@ -86,13 +83,21 @@ const panel = createPanel({
 overlay.setEnabled(panel.getSettings().settings.mapOverlay);
 if (restored.note) panel.setStoreNote(restored.note);
 
+// The scan in flight, if any. A new Scan replaces it.
+let worker = null;
+
+function endScan(status) {
+  worker.terminate();
+  worker = null;
+  panel.setStatus(status);
+}
+
 function runScan() {
-  const read = panel.getSettings();
-  if (read.errors.length) {
-    panel.setStatus(read.errors.join(' '));
+  const { settings, errors } = panel.getSettings();
+  if (errors.length) {
+    panel.setStatus(errors.join(' '));
     return;
   }
-  settings = read.settings;
 
   const payload = getLatestPayload();
   if (!payload) {
@@ -103,8 +108,9 @@ function runScan() {
   const view = viewOf(payload);
   // The markers belong to the table this Scan is about to replace.
   overlay.clearTop();
+  worker?.terminate();
   panel.setStatus('Scanning…');
-  const worker = new Worker(workerUrl);
+  worker = new Worker(workerUrl);
 
   worker.onmessage = (e) => {
     const msg = e.data;
@@ -112,12 +118,12 @@ function runScan() {
       panel.setStatus(`Scanning… ${msg.done}/${msg.total}`);
       return;
     }
-    panel.renderResults(msg.results, { ...view, scanned: msg.scanned });
+    panel.renderResults(msg.results, { ...view, scanned: msg.scanned, settings });
     overlay.showTop(msg.results);
     panel.renderIncomplete(msg.incomplete);
-    panel.setStatus('');
-    worker.terminate();
+    endScan('');
   };
+  worker.onerror = () => endScan('The scan failed. The browser console has the error.');
 
   worker.postMessage({ payload, settings });
 }

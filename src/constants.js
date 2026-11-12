@@ -46,8 +46,8 @@ export const MILSOV_UPKEEP_STEP = [1, 2, 3, 4, 5].map(
 
 export const MILSOV_MAX_LEVEL = 5;
 
-// [D] Military unit production bonus per building level, from [F] "+5% per
-// level" and a worked example: 8x Sov III + 12x Sov II = +240%.
+// [F] Military unit production bonus per building level: "+5% per level",
+// which a worked example agrees with: 8x Sov III + 12x Sov II = +240%.
 //
 // A claim has a sovereignty level, which sets its RP and gold cost, and the
 // structure on it has a building level, which sets this bonus and its upkeep.
@@ -106,8 +106,7 @@ export const SOV_LEVEL_ROMAN = ['I', 'II', 'III', 'IV', 'V'];
 // `bonus` is `product` per level of `building`, and is scored only on a tile
 // hosting that structure (see descriptorBonus). A row with no `building` is a
 // terrain known to grant nothing, as distinct from an unidentified `i`. Two
-// terrains can grant the same bonus (see sharedRungs). `disputed` marks a row
-// not yet confirmed.
+// terrains can grant the same bonus (see sharedRungs).
 export const TERRAIN_DESCRIPTORS = {
   1: { name: 'Plains' },
   2: { name: 'Plains' },
@@ -585,8 +584,7 @@ const SOV_STRUCTURE_BY_NAME = new Map(SOV_STRUCTURES.map((s) => [s.name, s]));
  * What terrain `i` is and what it grants, or null for an `i` the client's table
  * does not have. The name comes from TERRAIN_NAMES and the bonus from
  * TERRAIN_DESCRIPTORS; `bonusUnread` marks a named terrain with no descriptor
- * row. `sovKey` is the structure the bonus scales with, and `conditional` is
- * set when SOV_STRUCTURES has no such structure.
+ * row. `sovKey` is the structure the bonus scales with.
  */
 export function descriptorFor(i) {
   const named = TERRAIN_NAMES[i];
@@ -595,16 +593,13 @@ export function descriptorFor(i) {
   const base = {
     i,
     name: named?.[0] ?? entry.name,
-    terrainClass: named?.[1],
     nodeClass: NODE_CLASS_TERRAIN.has(i) || undefined,
   };
-  if (!entry) return { ...base, bonusUnread: true, conditional: false, sovKey: null };
-  const sov = entry.building ? SOV_STRUCTURE_BY_NAME.get(entry.building) : undefined;
+  if (!entry) return { ...base, bonusUnread: true, sovKey: null };
   return {
     ...entry,
     ...base,
-    sovKey: sov?.key ?? null,
-    conditional: !!entry.building && !sov,
+    sovKey: SOV_STRUCTURE_BY_NAME.get(entry.building)?.key ?? null,
   };
 }
 
@@ -707,13 +702,13 @@ export const SOIL_ENRICHMENT = 15;    // capital, >=30 cities
 // [V] Library RP/hr at level 20 without Allembine, read at 25% tax, where
 // production is 100%. It scales with (125 - T). Only level 20 is modelled.
 export const LIBRARY_BASE_RP_L20 = 1013;
-export const LIBRARY_LEVEL = 20;
+const LIBRARY_LEVEL = 20;
 
 // [V] Flat research bonuses, unaffected by tax: Allembine is +5 RP/hr per
 // library level, and Overflowing Insight half the library's base output.
-export const ALLEMBINE_RP_PER_LIBRARY_LEVEL = 5;
+const ALLEMBINE_RP_PER_LIBRARY_LEVEL = 5;
 export const ALLEMBINE_RP = ALLEMBINE_RP_PER_LIBRARY_LEVEL * LIBRARY_LEVEL;
-export const OVERFLOWING_INSIGHT_FRACTION = 0.5;
+const OVERFLOWING_INSIGHT_FRACTION = 0.5;
 export const OVERFLOWING_INSIGHT_RP = LIBRARY_BASE_RP_L20 * OVERFLOWING_INSIGHT_FRACTION;
 
 /** Plot order matches the payload's `rs` string: "wood|clay|iron|stone|food". */

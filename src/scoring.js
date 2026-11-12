@@ -88,16 +88,8 @@ export function computeResearch(s) {
 
 // --- Basic resource production ---------------------------------------------
 
-/**
- * Y: per-plot yield at level 20 for the basic resources. `measured: false`
- * would make the resource ceiling indicative only; every yield is measured.
- */
-export function computeBasicYield() {
-  return { yield: BASIC_YIELD_L20, measured: true };
-}
-
 /** Points added to a resource's production percentage by its booster building. */
-export function boosterBonus(s, resource) {
+function boosterBonus(s, resource) {
   return s.resourceBoosters?.[resource] ? RESOURCE_BOOSTER_BONUS : 0;
 }
 
@@ -109,7 +101,7 @@ export function prestigeBonus(s, resource) {
   return s.prestige?.[resource] ? PRESTIGE_PRODUCTION_BONUS : 0;
 }
 
-export function resourceBonus(s, resource) {
+function resourceBonus(s, resource) {
   return boosterBonus(s, resource) + prestigeBonus(s, resource);
 }
 
@@ -117,7 +109,7 @@ export function resourceBonus(s, resource) {
  * The surplus per hour the user has kept back from sovereignty, for any of
  * MINIMUM_KEYS. Missing or negative is no minimum.
  */
-export function resourceMinimum(s, resource) {
+function resourceMinimum(s, resource) {
   const v = s.resourceMinimums?.[resource];
   return Number.isFinite(v) && v > 0 ? v : 0;
 }
@@ -140,7 +132,7 @@ export function researchAt({ research, rpBonus = 0, tax }) {
 }
 
 /** Hourly output of one basic resource at a given tax. */
-export function basicProduction({ plots, yield: y, bonus, tax }) {
+function basicProduction({ plots, yield: y, bonus, tax }) {
   return (plots * y * (PRODUCTION_BASE - tax + bonus)) / 100;
 }
 
@@ -178,6 +170,8 @@ export function claimUpkeep(d, level, chancery = 1, held) {
   return { rp, gold: (rp * CLAIM_GOLD_PER_LEVEL_DISTANCE) / CLAIM_RP_PER_LEVEL_DISTANCE };
 }
 
+const sumRp = (claims) => claims.reduce((sum, c) => sum + c.rp, 0);
+
 // --- Structure upkeep ------------------------------------------------------
 
 /**
@@ -188,7 +182,7 @@ export function sovStructure(entry) {
   return SOV_STRUCTURE_BY_KEY[entry?.structure] ?? SOV_STRUCTURE_BY_KEY[DEFAULT_SOV_STRUCTURE];
 }
 
-export function isProductionStructure(entry) {
+function isProductionStructure(entry) {
   return sovStructure(entry).type === 'production';
 }
 
@@ -229,18 +223,17 @@ export function tRp({ uRp, research, rpBonus = 0, minimum = 0 }) {
  * tax pays that, so the ceiling is -Infinity.
  */
 export function tRes({ milsovAssignments, plots, settings = {} }) {
-  const none = { ceiling: Infinity, indicative: false, binding: null, impossible: false };
+  const none = { ceiling: Infinity, binding: null, impossible: false };
   const upkeep = milsovUpkeep(milsovAssignments ?? []);
   const fixed = (res) => resourceMinimum(settings, res) + buildingUpkeep(settings, res);
   if (upkeep <= 0 && !BASIC_RESOURCES.some((res) => fixed(res) > 0)) return none;
-  const { yield: y, measured } = computeBasicYield(settings);
   let worst = Infinity;
   let binding = null;
   for (const res of BASIC_RESOURCES) {
     // production(T) - upkeep - buildings >= minimum
     //   =>  T <= 125 + bonus - 100*(upkeep + buildings + minimum)/(plots*Y)
     const need = upkeep + fixed(res);
-    const perPoint = plots[res] * y;
+    const perPoint = plots[res] * BASIC_YIELD_L20;
     // No plots is a constraint only if something is owed.
     const ceiling = perPoint > 0
       ? PRODUCTION_BASE + resourceBonus(settings, res) - (100 * need) / perPoint
@@ -250,7 +243,7 @@ export function tRes({ milsovAssignments, plots, settings = {} }) {
       binding = res;
     }
   }
-  return { ceiling: worst, indicative: !measured, binding, impossible: worst === -Infinity };
+  return { ceiling: worst, binding, impossible: worst === -Infinity };
 }
 
 /**
@@ -269,7 +262,6 @@ export function surplusAt({ tax, settings, sFood, uRp, uGold, milsovAssignments 
   const s = settings;
   const k = computeK(s.plots.food);
   const upkeep = milsovUpkeep(milsovAssignments ?? []);
-  const { yield: y, measured } = computeBasicYield(s);
   const consumption = computeConsumption(s);
 
   const base = {
@@ -280,15 +272,14 @@ export function surplusAt({ tax, settings, sFood, uRp, uGold, milsovAssignments 
   const out = {
     tax,
     food: base.food - consumption,
-    rp: base.rp - (uRp ?? 0),
+    rp: base.rp - (uRp ?? 0) - (s.keptClaimRp ?? 0),
     gold: base.gold - (uGold ?? 0),
     upkeep,
     buildingUpkeep: {},
-    indicative: !measured,
   };
   for (const res of BASIC_RESOURCES) {
     base[res] = basicProduction({
-      plots: s.plots[res], yield: y, bonus: resourceBonus(s, res), tax,
+      plots: s.plots[res], yield: BASIC_YIELD_L20, bonus: resourceBonus(s, res), tax,
     });
     out.buildingUpkeep[res] = buildingUpkeep(s, res);
     out[res] = base[res] - upkeep - out.buildingUpkeep[res];
@@ -311,7 +302,7 @@ export function tMax({ food, rp, res }) {
 }
 
 /** The plan's gold bill: 10x its research, plus the kept claims' (keptClaimRp). */
-export function claimGold(uRp, s) {
+function claimGold(uRp, s) {
   return (uRp + (s?.keptClaimRp ?? 0)) * 10;
 }
 
@@ -441,11 +432,10 @@ export function milsovHeadroom({ tax, settings, uRp = 0, buildingsUsed = 0 }) {
   // An infinite tax would otherwise read as an infinite budget.
   if (!Number.isFinite(tax)) return { rp: 0, upkeep: 0, slots };
 
-  const { yield: y } = computeBasicYield(s);
   let upkeep = Infinity;
   for (const res of BASIC_RESOURCES) {
     const produced = basicProduction({
-      plots: s.plots[res], yield: y, bonus: resourceBonus(s, res), tax,
+      plots: s.plots[res], yield: BASIC_YIELD_L20, bonus: resourceBonus(s, res), tax,
     });
     upkeep = Math.min(upkeep, produced - resourceMinimum(s, res) - buildingUpkeep(s, res));
   }
@@ -495,7 +485,6 @@ function descriptorBonus(tile, structure) {
  * @param {string} [structure] the structure being placed; see descriptorBonus.
  */
 export function planMilsov({ tiles, headroom, chancery = 1, structure }) {
-  const EPS = 1e-9;
   const n = Math.min(tiles.length, Math.floor(headroom.slots));
   // RATE[j], indexed from 0 for level 1.
   const RATE = [chancery, 1, 1, 1, 1];
@@ -521,7 +510,6 @@ export function planMilsov({ tiles, headroom, chancery = 1, structure }) {
       if (level > 0) levels.push(level);
       bonus += level * (MILSOV_BONUS_PER_LEVEL + descriptorBonus(tiles[i], structure));
     }
-    const units = counts.reduce((a, b) => a + b, 0);
     return {
       counts,
       levels,
@@ -594,10 +582,10 @@ function milsovBlockedBy({ hosts, free, headroom, chancery }) {
   if (free.length === 0) return 'tiles';
   if (hosts.length === 0) return 'water';
   if (headroom.slots < 1) return 'slots';
-  if (headroom.upkeep + 1e-9 < MILSOV_UPKEEP_BY_LEVEL[1]) return 'upkeep';
+  if (headroom.upkeep + EPS < MILSOV_UPKEEP_BY_LEVEL[1]) return 'upkeep';
   const nearest = hosts.reduce((d, t) => Math.min(d, (t.held ?? 0) > 0 ? 0 : t.d), Infinity);
   const cheapest = claimUpkeep(nearest, 1, chancery).rp;
-  if (headroom.rp + 1e-9 < cheapest) return 'rp';
+  if (headroom.rp + EPS < cheapest) return 'rp';
   return null;
 }
 
@@ -621,7 +609,8 @@ export function prepareSite({ neighbours, settings }) {
     .filter((t) => t.food > 0)
     .map((t) => {
       const up = claimUpkeep(t.d, FOOD_CLAIM_LEVEL, chancery, t.held);
-      return { ...t, level: FOOD_CLAIM_LEVEL, ...up, weight: Math.round(up.rp) };
+      // Rounded up, so a set of claims never costs more than the spend it fits.
+      return { ...t, level: FOOD_CLAIM_LEVEL, ...up, weight: Math.ceil(Math.max(0, up.rp - EPS)) };
     });
   // The most research the city can produce, at 0% tax; a smaller budget would
   // truncate the knapsack.
@@ -645,11 +634,16 @@ export function prepareSite({ neighbours, settings }) {
   };
 }
 
+/** The food claims chosen at a spend, and the research they cost. */
+function foodClaims(ctx, spend) {
+  const tiles = recoverSet(ctx.foodCandidates, ctx.dp, spend).map((i) => ctx.foodCandidates[i]);
+  return { spend, tiles, rp: sumRp(tiles) };
+}
 
 /**
- * The cheapest food spend that still holds `tax`, or null if none does. Below
- * the site's maximum a cheaper food plan suffices, which frees research for
- * military sovereignty.
+ * The cheapest spend whose food holds `tax`, or null if none does. Below the
+ * site's maximum a cheaper food plan suffices, which frees research for
+ * military sovereignty. Whether the research affords it is the caller's check.
  */
 function foodSpendFor(ctx, tax) {
   const needed = tax - PRODUCTION_BASE - ctx.bOther + (ctx.consumption + ctx.minFood) / ctx.k;
@@ -661,8 +655,7 @@ function foodSpendFor(ctx, tax) {
     if (ctx.dp.best[mid] >= needed - EPS) hi = mid;
     else lo = mid + 1;
   }
-  const produced = researchAt({ research: ctx.research, rpBonus: ctx.rpBonus, tax });
-  return produced - lo - ctx.minRp < -EPS ? null : lo;
+  return lo;
 }
 
 /** The most food reachable at a tax no plan holds, for the deficit it shows. */
@@ -688,18 +681,22 @@ function bestFoodSpend(ctx, tax) {
 export function planSiteAt(ctx, tax, { bestEffort = false } = {}) {
   const s = ctx.settings;
   if (!Number.isFinite(tax)) return null;
-  const held = foodSpendFor(ctx, tax);
-  const spend = held ?? (bestEffort ? bestFoodSpend(ctx, tax) : null);
-  if (spend === null) return null;
-
-  const tiles = recoverSet(ctx.foodCandidates, ctx.dp, spend).map((i) => ctx.foodCandidates[i]);
+  const cheapest = foodSpendFor(ctx, tax);
+  let food = cheapest === null ? null : foodClaims(ctx, cheapest);
+  const produced = researchAt({ research: ctx.research, rpBonus: ctx.rpBonus, tax });
+  const holds = !!food && produced - food.rp - ctx.minRp >= -EPS;
+  if (!holds) {
+    if (!bestEffort) return null;
+    food = foodClaims(ctx, bestFoodSpend(ctx, tax));
+  }
+  const { spend, tiles, rp: foodRp } = food;
   const claimed = new Set(tiles.map((t) => t.idx));
   const free = ctx.byDistance.filter((t) => !claimed.has(t.idx));
   // Water takes no structure. planMilsov and milsovClaims must get this same
   // list in this order: levels are mapped onto tiles by position.
   const hosts = free.filter((t) => !t.water);
   const headroom = milsovHeadroom({
-    tax, settings: s, uRp: spend, buildingsUsed: tiles.length,
+    tax, settings: s, uRp: foodRp, buildingsUsed: tiles.length,
   });
   const military = planMilsov({
     tiles: ctx.structure ? hosts : [], headroom, chancery: ctx.chancery, structure: ctx.structure,
@@ -709,8 +706,8 @@ export function planSiteAt(ctx, tax, { bestEffort = false } = {}) {
   });
 
   const sFood = ctx.dp.best[spend];
-  const milsovRp = milsov.reduce((sum, a) => sum + a.rp, 0);
-  const uRp = spend + milsovRp;
+  const milsovRp = sumRp(milsov);
+  const uRp = foodRp + milsovRp;
   const uGold = claimGold(uRp, s);
   const resCeiling = tRes({ milsovAssignments: milsov, plots: s.plots, settings: s });
   const ceiling = tMax({
@@ -718,13 +715,13 @@ export function planSiteAt(ctx, tax, { bestEffort = false } = {}) {
       bOther: ctx.bOther, sFood, consumption: ctx.consumption, k: ctx.k, minimum: ctx.minFood,
     }),
     rp: tRp({ uRp, research: ctx.research, rpBonus: ctx.rpBonus, minimum: ctx.minRp }),
-    res: resCeiling.indicative ? Infinity : resCeiling.ceiling,
+    res: resCeiling.ceiling,
   });
 
   return {
     tax,
     // False when the plan is at a tax the site cannot hold.
-    holds: held !== null,
+    holds,
     tMax: ceiling.value,
     binding: ceiling.binding,
     sFood,
@@ -732,9 +729,7 @@ export function planSiteAt(ctx, tax, { bestEffort = false } = {}) {
     uRp,
     uGold,
     goldNet: goldNet({ tax, consumption: ctx.consumption, uGold }),
-    surplus: Number.isFinite(tax)
-      ? surplusAt({ tax, settings: s, sFood, uRp, uGold, milsovAssignments: milsov })
-      : null,
+    surplus: surplusAt({ tax, settings: s, sFood, uRp, uGold, milsovAssignments: milsov }),
     tiles,
     free,
     headroom,
@@ -747,7 +742,6 @@ export function planSiteAt(ctx, tax, { bestEffort = false } = {}) {
       ? milsovBlockedBy({ hosts, free, headroom, chancery: ctx.chancery })
       : null,
     resCeiling: resCeiling.ceiling,
-    resIndicative: resCeiling.indicative,
     resBinding: resCeiling.binding,
     resImpossible: resCeiling.impossible,
   };
@@ -758,7 +752,7 @@ export function planSiteAt(ctx, tax, { bestEffort = false } = {}) {
  * military bonus, by bisection: the bonus only rises as the tax falls. Returns
  * `{ bonus, tax }`, or null when even the floor falls short.
  */
-export function milsovAtFloor(ctx, { required, floor, ceiling }) {
+function milsovAtFloor(ctx, { required, floor, ceiling }) {
   const at = (tax) => {
     const p = planSiteAt(ctx, tax);
     return p && p.milsovBonus >= required ? p : null;
@@ -788,19 +782,19 @@ export function milsovAtFloor(ctx, { required, floor, ceiling }) {
  * @returns {{tMax: number, binding: string, sFood: number, spend: number}|null}
  *   null only when there is no spend level to evaluate at all.
  */
-export function siteCeiling(ctx) {
-  const floors = tRes({ milsovAssignments: [], plots: ctx.settings.plots, settings: ctx.settings });
-  const res = floors.indicative ? Infinity : floors.ceiling;
+function siteCeiling(ctx) {
+  const res = tRes({ milsovAssignments: [], plots: ctx.settings.plots, settings: ctx.settings }).ceiling;
+  const ceilingAt = (sFood, uRp) => tMax({
+    food: tFood({
+      bOther: ctx.bOther, sFood, consumption: ctx.consumption, k: ctx.k, minimum: ctx.minFood,
+    }),
+    rp: tRp({ uRp, research: ctx.research, rpBonus: ctx.rpBonus, minimum: ctx.minRp }),
+    res,
+  });
   let winner = null;
   for (let spend = 0; spend <= ctx.budget; spend++) {
     const sFood = ctx.dp.best[spend];
-    const t = tMax({
-      food: tFood({
-        bOther: ctx.bOther, sFood, consumption: ctx.consumption, k: ctx.k, minimum: ctx.minFood,
-      }),
-      rp: tRp({ uRp: spend, research: ctx.research, rpBonus: ctx.rpBonus, minimum: ctx.minRp }),
-      res,
-    });
+    const t = ceilingAt(sFood, spend);
     // A negative T_max is a real answer; the caller filters on tMin.
     const net = goldNet({
       tax: t.value, consumption: ctx.consumption, uGold: claimGold(spend, ctx.settings),
@@ -809,7 +803,11 @@ export function siteCeiling(ctx) {
       winner = { tMax: t.value, binding: t.binding, sFood, spend };
     }
   }
-  return winner;
+  if (!winner) return null;
+  // The walk prices each spend at its whole-number weight; the winner's ceiling
+  // is then taken from what its claims cost.
+  const exact = ceilingAt(winner.sFood, foodClaims(ctx, winner.spend).rp);
+  return { ...winner, tMax: exact.value, binding: exact.binding };
 }
 
 /**
@@ -831,10 +829,10 @@ export function scoreSiteFrom(ctx) {
   // Plan at the settable (whole-number) rate. Rounding down frees headroom, so
   // this is never worse than the plan at the exact ceiling.
   const plan = planSiteAt(ctx, settableTax(winner.tMax)) ?? fallbackPlan(ctx, winner);
-  const cheaper = ctx.structure ? planSiteAt(ctx, plan.tax - 1) : null;
 
   // A minimum military bonus is met if any tax down to tMin reaches it.
-  const required = ctx.structure ? Math.max(0, s.milsovMinBonus ?? 0) : (s.milsovMinBonus ?? 0);
+  // The form disables the minimum while no structure is chosen, so it asks nothing.
+  const required = ctx.structure ? Math.max(0, s.milsovMinBonus ?? 0) : 0;
   const floor = Math.min(s.tMin ?? 0, plan.tax);
   const reach = required > 0 && plan.milsovBonus < required && Number.isFinite(plan.tax)
     ? milsovAtFloor(ctx, { required, floor, ceiling: plan.tax })
@@ -847,7 +845,6 @@ export function scoreSiteFrom(ctx) {
     tMaxExact: winner.tMax,
     // Named from the exact ceiling.
     binding: winner.binding,
-    milsovPrice: cheaper ? cheaper.milsovBonus - plan.milsovBonus : 0,
     // The highest tax reaching the minimum bonus, when it is not met for free.
     milsovMinTax: reach ? reach.tax : null,
     milsovMinBonusAt: reach ? reach.bonus : null,
@@ -856,7 +853,10 @@ export function scoreSiteFrom(ctx) {
   };
 }
 
-/** A site with no food plots reaches no finite tax; describe its cheapest plan. */
+/**
+ * The cheapest plan of a site that reaches no finite tax: one with no food
+ * plots, or one owing a basic resource it has no plots of.
+ */
 function fallbackPlan(ctx, winner) {
   const tiles = recoverSet(ctx.foodCandidates, ctx.dp, winner.spend)
     .map((i) => ctx.foodCandidates[i]);
@@ -891,7 +891,6 @@ function fallbackPlan(ctx, winner) {
       })
       : null,
     resCeiling: Infinity,
-    resIndicative: false,
     resBinding: null,
     resImpossible: false,
   };
@@ -899,7 +898,6 @@ function fallbackPlan(ctx, winner) {
 
 /** Plan ordering: higher T_max, then lower U_RP, then higher Gold_net. */
 function betterPlan(a, b) {
-  const EPS = 1e-9;
   if (a.tMax > b.tMax + EPS) return true;
   if (a.tMax < b.tMax - EPS) return false;
   if (a.uRp < b.uRp - EPS) return true;

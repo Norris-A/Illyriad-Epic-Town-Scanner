@@ -28,6 +28,7 @@ import {
   parseResourceMinimums,
   parsePrestige,
   parseTerrains,
+  scanSettingsDiffer,
 } from '../settings.js';
 import { isWorldMapHash } from '../map-view.js';
 import { CSS } from './css.js';
@@ -431,12 +432,19 @@ export function createPanel({
     scanBtn.title = plots.ok ? '' : `Settle plot allocation must sum to ${PLOT_TOTAL}`;
 
     root.classList.toggle('sov-no-map', !s.mapOverlay);
+    markStale(s);
     for (const el of root.querySelectorAll('[data-mirror-key], [data-mirror-plot], [data-mirror-terrain]')) {
       const own = mirrored(el);
       if (el.type === 'checkbox') el.checked = own.checked;
       // Compare as typed, so a value part-way through being typed is left alone.
       else if (el.value !== own.value) el.value = own.value;
     }
+  }
+
+  /** Show the results' notice when the form no longer holds what they were scanned with. */
+  function markStale(s) {
+    const stale = $('.sov-stale');
+    if (stale) stale.hidden = !scanSettingsDiffer(scanSettings, s);
   }
 
   /** The City Configuration control that a mirrored control on another tab stands for. */
@@ -620,6 +628,7 @@ export function createPanel({
       const summary = { ...scan, candidates: results.length };
       $('.sov-prefill-src').textContent = '';   // the old selection is gone
       el.innerHTML = resultsHtml(results, scanSummaryText(summary));
+      markStale(readSettings().settings);
 
       el.querySelectorAll('.sov-row').forEach((row) => {
         row.addEventListener('click', () => {

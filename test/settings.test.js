@@ -13,6 +13,7 @@ import {
   parseResourceBoosters,
   parseUpkeepBuildings,
   parseTerrains,
+  scanSettingsDiffer,
 } from '../src/settings.js';
 import { MILSOV_BLOCKED_TEXT, productionLabel } from '../src/ui/format.js';
 import { surplusRows } from '../src/ui/plan.js';
@@ -507,4 +508,12 @@ test('Site Search mirrors every Site Filters control', () => {
       : [`data-mirror-key="${f.key}"`];
     for (const hook of hooks) assert.ok(html.includes(hook), `Site Search is missing ${hook}`);
   }
+});
+
+test('only a setting the scan reads makes its results stale', () => {
+  const scanned = { ...DEFAULT_SETTINGS, siteTerrains: ['Plains'] };
+  assert.equal(scanSettingsDiffer(scanned, { ...scanned, siteTerrains: ['Plains'] }), false);
+  assert.equal(scanSettingsDiffer(scanned, { ...scanned, mapOverlay: !scanned.mapOverlay }), false);
+  assert.equal(scanSettingsDiffer(scanned, { ...scanned, tMin: scanned.tMin + 1 }), true);
+  assert.equal(scanSettingsDiffer(scanned, { ...scanned, plots: { ...scanned.plots, food: 6 } }), true);
 });

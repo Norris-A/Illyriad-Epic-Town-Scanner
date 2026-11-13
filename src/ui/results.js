@@ -50,7 +50,8 @@ function iconHeading(icon, name, title) {
  * numbered as on the map.
  */
 export function resultsHtml(results, summary) {
-  const head = `<p class="sov-meta">${GLYPHS.target}${summary}</p>`;
+  const head = `<p class="sov-meta">${GLYPHS.target}${summary}</p>
+    <p class="sov-warn sov-stale" hidden>Settings have changed — scan again to update these results.</p>`;
   if (!results?.length) return `${head}<p class="sov-note">No available sites met the minimum tax.</p>`;
   const rows = results.slice(0, 200).map((r, n) => `
         <tr class="sov-row" data-n="${n}">

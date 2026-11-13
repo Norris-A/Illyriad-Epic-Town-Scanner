@@ -30,6 +30,15 @@ test('the Food column is the food left over each hour', () => {
   assert.ok(html.includes('<td>1,234</td>'));
 });
 
+// The panel shows it once the settings move away from the scan's.
+test('the stale-settings notice is drawn hidden, with or without results', () => {
+  const notice = '<p class="sov-warn sov-stale" hidden>';
+  assert.ok(resultsHtml([], 'Centre 1|2.').includes(notice));
+  assert.ok(resultsHtml([{
+    x: 1, y: 2, tMax: 62, binding: 'food', sFood: 10, uRp: 3, goldNet: 400,
+  }], 'Centre 1|2.').includes(notice));
+});
+
 // The map markers report on this line, so it starts empty. A scan that lists no
 // site has no table and no markers, so it has no line either.
 test('a table gets an empty map line between the summary and the rows', () => {

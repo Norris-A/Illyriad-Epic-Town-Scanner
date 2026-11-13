@@ -267,3 +267,8 @@ export const SETTINGS_FIELDS = [
       + 'that map’s layout.',
   },
 ];
+
+/** Whether two sets of settings differ in anything a scan reads; the gear menu's do not count. */
+export function scanSettingsDiffer(a, b) {
+  return SETTINGS_FIELDS.some((f) => !f.menu && JSON.stringify(a[f.key]) !== JSON.stringify(b[f.key]));
+}

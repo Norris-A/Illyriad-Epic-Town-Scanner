@@ -33,8 +33,10 @@ npm test
 ```
 
 Runs the scoring engine against the mechanics worked example, the optimiser, the
-payload reader and capture, the grid, the map markers' geometry, the plan notes,
-the settings validators and store, and the terrain descriptor table.
+payload reader and capture, the grid, the map markers' geometry, the plan's
+balance and notes, Site Search's results table, the settings validators, forms
+and store, the terrain descriptor table, and the changelog's entry for the
+package version.
 
 ```bash
 npm run lint
@@ -70,7 +72,7 @@ so pushing to `main` is the deploy.
 6. Commit that file along with the bump, and push.
 
 Two rules keep this from going wrong. **Only ever commit the bundle on `main`** —
-a generated 200KB file tracked on feature branches conflicts on every merge; the
+a large generated file tracked on feature branches conflicts on every merge; the
 `.gitignore` tracks exactly that one path and nothing else under `dist/`. And
 **never change the released `@name` or `@namespace`** — Tampermonkey identifies an
 installed script by that pair, so changing either makes every existing install a
@@ -83,8 +85,8 @@ minutes, and Tampermonkey's own update check runs roughly daily.
 
 ## Version scheme
 
-`npm run build` produces `1.0.0-dev.202608202336` in `dist/dev/`; `npm run
-release` produces `1.0.0` in `dist/`. Tampermonkey compares versions semver-style,
+`npm run build` produces `2.0.0-dev.202611131030` in `dist/dev/`; `npm run
+release` produces `2.0.0` in `dist/`. Tampermonkey compares versions semver-style,
 so a `-dev` build sorts *below* the released number — a local build never shadows
 the shipped one on a machine that has both, while every rebuild still looks
 distinct enough that Tampermonkey picks it up instead of silently running a stale

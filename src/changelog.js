@@ -9,6 +9,13 @@ export const CHANGELOG = [
     changes: [
       'Want a site ringed by open plains? Site Filters has a new Terrain part: tick what the 8 tiles around a site should be, and say how many of them must be. River banks count as Plains.',
       'Lakes and lochs are no longer offered as places to settle.',
+      'Site Search’s Food column shows the food your city has spare each hour at the site’s tax.',
+      'The limit tag on a plan’s balance turns up whenever the plan is at the site’s highest tax, on the resource that really runs out first.',
+      'With Preserve Existing Sovereignty on, the research your kept claims cost shows on the balance instead of passing for spare.',
+      'Set a Minimum Military Bonus, then switched the structure to None? Site Search no longer comes back empty.',
+      'Change a setting after a scan and Site Search says its results are out of date. Until you scan again, opening a site still plans it the way it was scanned.',
+      'Press Scan mid-scan and it starts afresh, and a scan that fails says so instead of sitting on Scanning… forever.',
+      'A plan’s research and gold totals match what its tiles cost.',
     ],
   },
   {

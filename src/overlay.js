@@ -10,7 +10,7 @@
 //
 // Everything above createOverlay is DOM-free and tested under Node.
 
-import { isWorldMapHash, cellKey, roman } from './panel.js';
+import { isWorldMapHash, cellKey, roman } from './map-view.js';
 
 // The first of these layers with a size is measured as the tile grid; the game
 // can hide some of them.

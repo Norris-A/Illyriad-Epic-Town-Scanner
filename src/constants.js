@@ -15,6 +15,7 @@ export const GOLD_PER_TAX_POP = 0.04;      // [F] Gold_income = 0.04 * T * Pop
 
 export const CLAIM_RP_PER_LEVEL_DISTANCE = 10;    // [V] RP/hr = 10 * L * d
 export const CLAIM_GOLD_PER_LEVEL_DISTANCE = 100; // [V] gold is exactly 10x RP
+export const CLAIM_GOLD_PER_RP = CLAIM_GOLD_PER_LEVEL_DISTANCE / CLAIM_RP_PER_LEVEL_DISTANCE;
 
 // [V] The game rounds the claim distance half-up to two decimals before
 // multiplying: a diagonal costs as 1.41, and a (2,1) claim at level 2 costs 448

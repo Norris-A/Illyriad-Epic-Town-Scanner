@@ -1,11 +1,10 @@
-// The plan's military and upkeep notes. panel.js only
-// touches the DOM inside createPanel, so these are testable here without a
-// browser.
+// The plan's military and upkeep notes. They are strings, so they are testable
+// here without a browser.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { milsovPlanHtml, upkeepLimitHtml } from '../src/panel.js';
+import { milsovPlanHtml, upkeepLimitHtml } from '../src/ui/plan.js';
 
 // The no-military shape: T_res is Infinity, which is what scoreSite returns for
 // the common case. The tax is the whole number the plan is made at; the ceiling

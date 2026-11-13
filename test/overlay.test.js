@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 import {
   mapGeometry, hashView, tileAt, tileBox, squareBox, planMarks, parseCoords,
 } from '../src/overlay.js';
-import { cellKey } from '../src/panel.js';
+import { cellKey } from '../src/map-view.js';
 
 const rect = (left, top, width, height) =>
   ({ left, top, width, height, right: left + width, bottom: top + height });

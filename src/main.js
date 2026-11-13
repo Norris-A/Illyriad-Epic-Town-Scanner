@@ -3,7 +3,7 @@
 // a string by build.mjs.
 
 import { probeInPageData, getLatestPayload, whenViewLoaded } from './capture.js';
-import { createPanel } from './panel.js';
+import { createPanel } from './ui/panel.js';
 import { createOverlay } from './overlay.js';
 import { createSettingsStore, decodeSettings, STORAGE_KEY } from './settings-store.js';
 import { DEFAULT_SETTINGS } from './constants.js';

@@ -10,7 +10,9 @@ import { APP_ICON_SVG } from './src/app-icons.js';
 // A dev build's version carries a minute stamp as a prerelease, so Tampermonkey
 // sees every rebuild as new, and it sorts below the released version.
 const RELEASE = process.argv.includes('--release');
-const { version: PKG_VERSION } = JSON.parse(readFileSync('package.json', 'utf8'));
+const { version: PKG_VERSION, description: PKG_DESCRIPTION } = JSON.parse(
+  readFileSync('package.json', 'utf8'),
+);
 
 const d = new Date();
 const p = (n) => String(n).padStart(2, '0');
@@ -45,7 +47,7 @@ const BANNER = `// ==UserScript==
 // @name         ${NAME}
 // @namespace    https://github.com/Norris-A
 // @version      ${VERSION}
-// @description  Finds the best places on the World Map to build a sovereignty city, and plans which tiles to claim around them.
+// @description  ${PKG_DESCRIPTION}
 // @author       Norris A. (Firebolty)
 // @icon         ${ICON}
 ${UPDATE_LINES}// @supportURL   https://github.com/Norris-A/Illyriad-Epic-Town-Scanner/issues

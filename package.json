@@ -9,7 +9,8 @@
     "release": "node build.mjs --release",
     "watch": "node build.mjs --watch",
     "mockups": "node scripts/mockups.mjs",
-    "test": "node --test"
+    "test": "node --test",
+    "lint": "eslint ."
   },
   "engines": {
     "node": ">=18"
@@ -18,6 +19,9 @@
     "esbuild": true
   },
   "devDependencies": {
-    "esbuild": "^0.28.2"
+    "@eslint/js": "^10.0.1",
+    "esbuild": "^0.28.2",
+    "eslint": "^10.14.0",
+    "globals": "^17.14.0"
   }
 }

@@ -3,7 +3,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { resultsHtml, scanSummaryText, bindingLabel } from '../src/panel.js';
+import { resultsHtml, scanSummaryText } from '../src/ui/results.js';
+import { bindingLabel } from '../src/ui/format.js';
 
 // A region with no candidate site is where the summary matters most: it is
 // unsettled ground, so it is the least explored.

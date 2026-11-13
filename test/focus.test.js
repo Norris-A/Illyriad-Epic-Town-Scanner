@@ -13,6 +13,7 @@ import {
   focusRadius,
   focusSite,
   keptClaims,
+  ownTowns,
 } from '../src/focus.js';
 import { DEFAULT_SETTINGS, PLOT_KEYS, PLOT_TOTAL, FOOD_CLAIM_LEVEL } from '../src/constants.js';
 import {
@@ -20,9 +21,10 @@ import {
   claimLevel,
 } from '../src/payload.js';
 import { scoreSite, claimUpkeep, distance } from '../src/scoring.js';
-import {
-  focusFormHtml, ownTowns, planGridHtml, claimHolderText, centredView, mapHash,
-} from '../src/panel.js';
+import { focusFormHtml } from '../src/ui/forms.js';
+import { planGridHtml } from '../src/ui/grid.js';
+import { claimHolderText } from '../src/ui/plan.js';
+import { centredView, mapHash } from '../src/map-view.js';
 
 const settings = { ...DEFAULT_SETTINGS, tMin: -1000 };
 

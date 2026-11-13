@@ -13,9 +13,8 @@ import {
   encodeSettings,
   decodeSettings,
   createSettingsStore,
-  memoryStorage,
 } from '../src/settings-store.js';
-import { SETTINGS_FIELDS } from '../src/panel.js';
+import { SETTINGS_FIELDS } from '../src/settings.js';
 import { computeConsumption } from '../src/scoring.js';
 import { DEFAULT_SETTINGS } from '../src/constants.js';
 
@@ -211,6 +210,15 @@ test('a hostile blob cannot inject anything into the settings', () => {
 });
 
 // --- the store around it ---
+
+/** An in-memory stand-in for localStorage. */
+function memoryStorage() {
+  const map = new Map();
+  return {
+    getItem: (k) => (map.has(k) ? map.get(k) : null),
+    setItem: (k, v) => map.set(k, String(v)),
+  };
+}
 
 test('the store writes what it reads back', () => {
   const mem = memoryStorage();

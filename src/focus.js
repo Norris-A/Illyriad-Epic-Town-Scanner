@@ -6,7 +6,7 @@
 import { PLOT_KEYS, PLOT_TOTAL } from './constants.js';
 import {
   indexPayload, tileKey, parseRs, collectNeighbourhood, isSettleable, claimLevel,
-  townIdentity, isTownsClaim,
+  townIdentity, isTownsClaim, extractTowns,
 } from './payload.js';
 import {
   prepareSite, planSiteAt, scoreSiteFrom, claimUpkeep, chanceryFactor, distance,
@@ -117,7 +117,7 @@ function resolvePlots(focus, settings, rs) {
  * @returns {{claims: object[], rp: number, unknownLevel: number,
  *   otherTown: number}} `rp` is the hourly research the kept claims already spend
  */
-export function keptClaims({ payload, centre, radius, idx, chancery, town }) {
+export function keptClaims({ centre, radius, idx, chancery, town }) {
   const claims = [];
   let rp = 0;
   let unknownLevel = 0;
@@ -209,13 +209,13 @@ export function focusSite({ payload, focus, settings }) {
   // balance, as research and as gold.
   const kept = preserveTown
     ? keptClaims({
-      payload, centre: focus, radius, idx, chancery: chanceryFactor(settings), town: preserveTown,
+      centre: focus, radius, idx, chancery: chanceryFactor(settings), town: preserveTown,
     })
     : { claims: [], rp: 0, unknownLevel: 0, otherTown: 0 };
   // Counted for the note only; their cost is not charged.
   const released = homeTown && !preserveTown
     ? keptClaims({
-      payload, centre: focus, radius, idx, chancery: chanceryFactor(settings), town: homeTown,
+      centre: focus, radius, idx, chancery: chanceryFactor(settings), town: homeTown,
     })
     : null;
   if (preserveTown) {
@@ -290,4 +290,20 @@ export function focusSite({ payload, focus, settings }) {
     ceiling,
     floor,
   };
+}
+
+/**
+ * Your own towns on screen, deduplicated and sorted, for the optimiser's picker.
+ * Only towns whose tile the payload carries are offered, since the optimiser
+ * needs it.
+ */
+export function ownTowns(payload) {
+  const seen = new Map();
+  for (const t of extractTowns(payload)) {
+    if (!t.own || !Number.isFinite(t.x) || !Number.isFinite(t.y)) continue;
+    if (!payload.data?.[tileKey(t.y, t.x)]) continue;
+    const at = `${t.x}|${t.y}`;
+    if (!seen.has(at)) seen.set(at, { x: t.x, y: t.y, label: t.name ? `${t.name} (${at})` : at });
+  }
+  return [...seen.values()].sort((a, b) => a.label.localeCompare(b.label));
 }

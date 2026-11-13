@@ -6,7 +6,7 @@ import {
   FARM_YIELD_L20,
   GOLD_PER_TAX_POP,
   CLAIM_RP_PER_LEVEL_DISTANCE,
-  CLAIM_GOLD_PER_LEVEL_DISTANCE,
+  CLAIM_GOLD_PER_RP,
   CHANCERY_DISCOUNT_L20,
   FOOD_CLAIM_LEVEL,
   MILSOV_UPKEEP_BY_LEVEL,
@@ -160,14 +160,14 @@ function claimRp(d, level, chancery) {
 }
 
 /**
- * Upkeep for raising a claim from `held` to `level`; gold is 10x RP. Zero when
- * the claim already stands at `level`, since kept claims are charged
+ * Upkeep for raising a claim from `held` to `level`, in research and gold.
+ * Zero when the claim already stands at `level`, since kept claims are charged
  * separately.
  */
 export function claimUpkeep(d, level, chancery = 1, held) {
   const from = held ?? 0;
   const rp = level > from ? claimRp(d, level, chancery) - claimRp(d, from, chancery) : 0;
-  return { rp, gold: (rp * CLAIM_GOLD_PER_LEVEL_DISTANCE) / CLAIM_RP_PER_LEVEL_DISTANCE };
+  return { rp, gold: rp * CLAIM_GOLD_PER_RP };
 }
 
 const sumRp = (claims) => claims.reduce((sum, c) => sum + c.rp, 0);
@@ -301,9 +301,9 @@ export function tMax({ food, rp, res }) {
   return { value: best.value, binding: best.name };
 }
 
-/** The plan's gold bill: 10x its research, plus the kept claims' (keptClaimRp). */
+/** The plan's gold bill: its research plus the kept claims' (keptClaimRp), in gold. */
 function claimGold(uRp, s) {
-  return (uRp + (s?.keptClaimRp ?? 0)) * 10;
+  return (uRp + (s?.keptClaimRp ?? 0)) * CLAIM_GOLD_PER_RP;
 }
 
 export function goldNet({ tax, consumption, uGold }) {
@@ -779,8 +779,7 @@ function milsovAtFloor(ctx, { required, floor, ceiling }) {
  * The site's own ceiling: the best tax any food plan reaches, and the cheapest
  * plan reaching it.
  *
- * @returns {{tMax: number, binding: string, sFood: number, spend: number}|null}
- *   null only when there is no spend level to evaluate at all.
+ * @returns {{tMax: number, binding: string, sFood: number, spend: number}}
  */
 function siteCeiling(ctx) {
   const res = tRes({ milsovAssignments: [], plots: ctx.settings.plots, settings: ctx.settings }).ceiling;
@@ -803,7 +802,6 @@ function siteCeiling(ctx) {
       winner = { tMax: t.value, binding: t.binding, sFood, spend };
     }
   }
-  if (!winner) return null;
   // The walk prices each spend at its whole-number weight; the winner's ceiling
   // is then taken from what its claims cost.
   const exact = ceilingAt(winner.sFood, foodClaims(ctx, winner.spend).rp);
@@ -813,8 +811,7 @@ function siteCeiling(ctx) {
 /**
  * Score one site from its claimable `neighbours`. Food is planned first and
  * sets the tax; military sovereignty is fitted into what it leaves, never
- * costing tax. T_max may be negative. Null only when there is nothing to
- * evaluate.
+ * costing tax. T_max may be negative.
  */
 export function scoreSite({ neighbours, settings }) {
   return scoreSiteFrom(prepareSite({ neighbours, settings }));
@@ -824,7 +821,6 @@ export function scoreSite({ neighbours, settings }) {
 export function scoreSiteFrom(ctx) {
   const s = ctx.settings;
   const winner = siteCeiling(ctx);
-  if (!winner) return null;
 
   // Plan at the settable (whole-number) rate. Rounding down frees headroom, so
   // this is never worse than the plan at the exact ceiling.

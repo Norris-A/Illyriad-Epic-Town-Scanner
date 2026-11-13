@@ -1,5 +1,5 @@
-// Settings form. panel.js only touches the DOM inside createPanel, so the field
-// spec and the validators are testable here without a browser.
+// Settings form. The field spec, the validators and the form markup use no
+// DOM, so they are testable here without a browser.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -9,22 +9,23 @@ import {
   clampNumber,
   validatePlots,
   parseMilsovStructure,
-  MILSOV_BLOCKED_TEXT,
   parseRpCalibration,
   parseResourceBoosters,
   parseUpkeepBuildings,
-  surplusRows,
-  productionLabel,
+  parseTerrains,
+} from '../src/settings.js';
+import { MILSOV_BLOCKED_TEXT, productionLabel } from '../src/ui/format.js';
+import { surplusRows } from '../src/ui/plan.js';
+import {
   settingsFormHtml,
   settingsMenuHtml,
   sectionSummaryHtml,
   plotBarHtml,
   focusFormHtml,
   scanFormHtml,
-  parseTerrains,
-  clampPanelPosition,
-  isWorldMapHash,
-} from '../src/panel.js';
+} from '../src/ui/forms.js';
+import { clampPanelPosition } from '../src/ui/layout.js';
+import { isWorldMapHash } from '../src/map-view.js';
 import { DEFAULT_FOCUS } from '../src/focus.js';
 import { PRODUCTION_ICONS, UPKEEP_GROUP_ICONS } from '../src/game-icons.js';
 import {

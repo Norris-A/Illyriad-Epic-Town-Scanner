@@ -2,7 +2,7 @@
 // Each entry in window.mockups sets the panel up for one picture and resolves to
 // the rectangle to capture. __WORKER_SOURCE__ is the scan worker, as in main.js.
 
-import { createPanel } from '../src/panel.js';
+import { createPanel } from '../src/ui/panel.js';
 import { tileKey } from '../src/payload.js';
 import { DEFAULT_SETTINGS } from '../src/constants.js';
 

@@ -58,7 +58,7 @@ export function probeInPageData() {
   for (const n of IN_PAGE_NAMES) {
     try {
       if (looksLikeMapPayload(window[n])) hits.push({ source: `window.${n}`, value: window[n] });
-    } catch (_) { /* cross-origin or getter throw — ignore */ }
+    } catch { /* cross-origin or getter throw — ignore */ }
   }
   return hits;
 }

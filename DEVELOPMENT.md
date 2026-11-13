@@ -37,6 +37,13 @@ payload reader and capture, the grid, the map markers' geometry, the plan notes,
 the settings validators and store, and the terrain descriptor table.
 
 ```bash
+npm run lint
+```
+
+Runs ESLint over the source, tests and scripts, with the rules in
+`eslint.config.js`.
+
+```bash
 npm run mockups
 ```
 
@@ -93,7 +100,19 @@ copy.
 | `src/capture.js` | Reads the client's live `window.mapData`, cut to the tiles on screen. Reader only — no requests |
 | `src/worker.js` | Web Worker entry; bundled to a string and inlined |
 | `src/focus.js` | The Optimal Sovereignty calculator — one named tile, planned on the shared engine. No DOM |
-| `src/panel.js` | Side panel UI — the three tabs, the gear menu and the changelog. All of it is drawn in a shadow root, so the game's CSS cannot reach it; reach it from the console through `document.querySelector('sov-scanner').shadowRoot` |
+| `src/settings.js` | The City Configuration's settings, one entry each in `SETTINGS_FIELDS`, and the validators that read them from the form or from storage. No DOM |
+| `src/map-view.js` | Names the panel and the overlay share: World Map routes, a claim's cell in a plan, a sovereignty level's numeral |
+| `src/ui/panel.js` | Side panel controller — builds the panel and wires the three tabs, the gear menu and the changelog to their renderers. All of it is drawn in a shadow root, so the game's CSS cannot reach it; reach it from the console through `document.querySelector('sov-scanner').shadowRoot` |
+| `src/ui/focus-pane.js` | The Optimal Sovereignty tab's controller — its form, the town picker and the plan it draws |
+| `src/ui/plan-block.js` | A live plan: the read-out under a tax slider, re-planned as the slider moves or a tile is crossed out. Shared by a result row and the optimiser |
+| `src/ui/layout.js` | The panel's drag, and the position, fold and open sections it keeps in this browser |
+| `src/ui/tooltips.js` | The panel's own tooltip, in place of the browser's |
+| `src/ui/css.js` | The panel's stylesheet |
+| `src/ui/forms.js` | The forms as markup — City Configuration, the gear menu, Site Search's filters, the optimiser — plus the folded sections' summaries and the changelog. No DOM |
+| `src/ui/results.js` | Site Search's results table as markup. No DOM |
+| `src/ui/plan.js` | A plan's read-out as markup — the balance, the military and upkeep notes, the optimiser's headline. No DOM |
+| `src/ui/grid.js` | The claim grid as markup. No DOM |
+| `src/ui/format.js` | Small pieces of markup and text the renderers share, and the one number formatter |
 | `src/changelog.js` | The player-facing changes in each version, shown under the panel's changelog button |
 | `src/overlay.js` | What the panel draws on the game's World Map — Site Search's numbered top ten and selected row, and the optimiser's plan — and the clicks on it that open a row or pick a tile to plan. The geometry is DOM-free and tested |
 | `src/app-icons.js` | The tool's own art as inline SVG: the app mark and the panel's line glyphs |

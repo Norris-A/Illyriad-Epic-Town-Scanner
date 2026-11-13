@@ -18,7 +18,7 @@ import {
   PRESTIGE_PRODUCTION_BONUS, PRESTIGE_KEYS, RESOURCE_BOOSTER_BONUS,
   CLAIM_RP_PER_LEVEL_DISTANCE, descriptorFor,
 } from '../src/constants.js';
-import { validatePlots } from '../src/panel.js';
+import { validatePlots } from '../src/settings.js';
 
 const close = (a, b, eps = 0.05) =>
   assert.ok(Math.abs(a - b) < eps, `expected ${a} ≈ ${b}`);

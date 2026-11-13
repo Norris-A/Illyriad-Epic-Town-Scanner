@@ -8,7 +8,7 @@ import {
   descriptorFor,
   sharedRungs,
 } from '../src/constants.js';
-import { descriptorText, descriptorBadge } from '../src/panel.js';
+import { descriptorText, descriptorBadge } from '../src/ui/grid.js';
 
 // A rung is NOT unique to one terrain: i:6 and i:120 both grant Papermill +3%
 // and were read in the same biome. The list is pinned so a new duplicate is

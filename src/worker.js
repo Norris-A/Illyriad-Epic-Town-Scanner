@@ -33,7 +33,7 @@ self.onmessage = (e) => {
         // pass for a mismatch.
         const plan = scoreSite({ neighbours, settings });
         // milsovShortfall: no tax down to tMin reaches the minimum military bonus.
-        if (plan && !plan.milsovShortfall && plan.tMax >= settings.tMin) {
+        if (!plan.milsovShortfall && plan.tMax >= settings.tMin) {
           // `rs` feeds the panel's Prefill button; `neighbours` lets it re-plan
           // at another tax without a new scan.
           results.push({ key, ...parseKey(key), rs: parseRs(tile), neighbours, ...plan });

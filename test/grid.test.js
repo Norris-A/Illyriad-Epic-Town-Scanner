@@ -5,7 +5,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { planGridHtml, cellKey, tipPosition } from '../src/panel.js';
+import { planGridHtml } from '../src/ui/grid.js';
+import { cellKey } from '../src/map-view.js';
+import { tipPosition } from '../src/ui/tooltips.js';
 
 /** The grid's rows, each as the list of cell class attributes across it. */
 function rows(html) {

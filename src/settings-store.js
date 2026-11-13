@@ -14,7 +14,7 @@ import {
   parseResourceMinimums,
   parsePrestige,
   parseTerrains,
-} from './panel.js';
+} from './settings.js';
 
 export const STORAGE_KEY = 'illyriad-sov-scanner.settings';
 
@@ -173,15 +173,6 @@ export function decodeSettings(text) {
   return { settings: sanitizeSettings(migrated), note: driftNote(migrated) };
 }
 
-/** A storage that keeps nothing, for when the real one is unavailable. */
-export function memoryStorage() {
-  const map = new Map();
-  return {
-    getItem: (k) => (map.has(k) ? map.get(k) : null),
-    setItem: (k, v) => map.set(k, String(v)),
-  };
-}
-
 /**
  * localStorage if it can be written to, else null. Some privacy settings make
  * the property itself throw, so it is probed.
@@ -208,7 +199,6 @@ function defaultStorage() {
  */
 export function createSettingsStore(storage = defaultStorage()) {
   const unavailable = !storage;
-  const store = storage ?? memoryStorage();
   return {
     load() {
       if (unavailable) {
@@ -218,7 +208,7 @@ export function createSettingsStore(storage = defaultStorage()) {
         };
       }
       try {
-        return decodeSettings(store.getItem(STORAGE_KEY));
+        return decodeSettings(storage.getItem(STORAGE_KEY));
       } catch {
         return { settings: sanitizeSettings({}), note: 'Saved settings could not be read — defaults restored.' };
       }
@@ -226,7 +216,7 @@ export function createSettingsStore(storage = defaultStorage()) {
     save(settings) {
       if (unavailable) return '';   // already said so once, on load
       try {
-        store.setItem(STORAGE_KEY, encodeSettings(settings));
+        storage.setItem(STORAGE_KEY, encodeSettings(settings));
         return '';
       } catch {
         return 'Settings could not be saved — this browser refused the write.';

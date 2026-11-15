@@ -15,7 +15,7 @@ import { DEFAULT_SETTINGS, WORLD_MAX_X } from '../src/constants.js';
 /** Plain claimable, settleable ground, as the live payload sends it. */
 const LAND = { sov: 1, hos: 1, b: 5, l: 2, rs: '5|5|5|5|5', i: 1 };
 
-const claimAt = (key, rd) => indexPayload({ data: {}, t: {}, s: { [key]: { rd, s: '3|?' } } });
+const claimAt = (key, rd) => indexPayload({ data: {}, t: {}, s: { [key]: { rd, sl: 3, ss: 0 } } });
 
 const EMPTY = indexPayload({ data: {}, t: {}, s: {} });
 
@@ -187,7 +187,7 @@ function viewWithBorder() {
   return {
     x: 100, y: 200, zoom: 2, data,
     t: { [tileKey(210, 100)]: { rd: 'Enemy' } },
-    s: { [tileKey(200, 90)]: { rd: 'Enemy', s: '1|0' } },
+    s: { [tileKey(200, 90)]: { rd: 'Enemy', sl: 1, ss: 0 } },
   };
 }
 

@@ -315,10 +315,11 @@ export function goldNet({ tax, consumption, uGold }) {
 /**
  * 0/1 knapsack over food candidates: weight round(cost_RP), value food. Returns
  * the best S_food at every spend from 0 to budget, and the set chosen at each.
- * `maxItems` adds a count limit, used only when the building cap binds.
+ * `maxItems` adds a count limit, used only when the building cap binds. An item
+ * with `slot: false` raises a claim already standing, so it is not counted.
  */
 export function knapsack(candidates, budget, maxItems = Infinity) {
-  const needCountDim = candidates.length > maxItems;
+  const needCountDim = candidates.filter((c) => c.slot !== false).length > maxItems;
   const width = budget + 1;
   const best = new Float64Array(width);
 
@@ -352,9 +353,10 @@ export function knapsack(candidates, budget, maxItems = Infinity) {
   for (let i = 0; i < candidates.length; i++) {
     const w = candidates[i].weight;
     const v = candidates[i].food;
-    for (let c = maxItems; c >= 1; c--) {
+    const used = candidates[i].slot === false ? 0 : 1;
+    for (let c = maxItems; c >= used; c--) {
       for (let cap = budget; cap >= w; cap--) {
-        const prev = dp[c - 1][cap - w];
+        const prev = dp[c - used][cap - w];
         if (prev === -Infinity) continue;
         const alt = prev + v;
         if (alt > dp[c][cap]) {
@@ -394,11 +396,11 @@ export function recoverSet(candidates, dpResult, spend) {
   if (dpResult.countLimited) {
     const { choice, bestCount, width } = dpResult;
     let count = bestCount[cap];
-    for (let i = candidates.length - 1; i >= 0 && count > 0; i--) {
+    for (let i = candidates.length - 1; i >= 0; i--) {
       if (choice[i][count * width + cap] === 1) {
         chosen.push(i);
         cap -= candidates[i].weight;
-        count--;
+        if (candidates[i].slot !== false) count--;
       }
     }
     return chosen.reverse();
@@ -421,12 +423,15 @@ export function recoverSet(candidates, dpResult, spend) {
  *
  *  - `rp`     research produced at `tax`, less the food claims and the minimum
  *  - `upkeep` production of the scarcest basic resource, less the city's
- *             buildings and the minimum
- *  - `slots`  the building cap, less the food claims
+ *             buildings, the minimum and `upkeepUsed`, what kept structures
+ *             already cost
+ *  - `slots`  the building cap, less the buildings already placed
  *
  * A research-bound site has rp = 0; a resource with no plots gives upkeep = 0.
  */
-export function milsovHeadroom({ tax, settings, uRp = 0, buildingsUsed = 0 }) {
+export function milsovHeadroom({
+  tax, settings, uRp = 0, buildingsUsed = 0, upkeepUsed = 0,
+}) {
   const s = settings;
   const slots = Math.max(0, (s.maxBuildings ?? 20) - buildingsUsed);
   // An infinite tax would otherwise read as an infinite budget.
@@ -437,7 +442,9 @@ export function milsovHeadroom({ tax, settings, uRp = 0, buildingsUsed = 0 }) {
     const produced = basicProduction({
       plots: s.plots[res], yield: BASIC_YIELD_L20, bonus: resourceBonus(s, res), tax,
     });
-    upkeep = Math.min(upkeep, produced - resourceMinimum(s, res) - buildingUpkeep(s, res));
+    upkeep = Math.min(
+      upkeep, produced - resourceMinimum(s, res) - buildingUpkeep(s, res) - upkeepUsed,
+    );
   }
   return {
     rp: Math.max(0, researchAt({
@@ -461,118 +468,250 @@ function descriptorBonus(tile, structure) {
  * Choose how many military buildings to place, at what levels and on which
  * tiles, for the most production bonus the budgets buy.
  *
- * `tiles` are free land tiles by ascending distance. A claim's research cost
- * is distance times a rate that rises with level, so the cheapest arrangement
- * puts the highest levels nearest: levels never rise with distance. The plan is
- * then five layer counts m[1] >= ... >= m[5], m[j] being how many tiles reach
- * level j, and every cost is a sum of per-layer terms:
+ * `tiles` are free land tiles by ascending distance. They are grouped by the
+ * points per level their terrain adds to the structure. Within a group every
+ * tile is worth the same, and a claim's research cost is distance times a rate
+ * that rises with level, so the cheapest arrangement puts the highest levels
+ * nearest. A group's plan is then five layer counts m[1] >= ... >= m[5], m[j]
+ * being how many of its tiles reach level j, and every cost is a sum of
+ * per-layer terms:
  *
- *     bonus  = 5 x SUM m[j]
+ *     bonus  = (5 + terrain) x SUM m[j]
  *     rp     = 10 x SUM RATE[j] x D_j(m[j])
  *     upkeep = SUM STEP[j] x m[j]
  *
- * where D_j(m) is the summed distance of the m nearest tiles not already at
- * level j, and RATE is the claim cost per level step: chancery for the first,
+ * where D_j(m) is the summed distance of the group's first m tiles not already
+ * at level j, and RATE is the claim cost per level step: chancery for the first,
  * then 1. Research favours few near buildings; the rising upkeep steps favour
- * many low ones. The search walks layers cheapest-first with a bound, and breaks
- * equal bonuses on lower research.
+ * many low ones; a terrain bonus can make a further tile worth its research.
+ * The search walks the groups' layers, richest group first, with a bound, and
+ * breaks equal bonuses on lower research.
  *
- * Tiles are taken nearest-first, so a slightly further tile whose terrain names
- * the structure, or that already holds a claim, can be missed. That only ever
- * understates the plan.
+ * `kept` are buildings of this structure the town keeps. Each goes first in its
+ * group and is never planned below its `buildingLevel`, even past the budgets,
+ * since it stands either way.
+ *
+ * Levels a tile already holds cost no research, which the order within a group
+ * ignores, so a tile whose claim would have been cheaper to build on can be
+ * missed. That only ever understates the plan.
  *
  * @param {number} [chancery] the paying city's chanceryFactor.
  * @param {string} [structure] the structure being placed; see descriptorBonus.
+ * @returns {{placed: object[], levels: number[], bonus: number, rp: number,
+ *   upkeep: number, buildings: number}} `levels[i]` is the level of `placed[i]`
  */
-export function planMilsov({ tiles, headroom, chancery = 1, structure }) {
-  const n = Math.min(tiles.length, Math.floor(headroom.slots));
+export function planMilsov({
+  tiles, headroom, chancery = 1, structure, kept = [],
+}) {
+  const slots = Math.max(Math.floor(headroom.slots), kept.length);
   // RATE[j], indexed from 0 for level 1.
   const RATE = [chancery, 1, 1, 1, 1];
+  const worth = (t) => MILSOV_BONUS_PER_LEVEL + descriptorBonus(t, structure);
 
-  // D[j][m]: summed distance of the m nearest tiles not already at level j+1.
-  const D = [];
-  for (let j = 0; j < MILSOV_MAX_LEVEL; j++) {
-    const pre = [0];
-    for (let i = 0; i < n; i++) pre.push(pre[i] + ((tiles[i].held ?? 0) > j ? 0 : tiles[i].d));
-    D.push(pre);
+  const groups = [];
+  const add = (t, minLevel) => {
+    let g = groups.find((x) => x.worth === worth(t));
+    if (!g) {
+      // floor[j]: how many of the group's tiles must reach level j+1.
+      g = { worth: worth(t), tiles: [], floor: new Array(MILSOV_MAX_LEVEL).fill(0) };
+      groups.push(g);
+    }
+    g.tiles.push(t);
+    for (let j = 0; j < minLevel; j++) g.floor[j] += 1;
+  };
+  [...kept]
+    .sort((a, b) => b.buildingLevel - a.buildingLevel || a.d - b.d)
+    .forEach((t) => add(t, t.buildingLevel));
+  tiles.forEach((t) => add(t, 0));
+  groups.sort((a, b) => b.worth - a.worth);
+  for (const g of groups) {
+    // D[j][m]: summed distance of the group's first m tiles not already at level j+1.
+    g.D = [];
+    for (let j = 0; j < MILSOV_MAX_LEVEL; j++) {
+      const pre = [0];
+      g.tiles.forEach((t, i) => pre.push(pre[i] + ((t.held ?? 0) > j ? 0 : t.d)));
+      g.D.push(pre);
+    }
+    g.rpOf = (j, m) => CLAIM_RP_PER_LEVEL_DISTANCE * RATE[j] * g.D[j][m];
   }
-  const rpOf = (j, m) => CLAIM_RP_PER_LEVEL_DISTANCE * RATE[j] * D[j][m];
 
-  const empty = { counts: [0, 0, 0, 0, 0], levels: [], bonus: 0, rp: 0, upkeep: 0, buildings: 0 };
-  if (n === 0) return empty;
-
-  const layerTotal = MILSOV_UPKEEP_STEP.reduce((a, b) => a + b, 0);
   const finish = (counts) => {
+    const placed = [];
     const levels = [];
     let bonus = 0;
-    for (let i = 0; i < n; i++) {
-      const level = counts.filter((m) => m > i).length;
-      if (level > 0) levels.push(level);
-      bonus += level * (MILSOV_BONUS_PER_LEVEL + descriptorBonus(tiles[i], structure));
-    }
-    return {
-      counts,
-      levels,
-      bonus,
-      rp: counts.reduce((sum, m, j) => sum + rpOf(j, m), 0),
-      upkeep: counts.reduce((sum, m, j) => sum + MILSOV_UPKEEP_STEP[j] * m, 0),
-      buildings: levels.length,
-    };
+    let rp = 0;
+    let upkeep = 0;
+    groups.forEach((g, c) => {
+      g.tiles.forEach((t, i) => {
+        const level = counts[c].filter((m) => m > i).length;
+        if (level === 0) return;
+        placed.push(t);
+        levels.push(level);
+        bonus += level * g.worth;
+      });
+      counts[c].forEach((m, j) => {
+        rp += g.rpOf(j, m);
+        upkeep += MILSOV_UPKEEP_STEP[j] * m;
+      });
+    });
+    return { placed, levels, bonus, rp, upkeep, buildings: placed.length };
   };
 
-  // Skip the search when both budgets cover every tile at the top level.
-  const topRp = D.reduce((sum, _, j) => sum + rpOf(j, n), 0);
-  if (topRp <= headroom.rp + EPS && layerTotal * n <= headroom.upkeep + EPS) {
-    return finish(new Array(MILSOV_MAX_LEVEL).fill(n));
+  // Skip the search when every tile fits and both budgets cover all of them at
+  // the top level.
+  const all = groups.reduce((sum, g) => sum + g.tiles.length, 0);
+  const layerTotal = MILSOV_UPKEEP_STEP.reduce((a, b) => a + b, 0);
+  const topRp = groups.reduce((sum, g) =>
+    sum + g.D.reduce((s, _, j) => s + g.rpOf(j, g.tiles.length), 0), 0);
+  if (all <= slots && topRp <= headroom.rp + EPS && layerTotal * all <= headroom.upkeep + EPS) {
+    return finish(groups.map((g) => new Array(MILSOV_MAX_LEVEL).fill(g.tiles.length)));
   }
 
-  const m = new Array(MILSOV_MAX_LEVEL).fill(0);
+  // The most bonus the groups from `c` on could add with `free` slots beyond
+  // their kept buildings': every slot filled at the top level, richest group
+  // first.
+  const restBound = (c, free) => {
+    let bound = 0;
+    let left = free;
+    for (let i = c; i < groups.length; i++) {
+      const n = Math.min(groups[i].floor[0] + left, groups[i].tiles.length);
+      bound += MILSOV_MAX_LEVEL * n * groups[i].worth;
+      left -= n - groups[i].floor[0];
+    }
+    return bound;
+  };
+
+  // Every group's level steps, best bonus per cost first, where a step costs
+  // the least it can: its upkeep, or its research on the group's nearest tile,
+  // nothing on a tile already holding that level.
+  const byValue = (steps) => steps
+    .map((s) => ({ ...s, ratio: s.cost > 0 ? groups[s.c].worth / s.cost : Infinity }))
+    .sort((a, b) => b.ratio - a.ratio || a.c - b.c);
+  const upkeepSteps = [];
+  const rpSteps = [];
+  groups.forEach((g, c) => {
+    for (let k = 0; k < MILSOV_MAX_LEVEL; k++) {
+      upkeepSteps.push({ c, k, cost: MILSOV_UPKEEP_STEP[k], cap: Infinity });
+      const bare = g.tiles.filter((t) => (t.held ?? 0) <= k);
+      rpSteps.push({ c, k, cost: 0, cap: g.tiles.length - bare.length });
+      if (bare.length) {
+        const nearest = Math.min(...bare.map((t) => t.d));
+        rpSteps.push({ c, k, cost: CLAIM_RP_PER_LEVEL_DISTANCE * RATE[k] * nearest, cap: Infinity });
+      }
+    }
+    // floorFrom[j]: the bonus of the kept buildings' floors from level j+1 up.
+    g.floorFrom = [0];
+    for (let k = MILSOV_MAX_LEVEL - 1; k >= 0; k--) {
+      g.floorFrom.unshift(g.floorFrom[0] + g.floor[k] * g.worth);
+    }
+  });
+  const upkeepOrder = byValue(upkeepSteps);
+  const rpOrder = byValue(rpSteps);
+
+  // The most bonus `budget` could still buy after group `c` has `v` tiles at
+  // level j+1, ignoring the other budget and the order levels are bought in:
+  // the steps left are bought in `order`, the last one in part. Kept
+  // buildings' floors are added on top, as they stand either way.
+  const budgetBound = (order, c, j, v, free, budget) => {
+    let bound = groups[c].floorFrom[j + 1];
+    for (let i = c + 1; i < groups.length; i++) bound += groups[i].floorFrom[0];
+    let left = Math.max(0, budget);
+    for (const s of order) {
+      let n = 0;
+      if (s.c === c) n = s.k > j ? v : 0;
+      else if (s.c > c) n = Math.min(groups[s.c].floor[0] + free, groups[s.c].tiles.length);
+      n = Math.min(n, s.cap);
+      if (n <= 0) continue;
+      const perLevel = groups[s.c].worth;
+      if (s.cost === 0) {
+        bound += n * perLevel;
+        continue;
+      }
+      const take = Math.min(n, left / s.cost);
+      bound += take * perLevel;
+      left -= take * s.cost;
+      if (left <= 0) break;
+    }
+    return bound;
+  };
+
+  const m = groups.map(() => new Array(MILSOV_MAX_LEVEL).fill(0));
   let best = null;
 
-  const search = (j, units, rp, upkeep, cap) => {
-    if (j === MILSOV_MAX_LEVEL) {
-      if (!best || units > best.units || (units === best.units && rp < best.rp - EPS)) {
-        best = { counts: [...m], units, rp };
+  // `rp`, `upkeep` and `used` start with every kept building's floor paid, so
+  // no group spends what a later group's kept buildings need; each layer then
+  // adds only what it takes above its floor.
+  const search = (c, j, bonus, rp, upkeep, used) => {
+    if (c === groups.length) {
+      if (!best || bonus > best.bonus + EPS || (bonus > best.bonus - EPS && rp < best.rp - EPS)) {
+        best = { counts: m.map((x) => [...x]), bonus, rp };
       }
       return;
     }
-    let vMax = 0;
-    while (vMax < cap
-        && rp + rpOf(j, vMax + 1) <= headroom.rp + EPS
-        && upkeep + MILSOV_UPKEEP_STEP[j] * (vMax + 1) <= headroom.upkeep + EPS) vMax++;
-
-    for (let v = vMax; v >= 0; v--) {
-      // No later layer may exceed this one, so (layers left) x v bounds what is
-      // left. Branches that can only tie survive, for the research tie-break.
-      if (best) {
-        const bound = units + (MILSOV_MAX_LEVEL - j) * v;
-        if (bound < best.units) break;
-        if (bound === best.units && rp >= best.rp - EPS) break;
-      }
-      m[j] = v;
-      search(j + 1, units + v, rp + rpOf(j, v), upkeep + MILSOV_UPKEEP_STEP[j] * v, v);
+    if (j === MILSOV_MAX_LEVEL) {
+      search(c + 1, 0, bonus, rp, upkeep, used);
+      return;
     }
-    m[j] = 0;
-  };
-  search(0, 0, 0, 0, n);
+    const g = groups[c];
+    const floor = g.floor[j];
+    const rpAbove = (v) => g.rpOf(j, v) - g.rpOf(j, floor);
+    const upkeepAbove = (v) => MILSOV_UPKEEP_STEP[j] * (v - floor);
+    const cap = j === 0 ? Math.min(g.tiles.length, floor + slots - used) : m[c][j - 1];
+    let vMax = floor;
+    while (vMax < cap
+        && rp + rpAbove(vMax + 1) <= headroom.rp + EPS
+        && upkeep + upkeepAbove(vMax + 1) <= headroom.upkeep + EPS) vMax++;
 
-  return best ? finish(best.counts) : empty;
+    for (let v = vMax; v >= floor; v--) {
+      // No later layer of this group may exceed this one, and later groups are
+      // worth no more per level, so this bounds what is left; it only falls with
+      // v. Branches that can only tie survive, for the research tie-break.
+      const free = slots - used - (j === 0 ? v - floor : 0);
+      if (best) {
+        const bound = bonus + (MILSOV_MAX_LEVEL - j) * v * g.worth + restBound(c + 1, free);
+        if (bound < best.bonus - EPS) break;
+        if (bound < best.bonus + EPS && rp >= best.rp - EPS) break;
+        // Not monotone in v: a smaller layer frees budget for others.
+        const byBudget = bonus + v * g.worth + Math.min(
+          budgetBound(upkeepOrder, c, j, v, free, headroom.upkeep - upkeep - upkeepAbove(v)),
+          budgetBound(rpOrder, c, j, v, free, headroom.rp - rp - rpAbove(v)),
+        );
+        if (byBudget < best.bonus - EPS) continue;
+        if (byBudget < best.bonus + EPS && rp >= best.rp - EPS) continue;
+      }
+      m[c][j] = v;
+      search(c, j + 1, bonus + v * g.worth, rp + rpAbove(v),
+        upkeep + upkeepAbove(v), used + (j === 0 ? v - floor : 0));
+    }
+    m[c][j] = 0;
+  };
+  let floorRp = 0;
+  let floorUpkeep = 0;
+  for (const g of groups) {
+    g.floor.forEach((n, j) => {
+      floorRp += g.rpOf(j, n);
+      floorUpkeep += MILSOV_UPKEEP_STEP[j] * n;
+    });
+  }
+  search(0, 0, 0, floorRp, floorUpkeep, kept.length);
+
+  return finish(best.counts);
 }
 
 /**
- * Place a chosen staircase on the tiles. Each claim is at its building's level,
+ * Place a chosen plan on its tiles. Each claim is at its building's level,
  * since a claim above its building buys nothing.
  */
-function milsovClaims({ tiles, levels, structure, chancery }) {
+function milsovClaims({ placed, levels, structure, chancery }) {
   return levels.map((level, i) => {
-    const held = tiles[i].held ?? 0;
+    const held = placed[i].held ?? 0;
     return {
-      ...tiles[i],
+      ...placed[i],
       structure,
       // A standing claim keeps its level.
       sovLevel: Math.max(level, held),
       buildingLevel: level,
-      ...claimUpkeep(tiles[i].d, level, chancery, held),
+      ...claimUpkeep(placed[i].d, level, chancery, held),
     };
   });
 }
@@ -598,28 +737,60 @@ export function prepareSite({ neighbours, settings }) {
   const s = settings;
   const chancery = chanceryFactor(s);
   const maxBuildings = s.maxBuildings ?? 20;
+  const structure = s.milsovStructure || null;
 
   // Equal distances put the lower food rating first, for military hosts.
-  const byDistance = neighbours
+  const tiles = neighbours
     .map((n, idx) => ({ ...n, idx, d: distance(n.dx, n.dy) }))
     .sort((a, b) => a.d - b.d || a.food - b.food);
 
+  // A building the town keeps stands at every tax, in its slot. A kept food
+  // claim may still be raised to Sov V.
+  const isKept = (t) => t.held > 0 && !!t.heldStructure;
+  const isFood = (t) => SOV_STRUCTURE_BY_KEY[t.heldStructure].boosts === 'food';
+  const keptStructures = tiles.filter((t) => isKept(t) && !isFood(t)).map((t) => ({
+    ...t,
+    structure: t.heldStructure,
+    sovLevel: t.held,
+    buildingLevel: t.heldBuilding,
+    rp: 0,
+    gold: 0,
+  }));
+  const byDistance = tiles.filter((t) => !isKept(t) || isFood(t));
+  const keptFood = byDistance.filter(isKept).map((t) => ({ ...t, level: t.held, rp: 0, gold: 0 }));
+  // Kept buildings of the planned structure are planned on and may be raised;
+  // the rest stand as they are.
+  const keptHosts = keptStructures.filter((k) => k.structure === structure);
+  // The building's level sets a food claim's bonus; the claim's level sets its cost.
+  const foodAtLevel = (t) => (t.food * t.heldBuilding) / FOOD_CLAIM_LEVEL;
+
   // A tile already holding part of a level 5 claim is charged only the rest.
-  const foodCandidates = byDistance
-    .filter((t) => t.food > 0)
-    .map((t) => {
-      const up = claimUpkeep(t.d, FOOD_CLAIM_LEVEL, chancery, t.held);
-      // Rounded up, so a set of claims never costs more than the spend it fits.
-      return { ...t, level: FOOD_CLAIM_LEVEL, ...up, weight: Math.ceil(Math.max(0, up.rp - EPS)) };
-    });
+  const foodClaim = (t) => {
+    const up = claimUpkeep(t.d, FOOD_CLAIM_LEVEL, chancery, t.held);
+    // Rounded up, so a set of claims never costs more than the spend it fits.
+    return { ...t, level: FOOD_CLAIM_LEVEL, ...up, weight: Math.ceil(Math.max(0, up.rp - EPS)) };
+  };
+  const foodCandidates = [
+    ...byDistance.filter((t) => t.food > 0 && !isKept(t)).map(foodClaim),
+    // Raising a kept claim adds the rest of its food, in the slot it already has.
+    ...keptFood.filter((t) => foodAtLevel(t) < t.food).map((t) => ({
+      ...foodClaim(t), food: t.food - foodAtLevel(t), slot: false, raises: true,
+    })),
+  ];
   // The most research the city can produce, at 0% tax; a smaller budget would
   // truncate the knapsack.
   const rpBonus = prestigeBonus(s, 'research');
   const budget = Math.max(0, Math.round(researchAt({ research: computeResearch(s), rpBonus, tax: 0 })));
+  const dp = knapsack(
+    foodCandidates, budget, Math.max(0, maxBuildings - keptFood.length - keptStructures.length),
+  );
+  const keptFoodTotal = keptFood.reduce((sum, t) => sum + foodAtLevel(t), 0);
+  for (let spend = 0; spend <= budget; spend++) dp.best[spend] += keptFoodTotal;
+
   return {
     settings: s,
     chancery,
-    structure: s.milsovStructure || null,
+    structure,
     k: computeK(s.plots.food),
     bOther: computeBOther(s),
     consumption: computeConsumption(s),
@@ -628,15 +799,25 @@ export function prepareSite({ neighbours, settings }) {
     minFood: resourceMinimum(s, 'food'),
     minRp: resourceMinimum(s, 'research'),
     byDistance,
+    keptFood,
+    keptStructures,
+    keptHosts,
+    keptFixed: keptStructures.filter((k) => !keptHosts.includes(k)),
     foodCandidates,
     budget,
-    dp: knapsack(foodCandidates, budget, maxBuildings),
+    dp,
   };
 }
 
 /** The food claims chosen at a spend, and the research they cost. */
 function foodClaims(ctx, spend) {
-  const tiles = recoverSet(ctx.foodCandidates, ctx.dp, spend).map((i) => ctx.foodCandidates[i]);
+  const chosen = recoverSet(ctx.foodCandidates, ctx.dp, spend).map((i) => ctx.foodCandidates[i]);
+  const raised = new Map(chosen.filter((c) => c.raises).map((c) => [c.idx, c]));
+  const tiles = [
+    // A raising candidate carries only the food it adds; the claim gives it all.
+    ...ctx.keptFood.map((t) => (raised.has(t.idx) ? { ...raised.get(t.idx), food: t.food } : t)),
+    ...chosen.filter((c) => !c.raises),
+  ];
   return { spend, tiles, rp: sumRp(tiles) };
 }
 
@@ -692,18 +873,27 @@ export function planSiteAt(ctx, tax, { bestEffort = false } = {}) {
   const { spend, tiles, rp: foodRp } = food;
   const claimed = new Set(tiles.map((t) => t.idx));
   const free = ctx.byDistance.filter((t) => !claimed.has(t.idx));
-  // Water takes no structure. planMilsov and milsovClaims must get this same
-  // list in this order: levels are mapped onto tiles by position.
+  // Water takes no structure.
   const hosts = free.filter((t) => !t.water);
+  const fixedUpkeep = milsovUpkeep(ctx.keptFixed);
   const headroom = milsovHeadroom({
-    tax, settings: s, uRp: foodRp, buildingsUsed: tiles.length,
+    tax,
+    settings: s,
+    uRp: foodRp,
+    buildingsUsed: tiles.length + ctx.keptFixed.length,
+    upkeepUsed: fixedUpkeep,
   });
   const military = planMilsov({
-    tiles: ctx.structure ? hosts : [], headroom, chancery: ctx.chancery, structure: ctx.structure,
+    tiles: ctx.structure ? hosts : [],
+    headroom,
+    chancery: ctx.chancery,
+    structure: ctx.structure,
+    kept: ctx.keptHosts,
   });
-  const milsov = milsovClaims({
-    tiles: hosts, levels: military.levels, structure: ctx.structure, chancery: ctx.chancery,
+  const placed = milsovClaims({
+    placed: military.placed, levels: military.levels, structure: ctx.structure, chancery: ctx.chancery,
   });
+  const milsov = [...ctx.keptFixed, ...placed];
 
   const sFood = ctx.dp.best[spend];
   const milsovRp = sumRp(milsov);
@@ -735,10 +925,10 @@ export function planSiteAt(ctx, tax, { bestEffort = false } = {}) {
     headroom,
     milsov,
     milsovBonus: military.bonus,
-    milsovUpkeep: military.upkeep,
+    milsovUpkeep: military.upkeep + fixedUpkeep,
     milsovRp,
     milsovGold: milsov.reduce((sum, a) => sum + a.gold, 0),
-    milsovBlocked: ctx.structure && milsov.length === 0
+    milsovBlocked: ctx.structure && placed.length === 0
       ? milsovBlockedBy({ hosts, free, headroom, chancery: ctx.chancery })
       : null,
     resCeiling: resCeiling.ceiling,
@@ -782,7 +972,9 @@ function milsovAtFloor(ctx, { required, floor, ceiling }) {
  * @returns {{tMax: number, binding: string, sFood: number, spend: number}}
  */
 function siteCeiling(ctx) {
-  const res = tRes({ milsovAssignments: [], plots: ctx.settings.plots, settings: ctx.settings }).ceiling;
+  const res = tRes({
+    milsovAssignments: ctx.keptStructures, plots: ctx.settings.plots, settings: ctx.settings,
+  }).ceiling;
   const ceilingAt = (sFood, uRp) => tMax({
     food: tFood({
       bOther: ctx.bOther, sFood, consumption: ctx.consumption, k: ctx.k, minimum: ctx.minFood,
@@ -854,12 +1046,16 @@ export function scoreSiteFrom(ctx) {
  * plots, or one owing a basic resource it has no plots of.
  */
 function fallbackPlan(ctx, winner) {
-  const tiles = recoverSet(ctx.foodCandidates, ctx.dp, winner.spend)
-    .map((i) => ctx.foodCandidates[i]);
+  const { tiles } = foodClaims(ctx, winner.spend);
   const claimed = new Set(tiles.map((t) => t.idx));
   const free = ctx.byDistance.filter((t) => !claimed.has(t.idx));
+  const keptUpkeep = milsovUpkeep(ctx.keptStructures);
   const headroom = milsovHeadroom({
-    tax: winner.tMax, settings: ctx.settings, uRp: winner.spend, buildingsUsed: tiles.length,
+    tax: winner.tMax,
+    settings: ctx.settings,
+    uRp: winner.spend,
+    buildingsUsed: tiles.length + ctx.keptStructures.length,
+    upkeepUsed: keptUpkeep,
   });
   return {
     tax: winner.tMax,
@@ -876,9 +1072,10 @@ function fallbackPlan(ctx, winner) {
     tiles,
     free,
     headroom,
-    milsov: [],
-    milsovBonus: 0,
-    milsovUpkeep: 0,
+    milsov: ctx.keptStructures,
+    milsovBonus: ctx.keptHosts.reduce((sum, k) =>
+      sum + k.buildingLevel * (MILSOV_BONUS_PER_LEVEL + descriptorBonus(k, ctx.structure)), 0),
+    milsovUpkeep: keptUpkeep,
     milsovRp: 0,
     milsovGold: 0,
     milsovBlocked: ctx.structure

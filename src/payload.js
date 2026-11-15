@@ -2,7 +2,7 @@
 // (through terrainId), never by the `t` sprite name.
 
 import {
-  descriptorFor, IMPASSABLE_TERRAIN, TERRAIN_NAMES,
+  descriptorFor, IMPASSABLE_TERRAIN, SOV_STRUCTURES, TERRAIN_NAMES,
   WORLD_MIN_X, WORLD_MAX_X, WORLD_MIN_Y, WORLD_MAX_Y,
 } from './constants.js';
 
@@ -90,9 +90,9 @@ export function indexPayload(payload) {
   return { claims, towns };
 }
 
-/** A claim's sovereignty level, from "<sov level>|<building level>"; null if unreadable. */
+/** A claim's sovereignty level, its `sl`; null if unreadable. Its `ss` is the building's. */
 export function claimLevel(claim) {
-  const n = Number(String(claim?.s ?? '').split('|')[0]);
+  const n = Number(claim?.sl);
   return Number.isInteger(n) && n >= 1 && n <= 5 ? n : null;
 }
 
@@ -101,19 +101,13 @@ export function claimLevel(claim) {
  * usually holds the name.
  */
 export function townIdentity(town) {
-  const text = (v) => String(v ?? '').trim();
   const rec = townRecord(town);
-  const parts = rec ? null : townString(town).split('|');
-  return (rec ? [rec.TownName, rec.TownId] : [parts[0], parts[1]]).map(text).filter(Boolean);
+  return rec ? [rec.TownName, rec.TownId].map((v) => String(v ?? '').trim()).filter(Boolean) : [];
 }
 
-/**
- * The name of the player who owns a town: `Player` on the record, or the
- * eleventh field of the pipe string. Blank when neither reads.
- */
+/** The name of the player who owns a town, blank when its record does not say. */
 function townPlayer(town) {
-  const rec = townRecord(town);
-  return String((rec ? rec.Player : townString(town).split('|')[10]) ?? '').trim();
+  return String(townRecord(town)?.Player ?? '').trim();
 }
 
 /**
@@ -147,15 +141,25 @@ export function isClaimable(tile, key, idx, settings) {
   return true;
 }
 
+const STRUCTURE_KEY_BY_NAME = new Map(SOV_STRUCTURES.map((s) => [s.name, s.key]));
+
 /**
- * The sovereignty level the planning town already holds and keeps on a tile,
- * which the plan builds on instead of paying for again. Zero otherwise,
- * including when the level does not read.
+ * The claim the planning town already holds and keeps on a tile: its
+ * sovereignty level, which the plan pays for only above, and the structure
+ * standing on it with that building's level. Level zero when there is none or
+ * it does not read; structure null when no known building stands there.
  */
-function heldLevel(key, idx, settings) {
+function heldClaim(key, idx, settings) {
   const claim = idx.claims.get(key);
-  if (!isTownsClaim(claim, settings?.preserveTown)) return 0;
-  return claimLevel(claim) ?? 0;
+  if (!isTownsClaim(claim, settings?.preserveTown)) return { level: 0, structure: null, building: 0 };
+  const level = claimLevel(claim) ?? 0;
+  const building = Number(claim.ss);
+  return {
+    level,
+    structure: level > 0 ? (STRUCTURE_KEY_BY_NAME.get(claim.b) ?? null) : null,
+    // An unreadable building level is taken to match the claim's.
+    building: Number.isInteger(building) && building >= 1 && building <= 5 ? building : level,
+  };
 }
 
 /**
@@ -230,39 +234,16 @@ export function townRecord(town) {
 }
 
 /**
- * The pipe string "name|townID|x|y|population|playerID|...", the older shape of
- * a town entry, found by its shape: four or more parts with numbers in the x and
- * y slots.
- */
-export function townString(town) {
-  if (typeof town === 'string') return town;
-  if (!town || typeof town !== 'object') return '';
-  for (const v of Object.values(town)) {
-    if (typeof v !== 'string' || !v.includes('|')) continue;
-    const parts = v.split('|');
-    if (parts.length >= 4 && Number.isFinite(Number(parts[2])) && parts[2] !== ''
-      && Number.isFinite(Number(parts[3])) && parts[3] !== '') {
-      return v;
-    }
-  }
-  return '';
-}
-
-/**
- * Town names and positions from the `t` block, from either the record or the
- * pipe string. Position falls back to the key, and the name to blank.
+ * Town names and positions from the `t` block's records. Position falls back to
+ * the key, and the name to blank.
  */
 export function extractTowns(payload) {
   const out = [];
   for (const [key, town] of Object.entries(payload.t ?? {})) {
     const rec = townRecord(town);
-    const parts = rec ? null : townString(town).split('|');
-    const x = Number(rec ? rec.X : parts[2]);
-    const y = Number(rec ? rec.Y : parts[3]);
-    const pos = Number.isNaN(x) || Number.isNaN(y) ? parseKey(key) : { x, y };
     out.push({
-      ...pos,
-      name: (rec ? rec.TownName : parts[0]) ?? '',
+      ...(rec ? { x: Number(rec.X), y: Number(rec.Y) } : parseKey(key)),
+      name: rec?.TownName ?? '',
       own: town && town.rd === 'Yours',
       // Confederates ("Confed ") are kept at a stranger's distance.
       ally: town && town.rd === 'Alliance',
@@ -303,7 +284,9 @@ export function collectNeighbourhood(payload, key, rClaim, idx, settings) {
         continue;
       }
       if (!isClaimable(tile, nKey, idx, settings)) continue;
-      const held = heldLevel(nKey, idx, settings);
+      const { level: held, structure: heldStructure, building: heldBuilding } = heldClaim(
+        nKey, idx, settings,
+      );
       const claim = idx.claims.get(nKey);
       neighbours.push({
         dx,
@@ -314,6 +297,8 @@ export function collectNeighbourhood(payload, key, rClaim, idx, settings) {
         water: isWaterTile(tile),
         // Costs downstream are for the levels above this.
         held,
+        heldStructure,
+        heldBuilding,
         // A claim stands here that the plan does not keep and prices as bare
         // ground.
         relaid: held === 0 && !!claim,

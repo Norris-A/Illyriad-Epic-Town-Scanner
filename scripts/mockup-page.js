@@ -74,7 +74,7 @@ function town(name, player, x, y, rd, claimed = []) {
   towns[key] = { t: { TownName: name, Player: player, X: String(x), Y: String(y) }, rd };
   if (data[key]) data[key] = { i: 4, b: 5, rs: '5|5|5|3|7' };
   for (const [dx, dy, level] of claimed) {
-    claims[tileKey(y + dy, x + dx)] = { rd, s: `${level}|?`, t: name, pn: player };
+    claims[tileKey(y + dy, x + dx)] = { rd, sl: level, ss: 0, t: name, pn: player };
   }
 }
 

@@ -100,7 +100,7 @@ export function planBlockHtml({ ctx, base, plan, floor, geom }) {
 
 /**
  * What the plan did with the town's existing claims: what keeping them costs,
- * or how many were laid out afresh. Kept claims' buildings are costed as new.
+ * or how many were laid out afresh.
  */
 function keptNote(r) {
   if (!r?.preserving) {
@@ -124,8 +124,10 @@ function keptNote(r) {
       + `${escapeHtml(r.preserveTown)} already holds, costing `
       + `${count(Math.round(kept.rp))} research and `
       + `${count(Math.round(kept.rp * CLAIM_GOLD_PER_RP))} gold an hour, which is taken off `
-      + 'the top. The plan is free to build on those squares and pays only for the levels it '
-      + 'raises them by. Their buildings are costed as if new.');
+      + 'the top. Their buildings stay as they stand, counted in the building cap and the '
+      + 'upkeep. The plan may raise a food claim to Sov V or a building of the military '
+      + 'structure it plans, or build on a claim with no building, and pays only for the '
+      + 'levels it adds.');
   }
   if (kept.unknownLevel) {
     parts.push(`${kept.unknownLevel} more carry a level that could not be read, `

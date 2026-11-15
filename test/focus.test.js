@@ -15,12 +15,14 @@ import {
   keptClaims,
   ownTowns,
 } from '../src/focus.js';
-import { DEFAULT_SETTINGS, PLOT_KEYS, PLOT_TOTAL, FOOD_CLAIM_LEVEL } from '../src/constants.js';
 import {
-  tileKey, indexPayload, townString, townRecord, neighbourhood, inWorld, isWaterTile,
+  DEFAULT_SETTINGS, PLOT_KEYS, PLOT_TOTAL, FOOD_CLAIM_LEVEL, MILSOV_UPKEEP_BY_LEVEL,
+} from '../src/constants.js';
+import {
+  tileKey, indexPayload, townRecord, neighbourhood, inWorld, isWaterTile,
   claimLevel,
 } from '../src/payload.js';
-import { scoreSite, claimUpkeep, distance } from '../src/scoring.js';
+import { scoreSite, claimUpkeep, distance, planSiteAt } from '../src/scoring.js';
 import { focusFormHtml } from '../src/ui/forms.js';
 import { planGridHtml } from '../src/ui/grid.js';
 import { claimHolderText } from '../src/ui/plan.js';
@@ -168,7 +170,7 @@ function withTown(payload, name = HOME, id = '1') {
 }
 
 const ownClaim = (level, town = HOME) =>
-  ({ rd: 'Yours', pn: PLAYER, s: `${level}|?`, b: 'Unknown', t: town });
+  ({ rd: 'Yours', pn: PLAYER, sl: level, ss: 0, b: 'Unknown', t: town });
 
 /** The same payload, with `n` of the nearest ring already claimed by `town`. */
 function withOwnClaims(n = 3, level = 3, town = HOME) {
@@ -181,11 +183,10 @@ function withOwnClaims(n = 3, level = 3, town = HOME) {
   return payload;
 }
 
-test("a claim's level comes out of the s block, and a bad one is refused", () => {
-  assert.equal(claimLevel({ s: '3|?' }), 3);
-  assert.equal(claimLevel({ s: '5' }), 5);
+test("a claim's level comes out of its sl field, and a bad one is refused", () => {
+  assert.equal(claimLevel({ sl: 3, ss: 0 }), 3);
   // Charging a claim the wrong level is worse than not charging it at all.
-  for (const bad of [{ s: '?|?' }, { s: '' }, { s: '0|?' }, { s: '9|?' }, {}, null]) {
+  for (const bad of [{ sl: '?' }, { sl: 0 }, { sl: 9 }, { sl: 2.5 }, {}, null]) {
     assert.equal(claimLevel(bad), null, JSON.stringify(bad));
   }
 });
@@ -195,10 +196,10 @@ test('only this town\'s own claims inside the radius are kept, and only readable
   // An alliance claim, one of yours with an unreadable level, one belonging to
   // another town of yours, and one naming no town at all. None may be billed to
   // this town, and only the second is a claim it would have kept.
-  payload.s[tileKey(102, 100)] = { rd: 'Alliance', s: '5|?' };
-  payload.s[tileKey(100, 102)] = { rd: 'Yours', pn: PLAYER, s: '?|?', t: HOME };
+  payload.s[tileKey(102, 100)] = { rd: 'Alliance', sl: 5, ss: 0 };
+  payload.s[tileKey(100, 102)] = { rd: 'Yours', pn: PLAYER, t: HOME };
   payload.s[tileKey(98, 100)] = ownClaim(5, NEXT_DOOR);
-  payload.s[tileKey(100, 98)] = { rd: 'Yours', pn: PLAYER, s: '5|?' };
+  payload.s[tileKey(100, 98)] = { rd: 'Yours', pn: PLAYER, sl: 5, ss: 0 };
   const kept = keptClaims({
     payload,
     centre: { x: 100, y: 100 },
@@ -282,6 +283,50 @@ test('a claim already at level 5 costs the food plan nothing to take', () => {
   assert.equal(t.weight, 0);
 });
 
+/** A claim of this town's with a building standing on it. */
+const standing = (sov, building, b) => ({ ...ownClaim(sov), ss: building, b });
+
+test('kept food claims stay in the plan at every tax, even on the building cap', () => {
+  // Both kept tiles are the poorest, so a cap of five would rather spend their
+  // slots on richer new claims.
+  const payload = withTown(payloadAround({ rs: '5|5|5|5|10' }));
+  payload.s = {
+    [tileKey(100, 101)]: standing(5, 5, 'Farmstead'),
+    [tileKey(101, 100)]: standing(3, 3, 'Farmstead'),
+  };
+  payload.data[tileKey(100, 101)].rs = '5|5|5|5|5';
+  payload.data[tileKey(101, 100)].rs = '5|5|5|5|5';
+  const held = run({ preserveSovereignty: true }, { ...settings, maxBuildings: 5 }, payload);
+  assert.ok(held.base.tMax >= 1, 'precondition: the site holds a tax above 0%');
+  for (let tax = 0; tax <= held.base.tMax; tax++) {
+    const plan = planSiteAt(held.ctx, tax);
+    const at = (dx, dy) => plan.tiles.find((t) => t.dx === dx && t.dy === dy);
+    assert.equal(at(1, 0)?.level, 5, `Sov V dropped at ${tax}%`);
+    assert.ok(at(0, 1)?.level >= 3, `Sov III dropped or lowered at ${tax}%`);
+    assert.ok(plan.tiles.length <= 5, `over the cap at ${tax}%`);
+  }
+});
+
+test('a kept military building stays, in its slot and paid for, raised only if planned', () => {
+  const payload = withTown(payloadAround({ rs: '5|5|5|5|10' }));
+  payload.s = { [tileKey(101, 101)]: standing(1, 1, 'Target Range') };
+  for (const structure of [null, 'trainingGround', 'targetRange']) {
+    const held = run(
+      { preserveSovereignty: true }, { ...settings, maxBuildings: 5, milsovStructure: structure }, payload,
+    );
+    assert.ok(held.base.tMax >= 1, 'precondition: the site holds a tax above 0%');
+    for (let tax = 0; tax <= held.base.tMax; tax++) {
+      const plan = planSiteAt(held.ctx, tax);
+      const range = plan.milsov.find((m) => m.dx === 1 && m.dy === 1);
+      assert.equal(range?.structure, 'targetRange', `at ${tax}%`);
+      if (structure === 'targetRange') assert.ok(range.buildingLevel >= 1, `lowered at ${tax}%`);
+      else assert.deepEqual([range.sovLevel, range.buildingLevel], [1, 1], `changed at ${tax}%`);
+      assert.ok(plan.tiles.length + plan.milsov.length <= 5, `over the cap at ${tax}%`);
+      assert.ok(plan.milsovUpkeep >= MILSOV_UPKEEP_BY_LEVEL[1], `upkeep not charged at ${tax}%`);
+    }
+  }
+});
+
 // Whether you would give a claim back does not arise on one you are keeping.
 test('preserving does not depend on "treat your own claims as available"', () => {
   const payload = withOwnClaims(3);
@@ -341,38 +386,44 @@ test("off, the grid does not call the town's unused claims unclaimed", () => {
 
 // --- whose sovereignty it is ------------------------------------------------
 
-// The shapes the live game sends: the town as a pipe string, and a claim naming
-// its town by bare name, with the level ahead of the building's.
+// The shapes the client keeps in window.mapData: the town as a record, and a
+// claim naming its town by bare name, with its levels in sl and ss.
 test('claims in the live payload shape are matched to the town that holds them', () => {
   const payload = payloadAround({ cx: 360, cy: -3178 });
   payload.t = {
     '-3178|360': {
-      t: 'Eruyt|602050|360|-3178|8939|444185|2|1|75|1|Firebolty|YARR!|0|2-elf-|3',
+      t: {
+        TownName: 'Eruyt', TownId: 602050, X: '360', Y: '-3178', Player: 'Firebolty', Cap: 1,
+      },
       r: 100,
       rd: 'Yours',
-      v: 14,
+      v: 17,
       p: 444185,
     },
   };
-  const claim = (t, s, b) => ({
-    r: 100, rd: 'Yours', pn: 'Firebolty', t, a: 'YARR!', s, b, v: 4.5, p: 444185,
+  const claim = (t, sl, ss, b) => ({
+    r: 100, rd: 'Yours', sl, ss, pn: 'Firebolty', t, a: 'YARR!', b, v: 4.5, p: 444185,
   });
   payload.s = {
-    '-3179|359': claim('Eruyt', '3|3', 'Fishery'),
-    '-3177|360': claim('Eruyt', '5|4', 'Fishery'),
-    '-3180|361': claim('Yascaret', '5|4', 'Fishery'),
+    '-3179|359': claim('Eruyt', 3, 3, 'Fishery'),
+    '-3177|360': claim('Eruyt', 5, 4, 'Fishery'),
+    '-3180|361': claim('Yascaret', 5, 4, 'Fishery'),
+    '-3178|361': claim('Eruyt', 4, 3, 'Farmstead'),
   };
 
   const held = run({ x: 360, y: -3178, preserveSovereignty: true }, settings, payload);
   assert.equal(held.preserveTown, 'Eruyt');
-  assert.equal(held.kept.claims.length, 2);
+  assert.equal(held.kept.claims.length, 3);
+  assert.equal(held.kept.unknownLevel, 0);
   assert.equal(held.kept.otherTown, 1);
   assert.equal(held.neighbours.find((t) => t.dx === -1 && t.dy === -1).held, 3);
   assert.equal(held.neighbours.find((t) => t.dx === 0 && t.dy === 1).held, 5);
+  const split = held.neighbours.find((t) => t.dx === 1 && t.dy === 0);
+  assert.deepEqual([split.held, split.heldBuilding, split.heldStructure], [4, 3, 'farmstead']);
   assert.ok(!held.neighbours.some((t) => t.dx === 1 && t.dy === -2), "Yascaret's claim is not Eruyt's");
 
   const rework = run({ x: 360, y: -3178, preserveSovereignty: false }, settings, payload);
-  assert.equal(rework.released, 2);
+  assert.equal(rework.released, 3);
   assert.ok(rework.neighbours.some((t) => t.dx === 0 && t.dy === 1));
   assert.ok(!rework.neighbours.some((t) => t.dx === 1 && t.dy === -2));
 });
@@ -425,13 +476,15 @@ test('a tile carrying no town of yours has no sovereignty of its own to keep', (
 test("only the town's own player's claims are its own, whatever the relation", () => {
   const payload = payloadAround({ cx: 445, cy: -3241 });
   payload.t = {
-    '-3241|445': { t: 'Yew|320471|445|-3241|29513|258735|1|1|75|1|Wartow|SkB|0|1-human-|5' },
+    '-3241|445': {
+      t: { TownName: 'Yew', TownId: 320471, X: '445', Y: '-3241', Player: 'Wartow' },
+    },
   };
-  const claim = (pn, s) => ({ pn, t: 'Yew', a: 'SkB', s, b: 'Unknown' });
+  const claim = (pn, sl) => ({ sl, ss: 0, pn, t: 'Yew', a: 'SkB', b: 'Unknown' });
   payload.s = {
-    '-3242|444': claim('Wartow', '5|0'),
-    '-3240|445': claim('Wartow', '4|0'),
-    '-3241|446': claim('Froed', '5|0'),
+    '-3242|444': claim('Wartow', 5),
+    '-3240|445': claim('Wartow', 4),
+    '-3241|446': claim('Froed', 5),
   };
 
   const held = run({ x: 445, y: -3241, preserveSovereignty: true }, settings, payload);
@@ -446,18 +499,20 @@ test("another player's town keeps its own claims, and only those", () => {
   const payload = payloadAround({ cx: 632, cy: -2678 });
   payload.t = {
     '-2678|632': {
-      t: '01. Tree Fort|602006|632|-2678|17804|444217|1|1|64|1|Grob Gob Glob Grod|YARR!|0|ygg-|4',
+      t: {
+        TownName: '01. Tree Fort', TownId: 602006, X: '632', Y: '-2678', Player: 'Grob Gob Glob Grod',
+      },
       r: 100,
       rd: 'Alliance',
     },
   };
-  const claim = (t, s) => ({
-    r: 100, rd: 'Alliance', pn: 'Grob Gob Glob Grod', t, a: 'YARR!', s, b: 'Unknown',
+  const claim = (t, sl) => ({
+    r: 100, rd: 'Alliance', sl, ss: 0, pn: 'Grob Gob Glob Grod', t, a: 'YARR!', b: 'Unknown',
   });
   payload.s = {
-    '-2679|631': claim('01. Tree Fort', '4|0'),
-    '-2678|631': claim('01. Tree Fort', '3|0'),
-    '-2677|630': claim('03. Fire Kingdom', '1|0'),
+    '-2679|631': claim('01. Tree Fort', 4),
+    '-2678|631': claim('01. Tree Fort', 3),
+    '-2677|630': claim('03. Fire Kingdom', 1),
   };
 
   const held = run({ x: 632, y: -2678, preserveSovereignty: true }, settings, payload);
@@ -483,7 +538,7 @@ test('a claim naming the town by id rather than by name is still its own', () =>
 
 test('a claim whose level will not read is planned as bare ground', () => {
   const payload = withOwnClaims(1);
-  payload.s[tileKey(100, 101)] = { rd: 'Yours', pn: PLAYER, s: '?|?', t: HOME };
+  payload.s[tileKey(100, 101)] = { rd: 'Yours', pn: PLAYER, t: HOME };
   const held = run({ preserveSovereignty: true }, settings, payload);
   assert.equal(held.kept.unknownLevel, 1);
   const n = held.neighbours.find((t) => t.dx === 1 && t.dy === 0);
@@ -495,16 +550,17 @@ test('a claim whose level will not read is planned as bare ground', () => {
 // A town is only offered where the payload carries its tile as well as its `t`
 // entry, so a fixture has to supply both.
 const tiles = (...at) => Object.fromEntries(at.map(([y, x]) => [tileKey(y, x), { sov: 1 }]));
+const townAt = (name, x, y, rd) => ({ t: { TownName: name, X: String(x), Y: String(y) }, rd });
 
 test('the picker lists your own towns, named, and no one else’s', () => {
   const payload = {
     data: tiles([-3178, 360], [-3000, 100], [-3100, 200], [-3200, 400]),
     s: {},
     t: {
-      [tileKey(-3178, 360)]: { s: 'Rivermeet|1|360|-3178|900|7', rd: 'Yours' },
-      [tileKey(-3000, 100)]: { s: 'Ashford|2|100|-3000|400|7', rd: 'Yours' },
-      [tileKey(-3100, 200)]: { s: 'Fort Grey|3|200|-3100|500|9', rd: 'Alliance' },
-      [tileKey(-3200, 400)]: { s: 'Redhold|4|400|-3200|100|11' },
+      [tileKey(-3178, 360)]: townAt('Rivermeet', 360, -3178, 'Yours'),
+      [tileKey(-3000, 100)]: townAt('Ashford', 100, -3000, 'Yours'),
+      [tileKey(-3100, 200)]: townAt('Fort Grey', 200, -3100, 'Alliance'),
+      [tileKey(-3200, 400)]: townAt('Redhold', 400, -3200),
     },
   };
   assert.deepEqual(ownTowns(payload), [
@@ -516,16 +572,16 @@ test('the picker lists your own towns, named, and no one else’s', () => {
 // The `t` block is keyed off claiming towns rather than the viewport, so the
 // same town can arrive under more than one key.
 test('a town listed twice is offered once', () => {
-  const town = { s: 'Rivermeet|1|360|-3178|900|7', rd: 'Yours' };
+  const town = townAt('Rivermeet', 360, -3178, 'Yours');
   const payload = {
     data: tiles([-3178, 360]), s: {}, t: { 'a|b': town, [tileKey(-3178, 360)]: town },
   };
   assert.equal(ownTowns(payload).length, 1);
 });
 
-test('a town whose string is not the pipe format is offered by position', () => {
+test('a town with no record is offered by position', () => {
   const payload = {
-    data: tiles([-3178, 360]), s: {}, t: { [tileKey(-3178, 360)]: { s: '', rd: 'Yours' } },
+    data: tiles([-3178, 360]), s: {}, t: { [tileKey(-3178, 360)]: { rd: 'Yours' } },
   };
   assert.deepEqual(ownTowns(payload), [{ x: 360, y: -3178, label: '360|-3178' }]);
 });
@@ -534,7 +590,7 @@ test('a town whose string is not the pipe format is offered by position', () => 
 // ground is off screen. Offering one leads straight to the optimiser refusing
 // the centre it was just handed.
 test('a town the payload has no tile for is not offered', () => {
-  const t = { [tileKey(-3178, 360)]: { s: 'Rivermeet|1|360|-3178|900|7', rd: 'Yours' } };
+  const t = { [tileKey(-3178, 360)]: townAt('Rivermeet', 360, -3178, 'Yours') };
   assert.deepEqual(ownTowns({ data: {}, s: {}, t }), []);
   assert.equal(ownTowns({ data: tiles([-3178, 360]), s: {}, t }).length, 1);
 });
@@ -544,26 +600,7 @@ test('no payload and no towns are both an empty list, not a throw', () => {
   assert.deepEqual(ownTowns({}), []);
 });
 
-// Which property carries the string is undocumented, so it is found by shape.
-// A miss is silent — position still resolves off the tile key — and shows only
-// as a town listed under bare coordinates.
-test('the town name is found whatever property carries the pipe string', () => {
-  const pipe = 'Rivermeet|1|360|-3178|900|7|human|?|75|?|Norris|ILL|?|N-human-|?';
-  for (const field of ['s', 'n', 'v', 'ts', 'whatever']) {
-    const payload = {
-      data: tiles([-3178, 360]), s: {}, t: { [tileKey(-3178, 360)]: { [field]: pipe, rd: 'Yours' } },
-    };
-    assert.deepEqual(ownTowns(payload), [
-      { x: 360, y: -3178, label: 'Rivermeet (360|-3178)' },
-    ], `the string was not found under ${field}`);
-  }
-  // A bare string, and an entry with nothing shaped like one, still work.
-  assert.equal(townString(pipe), pipe);
-  assert.equal(townString({ rd: 'Yours', s: '3|?', b: 'Unknown' }), '', 'a claim level is not a town');
-  assert.equal(townString({}), '');
-});
-
-// The shape the live client sends: a record nested on the entry, not a string.
+// Which property carries the record is undocumented, so it is found by its keys.
 test('a town record is read for its name and position, whatever carries it', () => {
   const rec = {
     TownName: 'Eruyt', TownId: 602050, X: '360', Y: '-3178', Population: '6720', Cap: 1,
@@ -578,7 +615,6 @@ test('a town record is read for its name and position, whatever carries it', () 
   assert.equal(townRecord({ rd: 'Yours', v: 9 }), null);
   assert.equal(townRecord({ t: { TownName: 'Eruyt', X: '', Y: '' } }), null,
     'a record without a position is not a position');
-  assert.equal(townString(null), '');
 });
 
 // --- the refusals ---
@@ -745,7 +781,7 @@ test('the candidacy filters do not apply — an owned, settled tile still plans'
   // A town tile as the live payload sends one: `hos`, and no `sov`.
   delete payload.data[tileKey(100, 100)].sov;
   payload.s = { [tileKey(100, 100)]: { rd: 'Yours' } };
-  payload.t = { [tileKey(100, 100)]: 'Town|1|100|100|500|9' };
+  payload.t = { [tileKey(100, 100)]: { t: { TownName: 'Town', X: '100', Y: '100' } } };
 
   const r = run({}, settings, payload);
   assert.equal(r.ok, true, 'the scan would have excluded this tile; the optimiser must not');

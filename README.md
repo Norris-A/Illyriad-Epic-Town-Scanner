@@ -129,7 +129,7 @@ cancel.
 |---|---|
 | Sovereignty Radius | How far out to claim. Leave it blank to use the Claim Radius from City Configuration |
 | Starting Tax | Where the tax slider starts, 60% unless you change it. If the tile cannot hold it, the plan starts at the tile's maximum instead, and it never starts below your Minimum Tax |
-| Preserve Existing Sovereignty | For a town on the tile, yours or another player's: keep the claims it already holds and plan around them, paying only to raise their levels. What the kept claims already cost is counted on the balance. Leave it off to plan from scratch, for reworking a layout |
+| Preserve Existing Sovereignty | For a town on the tile, yours or another player's: keep the claims it already holds, and every building on them, at every tax, and plan around them. Kept buildings take their building slots and pay their upkeep; the plan may raise a food claim to Sov V, or a building of the military structure you chose, paying only for the levels it adds. What the kept claims already cost is counted on the balance. Leave it off to plan from scratch, for reworking a layout |
 
 The folded **City Configuration** section below these holds three settings
 shared with that tab — change them in either place:
@@ -206,9 +206,9 @@ building — shown on the tile as, say, `+3% Bows`.
 
 A bonus for the **military structure you chose is scored**: each building on such
 a tile counts its terrain bonus on top of the usual 5% a level, so a Training
-Ground on a `+2% Spear Units` tile gives 7% a level. The planner still fills the
-nearest tiles first, so it can pass over a matching tile a little further out
-and understate the bonus a site could reach.
+Ground on a `+2% Spear Units` tile gives 7% a level. The planner weighs that
+bonus against the extra research a further tile costs, so a matching tile a
+little further out wins whenever it is worth it, and always at equal distance.
 
 Bonuses for crafting structures are **not scored**, since those products are
 outside what the planner models. Treat them as a hint about what a tile is good
@@ -223,8 +223,7 @@ been recorded yet.
 - **Only the five military structures are offered** — Training Ground, Target
   Range, Military Academy, Jousting Yard and Assembly Yard. Crafting structures
   are not offered.
-- **Only military terrain bonuses are scored**, and only on the tiles the
-  planner picks nearest-first, as above.
+- **Only military terrain bonuses are scored.**
 - **Buildings are assumed to be at level 20**, the level a finished city runs
   them at.
 - **Only what is on screen is scanned.** Pan or zoom out to cover more ground.

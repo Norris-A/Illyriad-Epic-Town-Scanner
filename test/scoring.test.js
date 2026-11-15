@@ -457,23 +457,24 @@ test('the plan never outspends any of its three budgets', () => {
 test('the plan is the best one those budgets can buy, not merely a good one', () => {
   // Brute force over every level assignment, which is only tractable for a
   // handful of tiles — but it is the definition the layer decomposition claims
-  // to compute exactly, so it is worth checking against directly.
+  // to compute exactly, so it is worth checking against directly. Some tiles'
+  // terrain helps the structure, so a further tile can be the better buy.
   const brute = (tiles, headroom, chancery) => {
-    const n = Math.min(tiles.length, Math.floor(headroom.slots));
     let best = 0;
-    const rec = (i, rp, up, bonus) => {
-      if (rp > headroom.rp + 1e-9 || up > headroom.upkeep + 1e-9) return;
-      if (i === n) {
+    const rec = (i, rp, up, bonus, used) => {
+      if (rp > headroom.rp + 1e-9 || up > headroom.upkeep + 1e-9 || used > headroom.slots) return;
+      if (i === tiles.length) {
         if (bonus > best) best = bonus;
         return;
       }
+      const worth = MILSOV_BONUS_PER_LEVEL + (tiles[i].descriptor?.bonus ?? 0);
       for (let level = 0; level <= 5; level++) {
         rec(i + 1, rp + claimUpkeep(tiles[i].d, level, chancery).rp,
           up + (level ? MILSOV_UPKEEP_BY_LEVEL[level] : 0),
-          bonus + MILSOV_BONUS_PER_LEVEL * level);
+          bonus + worth * level, used + (level ? 1 : 0));
       }
     };
-    rec(0, 0, 0, 0);
+    rec(0, 0, 0, 0, 0);
     return best;
   };
 
@@ -485,15 +486,46 @@ test('the plan is the best one those budgets can buy, not merely a good one', ()
   let nonTrivial = 0;
   for (let trial = 0; trial < 600; trial++) {
     const n = 1 + rnd(7);
-    const tiles = Array.from({ length: n }, () => ({ d: 1 + rnd(2000) / 1000 }))
-      .sort((a, b) => a.d - b.d);
+    const tiles = Array.from({ length: n }, () => {
+      const bonus = rnd(3) ? 0 : 1 + rnd(3);
+      return {
+        d: 1 + rnd(2000) / 1000,
+        descriptor: bonus ? { sovKey: 'trainingGround', bonus } : null,
+      };
+    }).sort((a, b) => a.d - b.d);
     const headroom = { rp: rnd(400), upkeep: rnd(6000), slots: rnd(n + 2) };
     const chancery = [1, 0.6, 0.3][trial % 3];
     const want = brute(tiles, headroom, chancery);
-    close(planMilsov({ tiles, headroom, chancery }).bonus, want, 1e-9);
+    close(planMilsov({ tiles, headroom, chancery, structure: 'trainingGround' }).bonus, want, 1e-9);
     if (want > 0) nonTrivial++;
   }
   assert.ok(nonTrivial > 100, 'the sweep never exercised a real plan');
+});
+
+test('a kept building is never planned below its level, and is raised when that pays', () => {
+  const kept = [{ d: 2, held: 1, buildingLevel: 1 }];
+  // With nothing to spend it still stands, at its own level.
+  const broke = planMilsov({ tiles: [{ d: 1 }], headroom: { rp: 0, upkeep: 0, slots: 0 }, kept });
+  assert.deepEqual(broke.levels, [1]);
+  assert.equal(broke.placed[0], kept[0]);
+  // In its one slot, a 600/hr bill raises it to level 3, paying research only
+  // for the two levels it adds.
+  const raised = planMilsov({ tiles: [{ d: 1 }], headroom: { rp: 100, upkeep: 600, slots: 1 }, kept });
+  assert.deepEqual(raised.levels, [3]);
+  close(raised.rp, CLAIM_RP_PER_LEVEL_DISTANCE * 2 * 2, 1e-9);
+});
+
+test('a richer free tile never spends the slot or upkeep a kept building needs', () => {
+  const kept = [{ d: 2, held: 1, buildingLevel: 1 }];
+  const glade = { d: 1, descriptor: { sovKey: 'targetRange', bonus: 3 } };
+  const plan = planMilsov({
+    tiles: [glade],
+    headroom: { rp: 100, upkeep: MILSOV_UPKEEP_BY_LEVEL[1], slots: 1 },
+    structure: 'targetRange',
+    kept,
+  });
+  assert.deepEqual(plan.placed, kept);
+  assert.equal(plan.upkeep, MILSOV_UPKEEP_BY_LEVEL[1]);
 });
 
 test('no structure asked for means no buildings and no bill', () => {

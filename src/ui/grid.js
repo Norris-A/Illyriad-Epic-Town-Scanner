@@ -129,7 +129,8 @@ export function planGridHtml(plan, geom) {
     specs.set(cellKey(m.dx, m.dy), {
       cls: 'sov-cell-mil',
       badge: descriptorBadge(m),
-      title: tip(`${name(m.dx, m.dy)} — Sov ${roman(m.sovLevel)} military claim`,
+      title: tip(`${name(m.dx, m.dy)} — Sov ${roman(m.sovLevel)} ${
+        structure.military ? 'military' : structure.name} claim`,
         `Level ${m.buildingLevel} ${structure.name} · ${
           count(structureUpkeep(m))}/hr upkeep`,
         `Distance ${m.d.toFixed(2)} · ${claimCostText(m)}`, descriptorText(m)),

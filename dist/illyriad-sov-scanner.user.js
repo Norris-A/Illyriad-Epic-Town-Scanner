@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Illyriad Sovereignty Site Scanner
 // @namespace    https://github.com/Norris-A
-// @version      2.0.0
+// @version      2.1.0
 // @description  Finds the best places on the World Map to build a sovereignty city, and plans which tiles to claim around them.
 // @author       Norris A. (Firebolty)
 // @icon         data:image/svg+xml;base64,PHN2ZyBjbGFzcz0ic292LWFwcC1pY29uIiB2aWV3Qm94PSIwIDAgNjQgNjQiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyIgcm9sZT0iaW1nIiBhcmlhLWxhYmVsPSJTb3ZlcmVpZ250eSBTaXRlIFNjYW5uZXIiPjxkZWZzPjxsaW5lYXJHcmFkaWVudCBpZD0ic292LWFwcC1pY29uLWZpbGwiIHgxPSIwIiB5MT0iMCIgeDI9IjAiIHkyPSIxIj48c3RvcCBvZmZzZXQ9IjAiIHN0b3AtY29sb3I9IiMzZmJmNmEiLz48c3RvcCBvZmZzZXQ9IjEiIHN0b3AtY29sb3I9IiMxMTgwNmEiLz48L2xpbmVhckdyYWRpZW50PjxsaW5lYXJHcmFkaWVudCBpZD0ic292LWFwcC1pY29uLWdvbGQiIGdyYWRpZW50VW5pdHM9InVzZXJTcGFjZU9uVXNlIiB4MT0iMTgiIHkxPSIxOSIgeDI9IjQ2IiB5Mj0iNDgiPjxzdG9wIG9mZnNldD0iMCIgc3RvcC1jb2xvcj0iI2ZmZjRjMiIvPjxzdG9wIG9mZnNldD0iLjMiIHN0b3AtY29sb3I9IiNmNGM5NGEiLz48c3RvcCBvZmZzZXQ9Ii41MiIgc3RvcC1jb2xvcj0iI2M5OGExNCIvPjxzdG9wIG9mZnNldD0iLjciIHN0b3AtY29sb3I9IiNmN2Q4NzMiLz48c3RvcCBvZmZzZXQ9IjEiIHN0b3AtY29sb3I9IiNiNTc3MGYiLz48L2xpbmVhckdyYWRpZW50PjxtYXNrIGlkPSJzb3YtYXBwLWljb24tY3Jvd24iPjxwYXRoIGQ9Ik0xOS41IDM5LjUgTDE4IDI0LjUgTDI2IDMwLjUgTDMyIDIwLjUgTDM4IDMwLjUgTDQ2IDI0LjUgTDQ0LjUgMzkuNSBaIiBmaWxsPSIjZmZmIiBzdHJva2U9IiNmZmYiIHN0cm9rZS13aWR0aD0iMy41IiBzdHJva2UtbGluZWpvaW49InJvdW5kIi8+PHJlY3QgeD0iMTkuNSIgeT0iNDMiIHdpZHRoPSIyNSIgaGVpZ2h0PSI0LjUiIHJ4PSIyLjI1IiBmaWxsPSIjZmZmIi8+PC9tYXNrPjwvZGVmcz48cmVjdCB3aWR0aD0iNjQiIGhlaWdodD0iNjQiIHJ4PSIxNSIgZmlsbD0idXJsKCNzb3YtYXBwLWljb24tZmlsbCkiLz48Y2lyY2xlIGN4PSIzMiIgY3k9IjMyIiByPSIyNi41IiBmaWxsPSIjZmZmIiBmaWxsLW9wYWNpdHk9Ii4yNCIgc3Ryb2tlPSIjMDAwIiBzdHJva2Utb3BhY2l0eT0iLjIyIiBzdHJva2Utd2lkdGg9IjMiLz48ZyBtYXNrPSJ1cmwoI3Nvdi1hcHAtaWNvbi1jcm93bikiPjxyZWN0IHg9IjEwIiB5PSIxNSIgd2lkdGg9IjQ0IiBoZWlnaHQ9IjM4IiBmaWxsPSJ1cmwoI3Nvdi1hcHAtaWNvbi1nb2xkKSIvPjxnIHRyYW5zZm9ybT0icm90YXRlKDI1IDMyIDM0KSI+PGcgY2xhc3M9InNvdi1hcHAtaWNvbi1nbGludCIgdHJhbnNmb3JtPSJ0cmFuc2xhdGUoLTQ2IDApIj48cmVjdCB4PSIyNCIgd2lkdGg9IjYiIGhlaWdodD0iNzAiIGZpbGw9IiNmZmYiIGZpbGwtb3BhY2l0eT0iLjYiLz48cmVjdCB4PSIzMyIgd2lkdGg9IjIuNSIgaGVpZ2h0PSI3MCIgZmlsbD0iI2ZmZiIgZmlsbC1vcGFjaXR5PSIuNDUiLz48L2c+PC9nPjwvZz48L3N2Zz4=
@@ -26,6 +26,7 @@
   var GOLD_PER_TAX_POP = 0.04;
   var CLAIM_RP_PER_LEVEL_DISTANCE = 10;
   var CLAIM_GOLD_PER_LEVEL_DISTANCE = 100;
+  var CLAIM_GOLD_PER_RP = CLAIM_GOLD_PER_LEVEL_DISTANCE / CLAIM_RP_PER_LEVEL_DISTANCE;
   var CLAIM_DISTANCE_DECIMALS = 2;
   var CHANCERY_DISCOUNT_L20 = 0.4;
   var FOOD_CLAIM_LEVEL = 5;
@@ -760,6 +761,7 @@
     "Small Mountain",
     "Large Mountain"
   ];
+  var IMPASSABLE_TERRAIN = /* @__PURE__ */ new Set([18, 19, 20, 21, 22, 23]);
   var NODE_CLASS_TERRAIN = /* @__PURE__ */ new Set([40, 41, 42, 43, 44, 45]);
   var SOV_STRUCTURE_BY_NAME = new Map(SOV_STRUCTURES.map((s) => [s.name, s]));
   function descriptorFor(i) {
@@ -769,16 +771,13 @@
     const base = {
       i,
       name: named?.[0] ?? entry.name,
-      terrainClass: named?.[1],
       nodeClass: NODE_CLASS_TERRAIN.has(i) || void 0
     };
-    if (!entry) return { ...base, bonusUnread: true, conditional: false, sovKey: null };
-    const sov = entry.building ? SOV_STRUCTURE_BY_NAME.get(entry.building) : void 0;
+    if (!entry) return { ...base, bonusUnread: true, sovKey: null };
     return {
       ...entry,
       ...base,
-      sovKey: sov?.key ?? null,
-      conditional: !!entry.building && !sov
+      sovKey: SOV_STRUCTURE_BY_NAME.get(entry.building)?.key ?? null
     };
   }
   var BASIC_RESOURCES = ["wood", "clay", "iron", "stone"];
@@ -879,6 +878,10 @@
     dAlliance: 3,
     // SETTLE_TERRAINS a site must stand on; empty allows any.
     siteTerrains: [],
+    // At least surroundMin of the eight tiles around a site must be on one of
+    // surroundTerrains; empty allows any.
+    surroundTerrains: [],
+    surroundMin: 8,
     // Key into SOV_STRUCTURES; null plans food only.
     milsovStructure: null,
     // Sites below this military bonus are not listed; it never changes a plan.
@@ -916,6 +919,11 @@
     const rs = parseRs(tile);
     return rs ? rs.food : 0;
   }
+  var FRESH_WATER = 59;
+  var BANKSIDE = 172;
+  function terrainId(tile) {
+    return tile?.i === FRESH_WATER && foodOf(tile) > 0 ? BANKSIDE : tile?.i;
+  }
   var WATER_BIOME = 20;
   function isWaterTile(tile) {
     if (Number.isFinite(tile?.b)) return tile.b === WATER_BIOME;
@@ -934,18 +942,15 @@
     return { claims, towns };
   }
   function claimLevel(claim) {
-    const n = Number(String(claim?.s ?? "").split("|")[0]);
+    const n = Number(claim?.sl);
     return Number.isInteger(n) && n >= 1 && n <= 5 ? n : null;
   }
   function townIdentity(town) {
-    const text = (v) => String(v ?? "").trim();
     const rec = townRecord(town);
-    const parts = rec ? null : townString(town).split("|");
-    return (rec ? [rec.TownName, rec.TownId] : [parts[0], parts[1]]).map(text).filter(Boolean);
+    return rec ? [rec.TownName, rec.TownId].map((v) => String(v ?? "").trim()).filter(Boolean) : [];
   }
   function townPlayer(town) {
-    const rec = townRecord(town);
-    return String((rec ? rec.Player : townString(town).split("|")[10]) ?? "").trim();
+    return String(townRecord(town)?.Player ?? "").trim();
   }
   function isTownsClaim(claim, town) {
     if (!claim || !town) return false;
@@ -955,24 +960,32 @@
     const names = claim.t && typeof claim.t === "object" ? townIdentity(claim.t) : [String(claim.t ?? "").trim()].filter(Boolean);
     return names.some((n) => own.includes(n));
   }
-  function isClaimable(tile, key, idx, settings2) {
+  function isClaimable(tile, key, idx, settings) {
     if (!tile || tile.sov !== 1) return false;
     if (tile.imp || tile.brg) return false;
     const claim = idx.claims.get(key);
     if (claim) {
-      return isTownsClaim(claim, settings2?.homeTown) || claim.rd === "Yours" && !!settings2.ownClaimsAvailable;
+      return isTownsClaim(claim, settings?.homeTown) || claim.rd === "Yours" && !!settings.ownClaimsAvailable;
     }
     return true;
   }
-  function heldLevel(key, idx, settings2) {
+  var STRUCTURE_KEY_BY_NAME = new Map(SOV_STRUCTURES.map((s) => [s.name, s.key]));
+  function heldClaim(key, idx, settings) {
     const claim = idx.claims.get(key);
-    if (!isTownsClaim(claim, settings2?.preserveTown)) return 0;
-    return claimLevel(claim) ?? 0;
+    if (!isTownsClaim(claim, settings?.preserveTown)) return { level: 0, structure: null, building: 0 };
+    const level = claimLevel(claim) ?? 0;
+    const building = Number(claim.ss);
+    return {
+      level,
+      structure: level > 0 ? STRUCTURE_KEY_BY_NAME.get(claim.b) ?? null : null,
+      // An unreadable building level is taken to match the claim's.
+      building: Number.isInteger(building) && building >= 1 && building <= 5 ? building : level
+    };
   }
   function isSettleable(tile) {
     if (!tile) return false;
     if (tile.set !== void 0) return tile.set === 1;
-    if (tile.imp || tile.brg || tile.npc) return false;
+    if (tile.imp || tile.brg || tile.npc || IMPASSABLE_TERRAIN.has(tile.i)) return false;
     if (isWaterTile(tile)) return false;
     return tile.sov === 1 && tile.hos === 1;
   }
@@ -983,29 +996,13 @@
     for (const v of Object.values(town)) if (isRecord(v)) return v;
     return null;
   }
-  function townString(town) {
-    if (typeof town === "string") return town;
-    if (!town || typeof town !== "object") return "";
-    for (const v of Object.values(town)) {
-      if (typeof v !== "string" || !v.includes("|")) continue;
-      const parts = v.split("|");
-      if (parts.length >= 4 && Number.isFinite(Number(parts[2])) && parts[2] !== "" && Number.isFinite(Number(parts[3])) && parts[3] !== "") {
-        return v;
-      }
-    }
-    return "";
-  }
   function extractTowns(payload) {
     const out = [];
     for (const [key, town] of Object.entries(payload.t ?? {})) {
       const rec = townRecord(town);
-      const parts = rec ? null : townString(town).split("|");
-      const x = Number(rec ? rec.X : parts[2]);
-      const y = Number(rec ? rec.Y : parts[3]);
-      const pos = Number.isNaN(x) || Number.isNaN(y) ? parseKey(key) : { x, y };
       out.push({
-        ...pos,
-        name: (rec ? rec.TownName : parts[0]) ?? "",
+        ...rec ? { x: Number(rec.X), y: Number(rec.Y) } : parseKey(key),
+        name: rec?.TownName ?? "",
         own: town && town.rd === "Yours",
         // Confederates ("Confed ") are kept at a stranger's distance.
         ally: town && town.rd === "Alliance",
@@ -1018,7 +1015,7 @@
   function inWorld(x, y) {
     return x >= WORLD_MIN_X && x <= WORLD_MAX_X && y >= WORLD_MIN_Y && y <= WORLD_MAX_Y;
   }
-  function collectNeighbourhood(payload, key, rClaim, idx, settings2) {
+  function collectNeighbourhood(payload, key, rClaim, idx, settings) {
     const { x, y } = parseKey(key);
     const neighbours = [];
     const missing = [];
@@ -1034,22 +1031,28 @@
           missing.push(nKey);
           continue;
         }
-        if (!isClaimable(tile, nKey, idx, settings2)) continue;
-        const held = heldLevel(nKey, idx, settings2);
+        if (!isClaimable(tile, nKey, idx, settings)) continue;
+        const { level: held, structure: heldStructure, building: heldBuilding } = heldClaim(
+          nKey,
+          idx,
+          settings
+        );
         const claim = idx.claims.get(nKey);
         neighbours.push({
           dx,
           dy,
           food: foodOf(tile),
           key: nKey,
-          i: tile.i,
+          i: terrainId(tile),
           water: isWaterTile(tile),
           // Costs downstream are for the levels above this.
           held,
+          heldStructure,
+          heldBuilding,
           // A claim stands here that the plan does not keep and prices as bare
           // ground.
           relaid: held === 0 && !!claim,
-          descriptor: descriptorFor(tile.i)
+          descriptor: descriptorFor(terrainId(tile))
         });
       }
     }
@@ -1057,20 +1060,12 @@
   }
 
   // src/capture.js
-  var IN_PAGE_NAMES = ["mapData", "MapData", "gameMap", "Map", "worldMap", "lastMapResponse", "tiles"];
+  var IN_PAGE_NAMES = ["mapData"];
   function looksLikeMapPayload(obj) {
     return obj && typeof obj === "object" && typeof obj.zoom === "number" && obj.data && typeof obj.data === "object" && Object.keys(obj.data).some((k) => k.includes("|"));
   }
   function readInPageData() {
-    if (typeof window !== "undefined") {
-      for (const n of IN_PAGE_NAMES) {
-        try {
-          if (looksLikeMapPayload(window[n])) return window[n];
-        } catch (_) {
-        }
-      }
-    }
-    return null;
+    return probeInPageData()[0]?.value ?? null;
   }
   function getLatestPayload() {
     return onScreen(readInPageData());
@@ -1093,7 +1088,7 @@
     for (const n of IN_PAGE_NAMES) {
       try {
         if (looksLikeMapPayload(window[n])) hits.push({ source: `window.${n}`, value: window[n] });
-      } catch (_) {
+      } catch {
       }
     }
     return hits;
@@ -1113,6 +1108,24 @@
 
   // src/changelog.js
   var CHANGELOG = [
+    {
+      version: "2.1.0",
+      date: "2026-11-21",
+      changes: [
+        "Want a site ringed by open plains? Site Filters has a new Terrain part: tick what the 8 tiles around a site should be, and say how many of them must be. River banks count as Plains.",
+        "Lakes and lochs are no longer offered as places to settle.",
+        "Site Search\u2019s Food column shows the food your city has spare each hour at the site\u2019s tax.",
+        "The limit tag on a plan\u2019s balance turns up whenever the plan is at the site\u2019s highest tax, on the resource that really runs out first.",
+        "With Preserve Existing Sovereignty on, the research your kept claims cost shows on the balance instead of passing for spare.",
+        "Preserve Existing Sovereignty keeps every building you already have, at every tax: dragging the slider no longer swaps a kept Farmstead or Fishery for a richer tile when you\u2019re short of building slots. Kept buildings take their slots and pay their upkeep, and a food claim counts the food its building level gives.",
+        "Military sovereignty weighs a tile\u2019s terrain bonus against its distance, so a slightly further Wooded Glade can beat a nearer plain tile when it\u2019s worth the research.",
+        "Already have a building of the military structure you\u2019re planning? The plan can raise it, never lower it, and charges only for the levels it adds.",
+        "Set a Minimum Military Bonus, then switched the structure to None? Site Search no longer comes back empty.",
+        "Change a setting after a scan and Site Search says its results are out of date. Until you scan again, opening a site still plans it the way it was scanned.",
+        "Press Scan mid-scan and it starts afresh, and a scan that fails says so instead of sitting on Scanning\u2026 forever.",
+        "A plan\u2019s research and gold totals match what its tiles cost."
+      ]
+    },
     {
       version: "2.0.0",
       date: "2026-10-12",
@@ -1199,51 +1212,6 @@
     }
   ];
 
-  // src/game-icons.js
-  var PNG = "data:image/png;base64,";
-  var ICONS = {
-    wood: PNG + "iVBORw0KGgoAAAANSUhEUgAAABQAAAAUCAYAAACNiR0NAAACFElEQVR4Xu3TT0hUURTH8TfmWFSDzNDMq5waQbAWak3qSBKljWHUGIhaKIabEGZsIaYmObgZBAuNXBQEE4YWsxIiNy+wFhpofzBX7Wwl4qqIgXZ6PL+L5zJPKypctvhyuYv7OecxahDRjvYftLeydIc2+3fwcW8BIY8ry+Bo824bgDt6+uTh78HB7tq2tkge3eu7tA5IwNWVpV0A5f5H4NlTbgeA8uLD1N5yRjBdKJh/bSuYmkj+GrzfFbbqqvIVlLvPUOfHyRuEjePRkB5wsepYsuh4IAiwp6djO/jgVk0jR9cjgTQe41G0uUQDfp+TKoOmDNAbd7SUWqUh/7nFD3dzuWzOwSlwilOAz51NFSdMAizAlXAhMD0AQ/tiYQ3jR/r0fugVY1kCfmu6cKhbfc5pr+0xwJH+OkAyQOMVJ33AVPOzifTsm4HvDOcA1MjNqwFAGjQ9Tsrz5tgG4Gy9fIRqK730bDz2lbf6khqPyaarAJeBul3ORUCSPK6vPqhBv7kXn6w/9fNCr2puJqG3BZgAKPncu0cFOF9+gNobjuoB1WUehXv2O+jlZJdGeENsh4YBDmSC8reIU5IBkvWik2am4wp79zaxjpM/PcWnARDFuEcZ4E8H+M09VFTgsm322uqPMzYKjDcU0B4DBgO4JzMGrMm2z8eiPwAyEAEkyX8KHv9VAHgrJ07e0rCmbuOOFLijbQAdponiH+6yGAAAAABJRU5ErkJggg==",
-    clay: PNG + "iVBORw0KGgoAAAANSUhEUgAAABQAAAAUCAYAAACNiR0NAAAEaklEQVR4XqzOz0tUURjH4e977jn3znWcMWfUQAWNARMlSt2ILYLoxzYiCCKCMNy4adnCCFr0B0QEEUGt2rRw3yIocNOi0tBIUcqZ0XGU7ozO3HvuPfec7qZoEHe98Nk+75eMMfifRw+vTB0JaBXhwdysDeBMUiFpy2gNYuw9AI2wgQ8fF1Hf/Alu2wAAfhR2/95MDsB8UiZpNAkJJrSOsbmyVA0Df39oYlJOTpx+/vVg/dnY5esOgMahhQlExpgnAKaJ6M9TS6kIpdVvCBoHyOa60N0/YCzOSZtYq4Yn1f6WlTo+fPHQwgTjcaxn/ECSY9Ga1DjplUvwyt9RKW7h3LWb2KvuIPB9Ygm3vbG6u770OR9KaTmphSl6fPt8C/hlsThS6GSfMizW3BAX2uJgwJv1ALfGOqDCCHsqgi8VuvLt6OuwDTFQT1c7vHpQ4U9fLreAl852vnAQ2m1GGMUMWQBM0k7NQ6ki0J3iUEzDERZK2zWMFE6YlE3IpW14Nb+T7RqJf2sGUWGh2EDKVeSmAEqSrkE+I1CVMboHssi0CdiCkHE5bNth+Q4XBoQ4NoK/ezXdsnDu0WtnvMeFjiyUQwt96RiCBGSowAlQkYawCGEINMMYwuYAMfKaGsJxKjwOVAvoS12dX65mZyd60dseQ8UGv6SC50coNyW0YCAiMEbgSWlhUNwJsVauo8eNR+lU/+BfbHFzAzfGh9+u/KhcUDqCLdIIlQYgQQRkUhwGBJcDg7ksyvUmlDEY6j2Gu3euwqr/rqpsWqKKwgD8nHOPd+bO1x1ThwzRKClrY7mIqBZGrdq0MWgT0Y9oGbXsH7TxDwTupCCQNmVIhIqFpBGTluPHfOrcuXPvzL3nNAVC7Z7Vw8v78PL+mFcXxlwAXr5fZfbZXbHn69mbZ9O3T7s2m5U2SekQRg4fdg+xlUU+ncK2bcYKkjtXCvTnHIbPTHCy4PLtZ3BDLS1WefJ0KgN4gDyTjx+7tiLvKK6NZFBWjnw+ZrHkMT7s8nB6hO1Si063Q63iMXwig+2XqG7scFStJ2VP5gBve9PVjGFl+8BzkkpiEFj2ELE5pNZsI4QgZSs2NivU6k0qdZ/gTyhLIIUBIXtRbEcCs8AU0C8EE2M5tduJDJawaTuK5Xo/oUr1ZGmchM3cWotsPk0cazDQiWN6SBSD3wqQwC3AAgDU6GC6gxH4fozbw6vnJc1YEGv+rmHm+iBuNkkqoYi0IZuykRL2qh0SmSwKSP97yk5CNapeyD5tvqyGZnzAFjuHAX5Yp9XK0yhXWdcGYzRCQKx1jw3FA48jv6sVII5lQLTw1X8xOWjuh5EWGaHFfj0CbbCkZO5TkalTGUZdmz5LAbC25bGwVmSr3CKK9DsJXAaeAzuAmnkw+SpKJleaXVM2QphAyHC7GTU6MWWDKC6XvKOlX61miAq+Ryp+/blMI+hGUvJoaMCZ/u8F9Er3HTMggRgwgC6+WTXzm3UA7l0cIIg0G6HKXTpXUB/XdwMgAPRv7WwOEcvP1YYAAAAASUVORK5CYII=",
-    iron: PNG + "iVBORw0KGgoAAAANSUhEUgAAABQAAAAUCAYAAACNiR0NAAACUUlEQVR4Xq2SO2iTYRSG/2CLODgUHEQcpFpJrEmUguBlclAESRVbc782TWL+JmlKpEWUWqt0cBFxKcUhCCooiJcOVYJFqItLoYKIoOCNFlEQdc3rOQcPfJpY8DI8JN/7c57z53tjAfivSHDm0K6m1GamWcCfq4lVfyFU0V3H3IPb7bP37zyszdz79GHxHZiAbx9IDOMsPJmbZSRToYrWEdeIz0SdwOtXL8xBUyRyXXDrxlVcODssQpUNEN8eP6rh2dN5LL1/oyJ9I/NswqKfhReTe61y5dh4PuGvRw4fQKznILxbOpCZGkMq4EOoez+CxFbnRoSr4ypWVMbPPorQ6VhrdVaLsNNB2H1BFPrDcLs2gbNyJoISZfl4L/bs2PY7Iee8sEWEa6w2EVbycQwXUrCTfn74QxhGxU7ATgXQ5XGJsExnhYQq41KWRLhQrYjQQH9e08xEZVqMCOcnB1lo0TYW/SlajCBC9/oNIjTv5+XzBdno9boULkRzs3GzFIjw6G6vNX0pChXq3Sh6n8FkD2fLldImwstj3SBUqFLBFKbPH0fOjjUIjVLeypsZwmaosIHw5KmGUliospHlCnDTH93jccpdetxOzU2ZYE2N+hYJ2TiYj0sZN69f4UEWmWU0FKTlaCmECL+o8HQlh2JfEEPZCIrZqJYBuz+EXMIvwzu73JIVMhEtRWXwdm4W4VcVcgkTJ4rIxHrluwrPjQzgZCmN0aEsD0lWykVRSodUyDljsbCDmODgH7FECECggOWtBiuJFmIF4dABkyPb21t/zb4DoYVnQN+VdjQAAAAASUVORK5CYII=",
-    stone: PNG + "iVBORw0KGgoAAAANSUhEUgAAABQAAAAUCAYAAACNiR0NAAAB00lEQVR4Xq3Sv0tyURjA8es17F6jXjLrRapbYkoO9lPIBLHBoMbeKRcHx6ApLOMdgmjRG84OLa+T/0JIS0iLLa6RtPQPtPVOT89z4DmcvBcxavhyOFzOh/PjagDwow0EVlcSerfb7WGg9C3Qh90zpjQ82L8YQVG5fCwrFovj2HCg3zTADa3X63B5ec5g6SvgGwG1Wo0ihEGJNhoNgtUcIGMjWIeP2AdyBFJDgR7sTgUpAo1Rn2gns00YN9QOn/t3GIsuQbPZlBUKBdB1XdZut0cwBiWmt1qtVxzVVxWg329CtVqVYCQSYZwj1MQ+gV7svxtoGqMESnQ3l4NKpcJXosIOEHCXDpDmjNEYi0YJZEzitm0vOEBGGaRFvybG1R3SvTGiJv5ZFTQYpA+BQAAsy4Lw4gLMhaYhPB8SY3zJgjG/6ZoE/139mcX2GFR389jpyIJTkzznCOI5nUhgF9gDBgyelk4oRikx1zSNjkYLZSsJed8SfMLADeRHoAjM5w8FeG3bfG8E0sgJ8C8GHINqjP6eCTI0EDzDbgeBfGS6L/oeX45BKrUlHyObzYpxcy0hQO4IO8V6hLiV2QjvI0jIO/aCO9JuLg6MbHrdSCaT3vSq5fkA0AumcNkRmm0AAAAASUVORK5CYII=",
-    gold: PNG + "iVBORw0KGgoAAAANSUhEUgAAABQAAAAUCAYAAACNiR0NAAAE8klEQVR4XmXTaVBTVxyH4VMcREggGJYYSMISSEISwipVjIoJiwuoiKAomCqLYsARQS1DBKs2ihWndSuLVQvOyNTWKp3pVJ22Y9UK1qptFW0RtK2tioCAgiDe++tJBlMcP7wz98OZZ/5nuQQA+blhDWmuLyAPLheRjmvF5IeafDLYXkJePFhHmIclpPMXfzBPtYuZnll5bNey5ejK0uLxu0K2azGxdPH9ENK8W2O13gAfXSkiP9UX2b0cFDkP9U2pYHr1TX+efBtAnzX6bY3p0/2Bp7PLO1uUcrrWjvYm+G9TEem9W0LOVS+zP1blkT30zJ9hnsvA9i9Az9W5eAVTwIozg/4YeCzp7GwJinkDbKrLJ51XSwhQRn48lUTSdZ7nL+4XouVSMtgXHwLD+wHWAMv2wUjB9IZj+H4w7nw2AT2/FmS+Bt5q3EhavzZZxh77pCOyEkzxEWOa4O6ZUm+sinXB54eN+K7RhE8PrMSJg554ck2N7nPhGPwiGm17ZGg/EV/wGrivYBKpLdbarVsoTLvQ6Nf/961I3L6eA3OWEClhjjAmeSErQQBve4LZCh5ubqfIARW6j2nQVObReKXCT31zr+p/cLXOhRTE0hL4FbuW8LAj1wf7KlKwZUMctApXLIsXoyhdgTDROGRqXXG/KhA3KqRoOxzaYLllOh3n1cVYwaQwZzI33JlsSnE/+pFBgHemcJAY6Y6lCXJo5TxMU3ARp3FDmHgcpit5KM9Qo8EswGB3zj12uLTt2cOQgxRzsIE6JcdaZaZn4Y4lHi1pUc6YF8Vn06YK2KkyDib6OtG4mKVxwfelUlyqDUBvjxOAQrAvq9F+embvg4upk21gfDCXxKm5hE4XWZnhaUxQc8+unClkTJlyVq/iIcqPgxkKF1x4T4rbR/wxPMADw+bgxe+VGDg5ETcrpej5bXWcDTy4eR4py5pkAa2ZFnhItqZ5VuTFufeFi+0RIXFEQqgbkqMFiPRxgEbsgBy9G86b5eg9HobW6kC0NoRmUtDOClZvSiI1ZXNt4F9ny98K9bYfo1c53dIGONLtOkIr4yE6wAXTAjlIjnRF4Rx37MwOQG1uEAZa3cEMaaopyLeBNBvYXL9y7Ip4X3mwcMyNMyZfJIVyERPkjNkRbpgT4ozcWA+sXxQIc3YQru0OB9vtheF+VR0FuTbQVvl8snNVJJkfwfvWMJWHunwv5OldYYgTY9W8AISLHCBzt0dhvAs66tRorwpBf6v6+sPmwMW2M6SQHc2HZvi4NHHryb2G7HSdtOXKdl9kTxuP6TIn5Cb5ITdRihCvsVCJONi4UAJzjhJ7VgTgzqEoC2Y3GvSmHaexNBzZtgAZOgkOLBdgR7oAC6MnoCBVjsQoT8xUc+jUEuxdE4z1qUG4fMib/sv6PIo5jAaTaRipq96cejp5srBjcwofuTo+EiP41kuJkDjAEOOBL8vU2LxcgWP5GuAfEX3gwYcpJhsNGmmDtCHaI/qMvtleMOP82lmez6f4O2KpXsIuihGxxng3tjZPwl7+IAi7Vyjw1ScKsIz4zGC3eBfF+KNBf1ot7b4FrDJZt31vm1HfNknKtZ7fGrrlCPE4zAkfj5pCFUwZShwtDzw13C+ynJ8zjYwGLbnSfEdwDW3toS3zq3YVxpr3bEiYXrhIoZzo46iMC+ErizODlatTVcqaLMX4EcjWfzSxPIPprI33AAAAAElFTkSuQmCC",
-    food: PNG + "iVBORw0KGgoAAAANSUhEUgAAABQAAAAUCAYAAACNiR0NAAAErUlEQVR4XlSMXUhTYRyHf7Wx2bRNWw7ywjboC+kmwehm1IJRQnfixbrIC8EwRmAoQRe7XSM9EIJiOecUUbQiQQQHogh+QfuwJa6Bis2jbmvLw+ZZbDu8nfe9iO2Fh9+fB94HhBCGg3ODxO0GGT11A+4PjfJN9ud6lulSJ29MJkpvRthu3Z541pGZa1PJVMqgLMg+xjprk5tvqugdm7IS5oI28sVxRym7XGTsoUgdJey2LNHlZ9uEnzPPPzn7nMrzKHmjIwIHlSLhXwqtUzExGWE+cfgbt4w1BQAV/lD8QnLrG/NanfoBxL+ou3dRe1KQvGYjf640WLX9fVfzqnUcfDR6Ox0pQqerYEHD3ZtsSTKOp68t6ONOsOgJoN58DchJ+OzyJZKn1QupTF2xNJi9fMPcfdV0Hf4QjyHXV6iUBC+avdibD8M9EmDR9y9n8db7BEHfFuYH/ei1TwN/hPaWznd5CSClQexMcmdqTaW+xqDf2ft1+t8f7KYhihI8XBDHggK9Ng/z6vwZ1E2t948ffVyg4rBQi7Jgg60LG4tr6bUfQksWmtTyKs/8/lGObfSoCGujFpeMV5gXTY+bGxSBFbvFV+gfHqaKBf/VSX4hTa5xHP++893cnM39ac5CDQzH2rQ61CFbnrSGbWXuUAZlRp0DWhBE0IVddKCCgpSoi8O5iILWRWSlRVkklhyPJZpaVuryVOpmUrZ8nZvbXO7P2/MMV+2iD3z4vVcffs/7PAkUmIzITgm+LtRJ9co0cQSE3hef4HSHQOnrGoYmMwPWqu22MmuAMx1eL0T63zhkfZkQTGAsIEZj17RLKGItvqgI58+YaS3273ZVrA4V/bZ0XLs28gcCU93wSObwtoYHkEGjDH2DlNq9WsRJnQ2C4pr0M6PTTJTz+HG/qwpwTAGKFEAYQBzO4W9RLZLshyDLAYBhMY/Tuwg/YhCO4uS/HF+aI0Hjha0oLbgUm5/+n5l+N+SUYx5T9dpNiGS0OyMbU5cw977f8uKl+gQpZ8uzhHSWH7hHY7F5s75D9OxNaIepOo95rz0qbr3YCSRNZC8R1x8BwHw7cvu5CiQC3L7RsgyAXSji+cHxWYYe293dxitytQEIolmtthH3ULpFVrlqwiPXaPg3vi0KAX7Cx9H+FTTm9flR11DJXK4zghKVswySxVIv5w+SG4bO1ewdGnOfAsB0251h9tKJ3xcCmCQuIOqIe4g7B3s+anz+AIo3GOBqt+O/ERWKYEc4hQVSlJDlKAM0MqffBUXSkBsEjWx2H3PxuJUFkERsIpZgnqeNLdhWtgzcDIM45iI50tfrwb3qgWr5r6A8eGzILpBf5QD8Q7xKYzLitXhssPkJ6GZ5BjVUailuN/Xi9HEjrjW8RX9fGPmwk+8P2H2wA6xT0LHZjDFgJQOP5M/4ww4SHfgBGlOq1ai/bv8WKylTYmDYjThq3TqE2ZBx4uEATtyysLWtq5LcY52gR84E8BdxA1FLRH7aFI3FNj1WY8ad+89RsSMXdwdSQbHm+WIbS3W/gPJFXcyyfJAHEKUbSonNRBvxJNHV71HCYCnEmvJNaGh9/cg/JwojEVs8RmCSP7dFaIyIr/smFw1aipoHAAAAAElFTkSuQmCC",
-    research: PNG + "iVBORw0KGgoAAAANSUhEUgAAABQAAAAUCAYAAACNiR0NAAAErUlEQVR4XpXTe0xTZxjH8d+hpy20ZSAXnYBcJSiKMOs2p5s4jEMUjWEbbmoVFXU3pmFzU7yMhbGFocKEwZBRdV5AcUEEtIIXFPCC3AIRBRXQFiZ0RS6WUlrOs40UwkhYss/fb7553jx5MFp43gJZiSqfoi+G09HCFDqXG+eOcdSXn5dgjIRA23+/L1Vmyh70VVBeayp9JV/BVV84HIpx1N04ufLW1WOym6V5oS2N111hwgJAVqxMrJ03ISS/6Upix/X9eHd2JFipNZNVU5BacilJSH39eq1ONyCxkNQQAzIX8F6/1tybSi+HTHBieDhyvns9gBYMS45a5nymNol2Fa8gAFiU5E7d+lbK/eNX+rn8a668q4CuNZ7gotJXcQCwO+0wl/egm1TKOmqoK6BLhSrN/t/yZcr6azIzALCfYIf7LRWwkLjgH1cimphHzxqRWZwOxoGYfGU6Yu8kMjOXzGB2pMaR7yvBjJ+dFt2sEaylHWqetNpYingJYDAE2T9udE6/tJGiSz8nmBSWHSWM8cnRA3Tw7B0623iWqnoqKa9GTi2qHnp7j4JT1l2UAcDQhBwRNgfKmZdcjRim6iZEHfpsJLo3JZPshD6YJL0PZ2c3HLsTDw/7efgio75zr79mfXfvi7KRpYCALxWL6OmTZvyUnEDSoCXos3WE2HshCpZGUv2jdmjQhxkeTXCw90JuXSYWTw9Dsrwd7/u1fhyweM0ZACgvTBMPBfkiAem1gK9xO6ZsdMepphPoa2qDWv8AA4NP4TTZF0GiMLww56O+9S48bfxQlUNo87qHN3ymVsDktXe2aoe+zDNjzFyMm0g8ywnyezvhbe6IcLc1kFrOxrxJweD1WKNInYnmF7XgGabBUD0bD7vayEek4Hp6+udglKFgi47mCn2DcfX5/r9jUnzqsRne1l6Y7GAJt4meENvoYSHm4V57FVw1/jhzu6gzaiHWB0mCwlLUSd/Vl2SJMSw3aSu7LyGmI/5xLS26/CpdVhdTN3WSov8IfasOpxh1GGX3ptKpdjkFXPajHVlaijocKYNJZcXxtZVX5c4wYVmBQCASetloButgLZyIQdaAWNUWmAmMYBgOLMNCxVVjplUwWIjhPb0DiuoBPUz4/fwc4oNGgnYOzlaCLgumXaOGuu05SvkVKGq+CcNgPwwDHCbbWmNATxjwmgJtFwfx1F60POvAsFlvfqDFKKzRYFAbe5s0AVZL7cueJOLk71lQdqlhsDAAfKDhcRegAiZtr8LMt5aB67IHT8gJMQ6z+SFRRjfesy1Vtc+xenk4HP0BO1crML6AvYctJnraQzxXAPNZEgROC+tMPFGybrVOqD+ZHjEFJrcVKSKMdiNrNxNxMLoxXdHMxTRk0KZby8nzFwuaf8qT5hQ5kX+ZD2Uoq7kNx2vXjZxhRKBLWsJHrgXZca6l5w85YqwrmTslIft2yHadPvdnWqWSO3Q/h8toPs1933CcDjxs1Ejj82W2gWvd8X/t+WazeMM2mcuqhOSVH2YXh86JjZO5rV4eCpOAUF92zZYFYownfrEdGyEVMfgPeUd2sRgjJ20be/fCAVHk1vdEcXHxIp1OJ/ohJtr1L6hfG9aIaew8AAAAAElFTkSuQmCC",
-    swords: PNG + "iVBORw0KGgoAAAANSUhEUgAAABQAAAAUCAYAAACNiR0NAAADH0lEQVR4Xq3RX2yTVRzG8e9pu/eta9nYSuuKrJEBYcP5h2iC1H+4mRFDvCEGRaOJjj8JJqKGmImJw0RFM80g0WDUYFSUiBdCBl6AimhwIbqJEJW4NXF09s+6ytrVtX3fnve4LbvoBd174yd5bp885/yEUor/k4synzzlptyp31Xs4Q3VwfCGGgp5i68+SO/QPY4DlHm0J1e5MGMKyk1MSX/vpzkaW6qIRrMcOSf3S4uDQLGz3bJfGApIyk3mVeMK2bb97Weu2RO+1fu4tI4MAEWAktO+kM5XA5RrvTGRsJbk2vVYiiuZ0A5gLXOCqW6uxkGZcf6eSwK0NKXRhcHU5eQaZSnMkrxtvX99E3OGLl2cyfyFfYdf4cQXB/j+0GLGDYWllOefZEaLp5KoWaycLuX4wPUs77qZVd1N8xeO/JVgZCRO/6DB8Z4iCmEaUilMAyHEdPAgBLFBP0bKnMn8f1ju3KDPmS6UDGnBuII7qnQTaQxhw8FVPPiQu2nSyBd3764aPNNfnf/5Qh2PvPyrO9Rx/ny85kxh/2sXG06e2Gd/Zc1dQ3v4oyYgsm2nj51Pxxo+PybUOy/q7HrLFJP/Srp2BfSWVXq8YKqw4mg/7Ku88LODb7g7t4xGentSNPidy5UiM+Fd88eTewyuu73zN8BIjhmPvffuONu2j57dunX0HrsnF3w1ohfpbd+4KRoRgoUZTW/Q6oO03NL6PqB/+PHEoeE/iysWuMWbehUDtkdJZ9Vz6WyaOVhKaIua7yPcujr7JbNITljDpuT5Ckep7Ka7mwGmBwbw1no3mxIOH7tAoFYA2B/lha4bACgUHaxcGqjb/PpUTAiHdsU0yU5kOk6eGlBgipd6jlJX34jtwjjPzkZc283GvSqay03diWWOhXw6CxZpfb9cirQBamloCd/+9PVM5l9omGMAOJV0KUWtq9onlSw6h6NDGGpKX9287DQg+n74zuHWNMt24dpgPW0hPznP4hIgmSUceQku01JnExEAHrhrnQVgW9jasYVl9z7BpnX3A7C3wyOkcDpN5cKUllvmS/yYukzf6W+o5D/rnFzC6H0WsgAAAABJRU5ErkJggg==",
-    bows: PNG + "iVBORw0KGgoAAAANSUhEUgAAABQAAAAUCAYAAACNiR0NAAACcElEQVR4Xp2UXUgUYRSGZ3LT2igohMyNNFApMTf6MUNQC3+y3bAyAiNIKDBykTarzVmXblLJIAzS3dZwkaAuJBYJKm+iG7EQusir8CooqIsuiigptq/3xDnL9PEV1MVzcc6cec4358yMdSt2oGG201KDwcoszetyc5glwAaWoJQSKKb7bXeOEumUs/cRSae7C14jniOpDvIloAYUIiaZCZuEDiidCpcOkjQRbT6NuBFsAbeBApk/NKkTuZyYhD0gcaOryEPC8bP+5dIR+ZVgKceS6wBvgN7AIqRg8sVQCc1LHdm0bBXPwwhEXjAA0mAUTUj2ShqSsB3MXTxcnktCsO0vshUgBZyR3v0NXE8n++IWtoH3V05We1nYBCxBNgmKeDyTnFeJviCd9Lo8sgh3A7oYJSHj0YQ7wVfwWGo4vwFSmZ8SYQF4Cn6EmsrCLExiQT7I8mPHdhRCJI+ktEb54LsuJIr5lJ/kBBCSWOgXmSb0AMr/LsRmLd6cA/rj0WBqordORdr8iy5pBNgGaeZaaM8aXUhb1AsXuXsW1HkNws9xJ1BmEopoGLwUCeIPdy7VdNMIQIVB+DYRDdYahRBdBnEWebjBDGZ7FbmPYJ9JiOsHWWi7Z3gcTBs2OQXeUb7Fl3fXMJpWMCbvomy5dmyg/TmKSWZrwpsgk53j5tX3h87Un0Lu6KgTKOYnG6c6klJQDuZJll545jecIA9sHz7X+LCnteKbiAX88mbvRapmktGWCRGGQIxEmsz0zm29cKgy3FG9Pnmiyveks943z8uCeO2CCGUp/wTusUHOr2+8L/CApG7hf4P/KDk2jpzf1UXSn7PdTrLoj8i+AAAAAElFTkSuQmCC",
-    troops: PNG + "iVBORw0KGgoAAAANSUhEUgAAABQAAAAUCAYAAACNiR0NAAAAB3RJTUUH2wIFDhY3V4jYzAAAAAlwSFlzAAAewQAAHsEBw2lUUwAAAARnQU1BAACxjwv8YQUAAAOdSURBVHjarZRNaFxVFMfPfffjzZuZ9+bbzGOGNBiTtkRQTI0fVcSNqIsEERdSqRuDVYJLwZ0gCFLRRTalSIvahRUVwaoLS6MoBJM2rYba2DQmOk1mrJmZN+/7zfu4vgiVUNNx07M6XO7/x//cc84FuMWB/nOAMeJhyLfyscfG3/3pt9UHRQ3cbF7kaoXiar6y0WpqJ2e+Pf3Z1h1CKQp8n98UeD0OvTw13erYU7flGaDIh6YWQceyoWv5PIhclyXhlG46B2dnZtztOrwT7PlDLz09PDj89v57R+CR/f0goCaolQEgTAEecuT5DvWjYCQjy/zypaWZ7VrhRtjExHg5Q9lhtVzWhob6WwnR97teHZISsYuFfChKJC6L88ALIQyiA3ePjio9gYqS7av295cLhYJVrgx0maTqg4MPO3t2jzWQkOCO7QClFFKxO0LY7X1q5antenIj0A/AzOSKDcP2SFvT3UZ9o9QNqaWZXWqYJlFKMgjxszpOAExkkEWI9QSO3TMwfOeeXXIyUWr195VJp26RUOyiakXVwpGus3DRFhfWm8JWW0XMQJKI3BOYTNiPO9pC8exCM1wsV/B6fYlJoi801oTyUDURjd8vRbXlSFgzEOREERjBYk9gLpeXv/ryY2Co2reyOgunjp+BJ57bB19fO5q+Iw8wsnsvYLwXlHQJUqk0MBzxnsBWJ79019gUFAtKE1kXIrd9pjT5wgFtRX8lWfv1HLuy3IBGG4FcxCAyBkwIoScwRAK2PRc2dSebNDdDGo8+D6jxl5Gilq8ypqRA0GsgCMI/3WZY6O0w8IIwRBhQ6OJIc7AVAJiuTXHsJIhC8HkEOIYB35rGCALOac85jIBfy1UKnXSWWEJg84x8Hzi6K7AI2YSKUVKSoKBkIRc7zcQ5QVTuCfQh2BcPt7OrXN1wu1ZgdhzQNy9lU6IWEUl04+2AePXA9GxwLBdEkJ554/V3Ht2x5Nm5k89quvFiCht2e+WceHZ5neLSQ/ra2qJSwlcKnq3A7406r/2xjlQ1C6HMwegGGa1juDs6dAxvDvv+hwRr+Pz8d7lfzrePgW+p3Eh831icJ8isERRsIhVdBdm6DObVRVhd+uHVI0dPzF5n7Ph9TU8fHhV0e+LH+Z/f+uDzT61vPnnvgQunj51IqkNpzwto5MGfGSl9UUwV3j/42ptfbNfe9D/8t4REHkduK/zo+JEKZ7Sax91qaJC5Jycna/+nvSXxN0d7l8xJ6no6AAAAAElFTkSuQmCC",
-    horses: PNG + "iVBORw0KGgoAAAANSUhEUgAAABQAAAAUCAYAAACNiR0NAAADeklEQVR4Xs3UWWhcZRjH4f+cOdvsS2Yms57Z4jTJnJROtpqENkmb2QxtCtFQ0YymUDGU0tRoA0rFqsVas4hWS4uiNiK1aBG1xSpSW1HUC0WkV4IXXtQmRajLhYLk9ftOmGEMiDe9cODHO3zwPec9czEgopvazQenK9H6cGAihr07Q+hrk/DAeBSTt4fwxL4mjA25sDCTxcxEFKcXNmJ0wCUUO1Xz+G0NpqP7U0JzAEJl2Cv+G1jboFL21YNsgTBen+2Szx0fQLlbFe8tenHqKR1bNyjy3WWPisN7U7UOTSZr0NLZEi2fL9L1jwr086d5Gu61JRafzNmvnS7T8vvs/EKRzsy10/K5ItIBIBbE6icUWM3vBTIa8MrTHdbLU5305cIW+u5Yga4xuIpe/7BAV98o0dU3i7T0Dpvv5enw/nXkDsh2FiSrCGSbJKN1SRHvPncXiZJAlya7DPCDo30G+PHJTXTpRD9dnB8wzq+8OkRXXhuiC8/0cIzGtscuO7ySjQW0ZSSj1rSEYl+UgzwDPPt4N710fztNdQeNObtzvQFePDJAP54p0A8ny9QYsZCzQaKoZuk1wEREhhZW0JmVYLeZDUzXHHxLjtTAhwsJmi5odGxMN9Av2LbfL+apJ+cjBpHTJ39lgGlNRiauYIo93eFeBTm8ISVzqNZm3UWjHT4aTIOmNwfp+I5W+uaxrXRfPkWOBg5KKy0ZxQ2TAGgRFTa7aEDVycsxdNt6F/U3WcnjECjMNjlSidNnz/aMP9gVprnSLTQzmCR/QCG7R/zVH1Im8MliL14+NCIbCMNgwi+JiFLZc2diX5smUi4uUTwg/GWzYMVqQWnp7ZL201tFE990qj1IL4600o5cIwfJ5ZFuYOGRVnP1tZwOobohnn+03duTUimuSQ/ZrVjxOEAMNDNQYgnBqJLp1ZVvOVzKWeb57+jySb/B5ZRWOHZ+d46yMTsB8DEUe+7wbOSgnhSzelx4gWF04uA2IwaaWLhVVwc5uKtgmXMH5K/dfvlzzI5k+twuieZHkxT2qfxCrZaYuYY0N+IPdvmUgda1qU39s3rG0BDYZuKB7Y2/7857aEuXOlwPRjSZ6gGXDTfWgjababa7RREZCB4HcU/JSbuG3PWX0d+h+tdcrn/lJpZJT4smABKH1oJmVpgfrI1tyed/1tksoyMj4f//j/032kXCk2YKR0MAAAAASUVORK5CYII=",
-    siege: PNG + "iVBORw0KGgoAAAANSUhEUgAAABQAAAAUCAYAAACNiR0NAAAEh0lEQVR4Xq2Ue2yTZRjFz3frfStt13ZrM1rohlvLOsWBOhFkjAXkrlyVQESJI2AM4Q8zAhjAKKLLJPGCIBBiBk7FAGoiQQlzZoDbYBuwOBe2Qdvd3KV0vXzfvstr0wCJMZkx8fz55M3vOee8yUMRQvB/isW/qPat4gdvniaEvDOQ5tPfU7QuqxAIGXv7DoPFNwW7z/VkWG0AgHEdshTFfX9g45aoylJlbqkDFAJJryWhbB8l0zQmRgNgg72E0uAMMTOb29ML/6QxjpxG7ReqtraqET6B/vwigEGUjSVEV3uj7IwNKp7F5UJaoV8hApYzoq73hfU7L9LjRQ3cSyweMoowcSKiCiDOXmIgRooDIKlDnUr/L4cSmfM20s6XNoMxqyiaYWelIpvTNCmITABWEZni6T7XupUL6mSZcjz2VBlAs7jT9TvCw/2YohnBaEc9QChQLHC+k5IG5Qns82vXYaLbM8YCqWpAAKhoSp3tdCyblJ15sL8naM/IcoHh1GBZDj7/E5DEMRyorEJ7ywASkoKhe3HsP/Ae657kBkURdHW08imgLAhgWZozm81LtVrVTp2att+t/xlBDQtndg56RiKQwoOYs3AV3nh9K/bu5/FbfR0kSUJjQyOqq6uxaOF83uNx21IdvvnqbMx90pORLGFrOBKfGm69CjkaR1buNARCnQi11qKzrgbVBytSThYtKANN0yCE4MTxE7haf5V0B7pm7Nq+TUgBy2bma4djynZFlovnZCSgoxR4y5YhLduNcN9dDLdcRqxvGEM3ruDyhdPIMJuQk+OBLMsAAI5jFYlix/Yl60htObZn+RZ/rkN4ZnI62TbdSCo3LyCff7CNfLJjDakosSVnyXlROqmY6yQ1n+0j1Yc/JJVvVxDvZAdxWgxk0/rVypW6H1KslMMbHQNeRSEqi9UKS04eTLk+hEO30Xf9V/ARHiCA1mJC4cpNGBoJIxjsRrpBg2TnKCoqwo5du8Sm1puTAaSA0Gs4Sc0xSsdAFEbfDCSCbRj9owlClAcAmFwOeJdsgCyKOHnqW3AqNvUhOp0e71cdxJ3u23w4EuYeAu0WwymOpb9MCJJyvfY8gtcaEBkYhRAXkGa3IW/+BkxIT8ets8ehYwC1SoWar88mgVpcqbvAgwi2mUXT2h8CdTpmw9qFvtUuxwTSPSyDogAKgMmZmYxZjthwHy4deheJ0TgWrViFeDyOPE9WIt9laIgMddheXPOygPtij+1d9hyA13QaDo977fFLTT2x2jGdLc9qgrdkNfp6Amg7dxJajkNGySpIihzQ63U7rEamuiDXSuwFpThVU/q381UOgNA0RXLdFp7npZbmjhH/tV7RfPP4V5xeq0L+JD94rTnGcqpWSZQ/am67eToWjRJ/rhWzSlfggR5EbgUQAUCzDG151JtZunKex17sz+JEIYYEzw9muh/h9Vr1xSOHj71y9NOPa3768TthvAN7BMCzADwANBRF3TXo1U3Tp9pvOa2aQJwXu+SRdrWBJiH/lMyu5lvdGE/U0T1LAYC5D//H5o27z+C/6C8ohPDeWkjBBAAAAABJRU5ErkJggg==",
-    plate: PNG + "iVBORw0KGgoAAAANSUhEUgAAABQAAAAUCAYAAACNiR0NAAAB+UlEQVR4XpXTv2tTURjG8ZMOXSyIuCimLa0/EAoOlkYRwYg6iOLQyxVRUeQOgpOxChpTIw7VqHRyilIJDUjiFjA45Q9QyC5xioOZdbqoHJ/z0AfO5V6tDl/eM5x8eO9NYqy1qVZvnx5funJ0zJ3f1M5zNlfC3OtHizl3bj+7MFaOjvGsVAo7cWivjeOYNZtNNjU1maherzPcUdmgu3zq8Q0bRZEdDAbCMvPBlVuLhUwQEIG7a6tEh8Mh0dFoJIhnYV4/X9w7e01gYjuhr961ieIyAUBKIPFKpWLz+bwy3mYEmXCgrLCwIJQTuTtEwzC0nU6H59bzy/cFCmK1Wi0FVqsPCCk9BbZyIOfNqyctQW0mVJVKJR9kQRAkQGH9fp8JZD42iUsTE1uICcRMgMYYOz9/0AeND7Lq9eNC7VLAKZCY3l2v1yPaaDSUEagMEPcvIKTK5bJttVqZYLFYVCYTVHcuzfF9AuTsdrsCGUD25P26D9L4JxAf3BSEsTnIL2fndoFC9ch/B19Wz+XQLEqAM9O7tOV/g2fQL/TUQV4CiSFiiBhQ44PCtm1gMRqiTwfm9vigthPCgJo/gVvRWw/9jj7s3zdjd89OEwHmfo/cWBgSlgJd42gH+og+ox8b+JcjhwvEfBAZJCgTdLjgi+gh+oa+omUHeQlL9Rtnl6VdvZBRqgAAAABJRU5ErkJggg==",
-    diplomacy: PNG + "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",
-    mana: PNG + "iVBORw0KGgoAAAANSUhEUgAAABQAAAAUCAYAAACNiR0NAAAFUElEQVR4XkzNW2wUVQDG8f85O7MzO9tpu+220m4LtLSNtrUoWlqwEG8UQzBBk0pNTITyookRSXzRBENMVBJj9AWCeIHwwoMJRAElaoSiQashWsVbmmDA3uhly/ay7c7MOce+mPBLvrcv3yeeeP5jbmdbmos/V0iDqdOacm3IABIoAHlgxshorKR09ub9Ky00kQEAOHV4N5LbjEzF/f5fyrpCZXaGShyI4ENpiRPER4/hDX4QxqaOKqGOYOTB2WxZ33e/F7WPTiWqQfA/CwAMQ8PJqtFpdyuIjUrSFrl/rbVdz9VxB7PQwOKC55swjlq6sUYj1ieLMo8S2WeHRhL9+QLfN2SWrgNGGmD5xVkeazfLxYKVbwzt821FbpubiHURy9+Bo+qJBesIco2gq2no7GA+n88sqPknjTA7R6bcjpFJtwxACiP5Z9xdbTCd2vObXX/0vs7HtyVKyzcjljKEuVLmpvspLk/yyHONPPDsZm4OxkFOkmz9okKJVBeIjusTzupsLkD+Pewmwkh2KSd4UMQut/s1Lf7KddtBe0xeG2Dx1jyF2WEKuQHqWkuIDVfiV9aysWcLc791o/DLQuLrg1DWfnLkTVdmZ+PlRkR1Ot2/KtOc9bwVjRQWoXv/DD2Ha3jsnVoEmtmJq9h33qCpd4zuFyvI1LXhie3ErRJhZPquuBWtBR6SQSSSkcg3iZn6ionBFsa+ucKXb53i5K6jCF3H8W13o4Cn3tjLgZoVTEyXcfrtCS6dnKc4rREqCwSpEJ0Bui1jRErYVoucX2MvzI+jon8JC3n0ck6//D4XXoVrF/fiV6V45WyBc6/9iuU340jF5PgPOFaAlagVSqj6fGClLaBSuqJGGBdhJ/H8JvIzVwm0ZCk7x7eX97GqNkXfpzlO7H0PY0AyQKDvRef/oGCV4MZXgGtV5YNYvQQioU2kwjFcfw3JdDtuTQ+O7bDr3A78tEdhKeLMgSOUllo4lQFqbozcyAWMVlheGmO5mMjEU16Qk8CMWmTa6BhecTm267FlTxV7PtuB51lU3XMQpTR/fv0CVy7to/ejHtxUI37NZuySDeBkEc55UNgxaY5LMENCWz/qBDS0FrHp6RiOf4tjvZ9zqOMMJZVFaK2obHqd5q2HsKI4D7/UxzPvbmLj7mqc4g5kYkPBGPUT8JU0wkxJ818V9c7aVBwAUPz8H7nNbW4bYm/6LrY+QRF0aRVRBAdRcBB0EZ10UJz8BE5ufgAHER0cfKA4OBQLleIg4rNPNU1LEo1papumNE1yH//rIgXPB/iNR08pp2Rm5lYYfwCPboyR6NYMnL7OtdGL5JoS4VjUCw2e3LxLeu9vpt9OEh/8wMhlRaWUqSpaPgFL2mBQ6AWxnq6btnICVcPdf4ZDZ1tpT+aZn9jgtnFRrX1EfpbNUpp757+DVMSS+7B7ysbR7QURyQyQlW6ygRDRZxWknnu1BvVGEbff4839HM9uveLplTmcGsjkCZS0sVp6SQ920da7DSOnjLfyczltyy+XRhbn22y/ro/saTKbV4u5JfuO9Lx2T2RP5qdXHamrCGsQYWd5PbqOMB5O5ymEjhGqauT7udBqCSpxUu+P7/o1cXBgdRNAbnqC3X31sCvVLErkQ9WsP9YyO6mdCrF4EeEEFL7OoOMGHBfpdGBkSehIfHTjzsvDO5ZfDA/9eRfXYQZg69haIReKdkdh2Rr2AzUUYS5EIuwPhd8Z0kgolapFYVB0YmQSMZM/trP8I6aDb61WMDayvRIC0X8ggBQIY5Q9W7BEec1KYVQ30AN0AFWgePVohgN9a11KRuPAxj9oq7+f2zKNI9gJJQAAAABJRU5ErkJggg==",
-    caravan: PNG + "iVBORw0KGgoAAAANSUhEUgAAABQAAAAUCAYAAACNiR0NAAAEk0lEQVR4XpWUW0xUVxSG/3OZO3O9cK/CSEaNiG1TqQmJTYqkoU0DidGkiW3S1PSBtsa2D6ahpqTVl770ARFbtBYr0EJjA0QIBjRBtGUirVC0dUAdRxRERpnLmZkzZ86s7jE+UR7sl/zJPntnrfxrZa2DEydOTA4MDPSPjIz0lKxdk1hXWpphd39Go9HDPM/j/8J/2dS0+cOGhpra2totodAjoSAvl/vswIF1fr+/gOM4rILApGFa9REGvT6wacMGqtlRTfX19fT+3vdoW+VW6uzsvAjG00BN1vHo6GjX8ePHJ1uPHvW3t7f7zp492z82NtaRfcNTMDw8/IvRaAw3NjbSz93dtH//fqqpfpVaWlpmJyYmvu/q6rr47bFjN1qOHLldmJ8bffmFzbS98nnaWu4lT3EeOaw5ck9Pz3lVVZvA4GZnZ5urq6t3tra2FoDjcPnSJSwtLuDKxB9KPB5PrPeWWUxGI8LhMLQCBy6jQknJgKo8OS8shTA1e/fO9PV/+jwezz5OkqRDp0+f3iWnUl6Xy4WpySkgLcNmsyE3z41oJIL78/ex+GAR8VgUlE6B1DRi7D6tpJ7o79v3qe1Ux2BVVdVfvNls/txut9/zjfsQvBMESEUsGkWEBSiKggg7SzEJajoNvVYLu9UMs8kAjufAykRESsCgE7n6uroKp9P5mlj/5htIJpMmnVaEmpQQuHULWp0OJR4PIuEIWMMhCAKcdht4Upn5BCTmTk2rICKEIhJicRlFTktxWEoW82d6+3nmRC+FH2Nywofp69dYqbmwswRarQasj9CKPIx67RP30VgMgXvziDDXGTUDKSGnHkXjM3E5lc4QKSKAjNfrvfbpJxfWuBx2W5gFPAqF8GBhAaAMFDkJWVKQwxKGw8u4cTOAiWk/nst1wG3NQTKlPP59fPwyq2QSDBGMysrK2d6+vqHFxcW8PXv22Ofu3t1izTHCZNAhzhwl4hLmEwnMzS9AllOQUwol5RQHykAU+BzWkgyblF1YCRF9MTQ09OumjeuVve+8RR/tfZu2b3uJ8lyOpNlkvCHw/LWN69aQ1WxS9FqNVF5SQIVOC3V3d5932YxYlWAw+I3L6bhZV1tDO1/fQS+Wb6CTJ09eAeARBL6ztLiADHrdb729vYMOszHuLXJRc3PzLQAGMHiswO12x746dFhdYOUF5+6BRwZsp6m/v7/Z7bDX8TyH9lM/JioqKvyptLqcVjPQaDRJNmYHAYj/Sci24iCbp7ml0BLikgRSVUixmD0QCGy0sZ2JxRMZNrvRUChk4QAtz3H4oKEhPDMzkw9gLVbD5/P94LTmSJ5CN20qLSKDTnOd9elCtjS24/5z586dyX6b9FrFZTFR9m5qauo7AEUiVmF5edmiEwUdiMAcQRSEXOZqZvfu3fsApJmiV69efbfjp24ZjPLy8pmysrKPAahYgcjkbmtrmyxwWijfYSFPvpNsJkOkr69vAEAVUwmTcUX/V0XHVMb0SjaYlXdTIwiJskIXWYz6xODgYC8AKxOHZ0T/NGE1U022j+wnOq4RBV9HR8elhw8ffo1n4F/j3EdTZcPT+wAAAABJRU5ErkJggg==",
-    sovereignty: PNG + "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"
-  };
-  var PRODUCTION_ICONS = {
-    wood: ICONS.wood,
-    clay: ICONS.clay,
-    iron: ICONS.iron,
-    stone: ICONS.stone,
-    food: ICONS.food,
-    research: ICONS.research,
-    gold: ICONS.gold
-  };
-  var UPKEEP_GROUP_ICONS = {
-    Military: ICONS.troops,
-    Diplomacy: ICONS.diplomacy,
-    Magic: ICONS.mana,
-    Sovereignty: ICONS.sovereignty,
-    Trade: ICONS.caravan
-  };
-  var STRUCTURE_ICONS = {
-    trainingGround: ICONS.troops,
-    targetRange: ICONS.troops,
-    militaryAcademy: ICONS.troops,
-    joustingYard: ICONS.troops,
-    assemblyYard: ICONS.troops
-  };
-
   // src/scoring.js
   var EPS = 1e-9;
   function settableTax(t) {
@@ -1276,9 +1244,6 @@
       return { base: Math.max(0, (cal.observedRpPerHour - flat) * 100 / m), flat };
     }
     return { base: LIBRARY_BASE_RP_L20, flat };
-  }
-  function computeBasicYield() {
-    return { yield: BASIC_YIELD_L20, measured: true };
   }
   function boosterBonus(s, resource) {
     return s.resourceBoosters?.[resource] ? RESOURCE_BOOSTER_BONUS : 0;
@@ -1321,8 +1286,9 @@
   function claimUpkeep(d, level, chancery = 1, held) {
     const from = held ?? 0;
     const rp = level > from ? claimRp(d, level, chancery) - claimRp(d, from, chancery) : 0;
-    return { rp, gold: rp * CLAIM_GOLD_PER_LEVEL_DISTANCE / CLAIM_RP_PER_LEVEL_DISTANCE };
+    return { rp, gold: rp * CLAIM_GOLD_PER_RP };
   }
+  var sumRp = (claims) => claims.reduce((sum, c) => sum + c.rp, 0);
   function sovStructure(entry) {
     return SOV_STRUCTURE_BY_KEY[entry?.structure] ?? SOV_STRUCTURE_BY_KEY[DEFAULT_SOV_STRUCTURE];
   }
@@ -1341,30 +1307,28 @@
   function tRp({ uRp, research, rpBonus = 0, minimum = 0 }) {
     return PRODUCTION_BASE + rpBonus - 100 * (uRp + minimum - research.flat) / research.base;
   }
-  function tRes({ milsovAssignments, plots, settings: settings2 = {} }) {
-    const none = { ceiling: Infinity, indicative: false, binding: null, impossible: false };
+  function tRes({ milsovAssignments, plots, settings = {} }) {
+    const none = { ceiling: Infinity, binding: null, impossible: false };
     const upkeep = milsovUpkeep(milsovAssignments ?? []);
-    const fixed = (res) => resourceMinimum(settings2, res) + buildingUpkeep(settings2, res);
+    const fixed = (res) => resourceMinimum(settings, res) + buildingUpkeep(settings, res);
     if (upkeep <= 0 && !BASIC_RESOURCES.some((res) => fixed(res) > 0)) return none;
-    const { yield: y, measured } = computeBasicYield(settings2);
     let worst = Infinity;
     let binding = null;
     for (const res of BASIC_RESOURCES) {
       const need = upkeep + fixed(res);
-      const perPoint = plots[res] * y;
-      const ceiling = perPoint > 0 ? PRODUCTION_BASE + resourceBonus(settings2, res) - 100 * need / perPoint : need > 0 ? -Infinity : Infinity;
+      const perPoint = plots[res] * BASIC_YIELD_L20;
+      const ceiling = perPoint > 0 ? PRODUCTION_BASE + resourceBonus(settings, res) - 100 * need / perPoint : need > 0 ? -Infinity : Infinity;
       if (ceiling < worst) {
         worst = ceiling;
         binding = res;
       }
     }
-    return { ceiling: worst, indicative: !measured, binding, impossible: worst === -Infinity };
+    return { ceiling: worst, binding, impossible: worst === -Infinity };
   }
-  function surplusAt({ tax, settings: settings2, sFood, uRp, uGold, milsovAssignments }) {
-    const s = settings2;
+  function surplusAt({ tax, settings, sFood, uRp, uGold, milsovAssignments }) {
+    const s = settings;
     const k = computeK(s.plots.food);
     const upkeep = milsovUpkeep(milsovAssignments ?? []);
-    const { yield: y, measured } = computeBasicYield(s);
     const consumption = computeConsumption(s);
     const base = {
       food: k * (PRODUCTION_BASE - tax + computeBOther(s) + (sFood ?? 0)),
@@ -1374,16 +1338,15 @@
     const out = {
       tax,
       food: base.food - consumption,
-      rp: base.rp - (uRp ?? 0),
+      rp: base.rp - (uRp ?? 0) - (s.keptClaimRp ?? 0),
       gold: base.gold - (uGold ?? 0),
       upkeep,
-      buildingUpkeep: {},
-      indicative: !measured
+      buildingUpkeep: {}
     };
     for (const res of BASIC_RESOURCES) {
       base[res] = basicProduction({
         plots: s.plots[res],
-        yield: y,
+        yield: BASIC_YIELD_L20,
         bonus: resourceBonus(s, res),
         tax
       });
@@ -1405,13 +1368,13 @@
     return { value: best.value, binding: best.name };
   }
   function claimGold(uRp, s) {
-    return (uRp + (s?.keptClaimRp ?? 0)) * 10;
+    return (uRp + (s?.keptClaimRp ?? 0)) * CLAIM_GOLD_PER_RP;
   }
   function goldNet({ tax, consumption, uGold }) {
     return GOLD_PER_TAX_POP * tax * consumption - uGold;
   }
   function knapsack(candidates, budget, maxItems = Infinity) {
-    const needCountDim = candidates.length > maxItems;
+    const needCountDim = candidates.filter((c) => c.slot !== false).length > maxItems;
     const width = budget + 1;
     const best = new Float64Array(width);
     if (!needCountDim) {
@@ -1441,9 +1404,10 @@
     for (let i = 0; i < candidates.length; i++) {
       const w = candidates[i].weight;
       const v = candidates[i].food;
-      for (let c = maxItems; c >= 1; c--) {
+      const used = candidates[i].slot === false ? 0 : 1;
+      for (let c = maxItems; c >= used; c--) {
         for (let cap = budget; cap >= w; cap--) {
-          const prev = dp[c - 1][cap - w];
+          const prev = dp[c - used][cap - w];
           if (prev === -Infinity) continue;
           const alt = prev + v;
           if (alt > dp[c][cap]) {
@@ -1474,11 +1438,11 @@
     if (dpResult.countLimited) {
       const { choice, bestCount, width } = dpResult;
       let count2 = bestCount[cap];
-      for (let i = candidates.length - 1; i >= 0 && count2 > 0; i--) {
+      for (let i = candidates.length - 1; i >= 0; i--) {
         if (choice[i][count2 * width + cap] === 1) {
           chosen.push(i);
           cap -= candidates[i].weight;
-          count2--;
+          if (candidates[i].slot !== false) count2--;
         }
       }
       return chosen.reverse();
@@ -1491,20 +1455,28 @@
     }
     return chosen.reverse();
   }
-  function milsovHeadroom({ tax, settings: settings2, uRp = 0, buildingsUsed = 0 }) {
-    const s = settings2;
+  function milsovHeadroom({
+    tax,
+    settings,
+    uRp = 0,
+    buildingsUsed = 0,
+    upkeepUsed = 0
+  }) {
+    const s = settings;
     const slots = Math.max(0, (s.maxBuildings ?? 20) - buildingsUsed);
     if (!Number.isFinite(tax)) return { rp: 0, upkeep: 0, slots };
-    const { yield: y } = computeBasicYield(s);
     let upkeep = Infinity;
     for (const res of BASIC_RESOURCES) {
       const produced = basicProduction({
         plots: s.plots[res],
-        yield: y,
+        yield: BASIC_YIELD_L20,
         bonus: resourceBonus(s, res),
         tax
       });
-      upkeep = Math.min(upkeep, produced - resourceMinimum(s, res) - buildingUpkeep(s, res));
+      upkeep = Math.min(
+        upkeep,
+        produced - resourceMinimum(s, res) - buildingUpkeep(s, res) - upkeepUsed
+      );
     }
     return {
       rp: Math.max(0, researchAt({
@@ -1520,77 +1492,183 @@
     const d = tile?.descriptor;
     return d && structure && d.sovKey === structure ? d.bonus ?? 0 : 0;
   }
-  function planMilsov({ tiles, headroom, chancery = 1, structure }) {
-    const EPS2 = 1e-9;
-    const n = Math.min(tiles.length, Math.floor(headroom.slots));
+  function planMilsov({
+    tiles,
+    headroom,
+    chancery = 1,
+    structure,
+    kept = []
+  }) {
+    const slots = Math.max(Math.floor(headroom.slots), kept.length);
     const RATE = [chancery, 1, 1, 1, 1];
-    const D = [];
-    for (let j = 0; j < MILSOV_MAX_LEVEL; j++) {
-      const pre = [0];
-      for (let i = 0; i < n; i++) pre.push(pre[i] + ((tiles[i].held ?? 0) > j ? 0 : tiles[i].d));
-      D.push(pre);
+    const worth = (t) => MILSOV_BONUS_PER_LEVEL + descriptorBonus(t, structure);
+    const groups = [];
+    const add = (t, minLevel) => {
+      let g = groups.find((x) => x.worth === worth(t));
+      if (!g) {
+        g = { worth: worth(t), tiles: [], floor: new Array(MILSOV_MAX_LEVEL).fill(0) };
+        groups.push(g);
+      }
+      g.tiles.push(t);
+      for (let j = 0; j < minLevel; j++) g.floor[j] += 1;
+    };
+    [...kept].sort((a, b) => b.buildingLevel - a.buildingLevel || a.d - b.d).forEach((t) => add(t, t.buildingLevel));
+    tiles.forEach((t) => add(t, 0));
+    groups.sort((a, b) => b.worth - a.worth);
+    for (const g of groups) {
+      g.D = [];
+      for (let j = 0; j < MILSOV_MAX_LEVEL; j++) {
+        const pre = [0];
+        g.tiles.forEach((t, i) => pre.push(pre[i] + ((t.held ?? 0) > j ? 0 : t.d)));
+        g.D.push(pre);
+      }
+      g.rpOf = (j, m2) => CLAIM_RP_PER_LEVEL_DISTANCE * RATE[j] * g.D[j][m2];
     }
-    const rpOf = (j, m2) => CLAIM_RP_PER_LEVEL_DISTANCE * RATE[j] * D[j][m2];
-    const empty = { counts: [0, 0, 0, 0, 0], levels: [], bonus: 0, rp: 0, upkeep: 0, buildings: 0 };
-    if (n === 0) return empty;
-    const layerTotal = MILSOV_UPKEEP_STEP.reduce((a, b) => a + b, 0);
     const finish = (counts) => {
+      const placed = [];
       const levels = [];
       let bonus = 0;
-      for (let i = 0; i < n; i++) {
-        const level = counts.filter((m2) => m2 > i).length;
-        if (level > 0) levels.push(level);
-        bonus += level * (MILSOV_BONUS_PER_LEVEL + descriptorBonus(tiles[i], structure));
-      }
-      const units = counts.reduce((a, b) => a + b, 0);
-      return {
-        counts,
-        levels,
-        bonus,
-        rp: counts.reduce((sum, m2, j) => sum + rpOf(j, m2), 0),
-        upkeep: counts.reduce((sum, m2, j) => sum + MILSOV_UPKEEP_STEP[j] * m2, 0),
-        buildings: levels.length
-      };
+      let rp = 0;
+      let upkeep = 0;
+      groups.forEach((g, c) => {
+        g.tiles.forEach((t, i) => {
+          const level = counts[c].filter((m2) => m2 > i).length;
+          if (level === 0) return;
+          placed.push(t);
+          levels.push(level);
+          bonus += level * g.worth;
+        });
+        counts[c].forEach((m2, j) => {
+          rp += g.rpOf(j, m2);
+          upkeep += MILSOV_UPKEEP_STEP[j] * m2;
+        });
+      });
+      return { placed, levels, bonus, rp, upkeep, buildings: placed.length };
     };
-    const topRp = D.reduce((sum, _, j) => sum + rpOf(j, n), 0);
-    if (topRp <= headroom.rp + EPS2 && layerTotal * n <= headroom.upkeep + EPS2) {
-      return finish(new Array(MILSOV_MAX_LEVEL).fill(n));
+    const all = groups.reduce((sum, g) => sum + g.tiles.length, 0);
+    const layerTotal = MILSOV_UPKEEP_STEP.reduce((a, b) => a + b, 0);
+    const topRp = groups.reduce((sum, g) => sum + g.D.reduce((s, _, j) => s + g.rpOf(j, g.tiles.length), 0), 0);
+    if (all <= slots && topRp <= headroom.rp + EPS && layerTotal * all <= headroom.upkeep + EPS) {
+      return finish(groups.map((g) => new Array(MILSOV_MAX_LEVEL).fill(g.tiles.length)));
     }
-    const m = new Array(MILSOV_MAX_LEVEL).fill(0);
+    const restBound = (c, free) => {
+      let bound = 0;
+      let left = free;
+      for (let i = c; i < groups.length; i++) {
+        const n = Math.min(groups[i].floor[0] + left, groups[i].tiles.length);
+        bound += MILSOV_MAX_LEVEL * n * groups[i].worth;
+        left -= n - groups[i].floor[0];
+      }
+      return bound;
+    };
+    const byValue = (steps) => steps.map((s) => ({ ...s, ratio: s.cost > 0 ? groups[s.c].worth / s.cost : Infinity })).sort((a, b) => b.ratio - a.ratio || a.c - b.c);
+    const upkeepSteps = [];
+    const rpSteps = [];
+    groups.forEach((g, c) => {
+      for (let k = 0; k < MILSOV_MAX_LEVEL; k++) {
+        upkeepSteps.push({ c, k, cost: MILSOV_UPKEEP_STEP[k], cap: Infinity });
+        const bare = g.tiles.filter((t) => (t.held ?? 0) <= k);
+        rpSteps.push({ c, k, cost: 0, cap: g.tiles.length - bare.length });
+        if (bare.length) {
+          const nearest = Math.min(...bare.map((t) => t.d));
+          rpSteps.push({ c, k, cost: CLAIM_RP_PER_LEVEL_DISTANCE * RATE[k] * nearest, cap: Infinity });
+        }
+      }
+      g.floorFrom = [0];
+      for (let k = MILSOV_MAX_LEVEL - 1; k >= 0; k--) {
+        g.floorFrom.unshift(g.floorFrom[0] + g.floor[k] * g.worth);
+      }
+    });
+    const upkeepOrder = byValue(upkeepSteps);
+    const rpOrder = byValue(rpSteps);
+    const budgetBound = (order, c, j, v, free, budget) => {
+      let bound = groups[c].floorFrom[j + 1];
+      for (let i = c + 1; i < groups.length; i++) bound += groups[i].floorFrom[0];
+      let left = Math.max(0, budget);
+      for (const s of order) {
+        let n = 0;
+        if (s.c === c) n = s.k > j ? v : 0;
+        else if (s.c > c) n = Math.min(groups[s.c].floor[0] + free, groups[s.c].tiles.length);
+        n = Math.min(n, s.cap);
+        if (n <= 0) continue;
+        const perLevel = groups[s.c].worth;
+        if (s.cost === 0) {
+          bound += n * perLevel;
+          continue;
+        }
+        const take = Math.min(n, left / s.cost);
+        bound += take * perLevel;
+        left -= take * s.cost;
+        if (left <= 0) break;
+      }
+      return bound;
+    };
+    const m = groups.map(() => new Array(MILSOV_MAX_LEVEL).fill(0));
     let best = null;
-    const search = (j, units, rp, upkeep, cap) => {
-      if (j === MILSOV_MAX_LEVEL) {
-        if (!best || units > best.units || units === best.units && rp < best.rp - EPS2) {
-          best = { counts: [...m], units, rp };
+    const search = (c, j, bonus, rp, upkeep, used) => {
+      if (c === groups.length) {
+        if (!best || bonus > best.bonus + EPS || bonus > best.bonus - EPS && rp < best.rp - EPS) {
+          best = { counts: m.map((x) => [...x]), bonus, rp };
         }
         return;
       }
-      let vMax = 0;
-      while (vMax < cap && rp + rpOf(j, vMax + 1) <= headroom.rp + EPS2 && upkeep + MILSOV_UPKEEP_STEP[j] * (vMax + 1) <= headroom.upkeep + EPS2) vMax++;
-      for (let v = vMax; v >= 0; v--) {
-        if (best) {
-          const bound = units + (MILSOV_MAX_LEVEL - j) * v;
-          if (bound < best.units) break;
-          if (bound === best.units && rp >= best.rp - EPS2) break;
-        }
-        m[j] = v;
-        search(j + 1, units + v, rp + rpOf(j, v), upkeep + MILSOV_UPKEEP_STEP[j] * v, v);
+      if (j === MILSOV_MAX_LEVEL) {
+        search(c + 1, 0, bonus, rp, upkeep, used);
+        return;
       }
-      m[j] = 0;
+      const g = groups[c];
+      const floor = g.floor[j];
+      const rpAbove = (v) => g.rpOf(j, v) - g.rpOf(j, floor);
+      const upkeepAbove = (v) => MILSOV_UPKEEP_STEP[j] * (v - floor);
+      const cap = j === 0 ? Math.min(g.tiles.length, floor + slots - used) : m[c][j - 1];
+      let vMax = floor;
+      while (vMax < cap && rp + rpAbove(vMax + 1) <= headroom.rp + EPS && upkeep + upkeepAbove(vMax + 1) <= headroom.upkeep + EPS) vMax++;
+      for (let v = vMax; v >= floor; v--) {
+        const free = slots - used - (j === 0 ? v - floor : 0);
+        if (best) {
+          const bound = bonus + (MILSOV_MAX_LEVEL - j) * v * g.worth + restBound(c + 1, free);
+          if (bound < best.bonus - EPS) break;
+          if (bound < best.bonus + EPS && rp >= best.rp - EPS) break;
+          const byBudget = bonus + v * g.worth + Math.min(
+            budgetBound(upkeepOrder, c, j, v, free, headroom.upkeep - upkeep - upkeepAbove(v)),
+            budgetBound(rpOrder, c, j, v, free, headroom.rp - rp - rpAbove(v))
+          );
+          if (byBudget < best.bonus - EPS) continue;
+          if (byBudget < best.bonus + EPS && rp >= best.rp - EPS) continue;
+        }
+        m[c][j] = v;
+        search(
+          c,
+          j + 1,
+          bonus + v * g.worth,
+          rp + rpAbove(v),
+          upkeep + upkeepAbove(v),
+          used + (j === 0 ? v - floor : 0)
+        );
+      }
+      m[c][j] = 0;
     };
-    search(0, 0, 0, 0, n);
-    return best ? finish(best.counts) : empty;
+    let floorRp = 0;
+    let floorUpkeep = 0;
+    for (const g of groups) {
+      g.floor.forEach((n, j) => {
+        floorRp += g.rpOf(j, n);
+        floorUpkeep += MILSOV_UPKEEP_STEP[j] * n;
+      });
+    }
+    search(0, 0, 0, floorRp, floorUpkeep, kept.length);
+    return finish(best.counts);
   }
-  function milsovClaims({ tiles, levels, structure, chancery }) {
+  function milsovClaims({ placed, levels, structure, chancery }) {
     return levels.map((level, i) => {
-      const held = tiles[i].held ?? 0;
+      const held = placed[i].held ?? 0;
       return {
-        ...tiles[i],
+        ...placed[i],
         structure,
         // A standing claim keeps its level.
         sovLevel: Math.max(level, held),
         buildingLevel: level,
-        ...claimUpkeep(tiles[i].d, level, chancery, held)
+        ...claimUpkeep(placed[i].d, level, chancery, held)
       };
     });
   }
@@ -1598,27 +1676,59 @@
     if (free.length === 0) return "tiles";
     if (hosts.length === 0) return "water";
     if (headroom.slots < 1) return "slots";
-    if (headroom.upkeep + 1e-9 < MILSOV_UPKEEP_BY_LEVEL[1]) return "upkeep";
+    if (headroom.upkeep + EPS < MILSOV_UPKEEP_BY_LEVEL[1]) return "upkeep";
     const nearest = hosts.reduce((d, t) => Math.min(d, (t.held ?? 0) > 0 ? 0 : t.d), Infinity);
     const cheapest = claimUpkeep(nearest, 1, chancery).rp;
-    if (headroom.rp + 1e-9 < cheapest) return "rp";
+    if (headroom.rp + EPS < cheapest) return "rp";
     return null;
   }
-  function prepareSite({ neighbours, settings: settings2 }) {
-    const s = settings2;
+  function prepareSite({ neighbours, settings }) {
+    const s = settings;
     const chancery = chanceryFactor(s);
     const maxBuildings = s.maxBuildings ?? 20;
-    const byDistance = neighbours.map((n, idx) => ({ ...n, idx, d: distance(n.dx, n.dy) })).sort((a, b) => a.d - b.d || a.food - b.food);
-    const foodCandidates = byDistance.filter((t) => t.food > 0).map((t) => {
+    const structure = s.milsovStructure || null;
+    const tiles = neighbours.map((n, idx) => ({ ...n, idx, d: distance(n.dx, n.dy) })).sort((a, b) => a.d - b.d || a.food - b.food);
+    const isKept = (t) => t.held > 0 && !!t.heldStructure;
+    const isFood = (t) => SOV_STRUCTURE_BY_KEY[t.heldStructure].boosts === "food";
+    const keptStructures = tiles.filter((t) => isKept(t) && !isFood(t)).map((t) => ({
+      ...t,
+      structure: t.heldStructure,
+      sovLevel: t.held,
+      buildingLevel: t.heldBuilding,
+      rp: 0,
+      gold: 0
+    }));
+    const byDistance = tiles.filter((t) => !isKept(t) || isFood(t));
+    const keptFood = byDistance.filter(isKept).map((t) => ({ ...t, level: t.held, rp: 0, gold: 0 }));
+    const keptHosts = keptStructures.filter((k) => k.structure === structure);
+    const foodAtLevel = (t) => t.food * t.heldBuilding / FOOD_CLAIM_LEVEL;
+    const foodClaim = (t) => {
       const up = claimUpkeep(t.d, FOOD_CLAIM_LEVEL, chancery, t.held);
-      return { ...t, level: FOOD_CLAIM_LEVEL, ...up, weight: Math.round(up.rp) };
-    });
+      return { ...t, level: FOOD_CLAIM_LEVEL, ...up, weight: Math.ceil(Math.max(0, up.rp - EPS)) };
+    };
+    const foodCandidates = [
+      ...byDistance.filter((t) => t.food > 0 && !isKept(t)).map(foodClaim),
+      // Raising a kept claim adds the rest of its food, in the slot it already has.
+      ...keptFood.filter((t) => foodAtLevel(t) < t.food).map((t) => ({
+        ...foodClaim(t),
+        food: t.food - foodAtLevel(t),
+        slot: false,
+        raises: true
+      }))
+    ];
     const rpBonus = prestigeBonus(s, "research");
     const budget = Math.max(0, Math.round(researchAt({ research: computeResearch(s), rpBonus, tax: 0 })));
+    const dp = knapsack(
+      foodCandidates,
+      budget,
+      Math.max(0, maxBuildings - keptFood.length - keptStructures.length)
+    );
+    const keptFoodTotal = keptFood.reduce((sum, t) => sum + foodAtLevel(t), 0);
+    for (let spend = 0; spend <= budget; spend++) dp.best[spend] += keptFoodTotal;
     return {
       settings: s,
       chancery,
-      structure: s.milsovStructure || null,
+      structure,
       k: computeK(s.plots.food),
       bOther: computeBOther(s),
       consumption: computeConsumption(s),
@@ -1627,10 +1737,24 @@
       minFood: resourceMinimum(s, "food"),
       minRp: resourceMinimum(s, "research"),
       byDistance,
+      keptFood,
+      keptStructures,
+      keptHosts,
+      keptFixed: keptStructures.filter((k) => !keptHosts.includes(k)),
       foodCandidates,
       budget,
-      dp: knapsack(foodCandidates, budget, maxBuildings)
+      dp
     };
+  }
+  function foodClaims(ctx, spend) {
+    const chosen = recoverSet(ctx.foodCandidates, ctx.dp, spend).map((i) => ctx.foodCandidates[i]);
+    const raised = new Map(chosen.filter((c) => c.raises).map((c) => [c.idx, c]));
+    const tiles = [
+      // A raising candidate carries only the food it adds; the claim gives it all.
+      ...ctx.keptFood.map((t) => raised.has(t.idx) ? { ...raised.get(t.idx), food: t.food } : t),
+      ...chosen.filter((c) => !c.raises)
+    ];
+    return { spend, tiles, rp: sumRp(tiles) };
   }
   function foodSpendFor(ctx, tax) {
     const needed = tax - PRODUCTION_BASE - ctx.bOther + (ctx.consumption + ctx.minFood) / ctx.k;
@@ -1642,8 +1766,7 @@
       if (ctx.dp.best[mid] >= needed - EPS) hi = mid;
       else lo = mid + 1;
     }
-    const produced = researchAt({ research: ctx.research, rpBonus: ctx.rpBonus, tax });
-    return produced - lo - ctx.minRp < -EPS ? null : lo;
+    return lo;
   }
   function bestFoodSpend(ctx, tax) {
     const produced = researchAt({ research: ctx.research, rpBonus: ctx.rpBonus, tax });
@@ -1661,34 +1784,43 @@
   function planSiteAt(ctx, tax, { bestEffort = false } = {}) {
     const s = ctx.settings;
     if (!Number.isFinite(tax)) return null;
-    const held = foodSpendFor(ctx, tax);
-    const spend = held ?? (bestEffort ? bestFoodSpend(ctx, tax) : null);
-    if (spend === null) return null;
-    const tiles = recoverSet(ctx.foodCandidates, ctx.dp, spend).map((i) => ctx.foodCandidates[i]);
+    const cheapest = foodSpendFor(ctx, tax);
+    let food = cheapest === null ? null : foodClaims(ctx, cheapest);
+    const produced = researchAt({ research: ctx.research, rpBonus: ctx.rpBonus, tax });
+    const holds = !!food && produced - food.rp - ctx.minRp >= -EPS;
+    if (!holds) {
+      if (!bestEffort) return null;
+      food = foodClaims(ctx, bestFoodSpend(ctx, tax));
+    }
+    const { spend, tiles, rp: foodRp } = food;
     const claimed = new Set(tiles.map((t) => t.idx));
     const free = ctx.byDistance.filter((t) => !claimed.has(t.idx));
     const hosts = free.filter((t) => !t.water);
+    const fixedUpkeep = milsovUpkeep(ctx.keptFixed);
     const headroom = milsovHeadroom({
       tax,
       settings: s,
-      uRp: spend,
-      buildingsUsed: tiles.length
+      uRp: foodRp,
+      buildingsUsed: tiles.length + ctx.keptFixed.length,
+      upkeepUsed: fixedUpkeep
     });
     const military = planMilsov({
       tiles: ctx.structure ? hosts : [],
       headroom,
       chancery: ctx.chancery,
-      structure: ctx.structure
+      structure: ctx.structure,
+      kept: ctx.keptHosts
     });
-    const milsov = milsovClaims({
-      tiles: hosts,
+    const placed = milsovClaims({
+      placed: military.placed,
       levels: military.levels,
       structure: ctx.structure,
       chancery: ctx.chancery
     });
+    const milsov = [...ctx.keptFixed, ...placed];
     const sFood = ctx.dp.best[spend];
-    const milsovRp = milsov.reduce((sum, a) => sum + a.rp, 0);
-    const uRp = spend + milsovRp;
+    const milsovRp = sumRp(milsov);
+    const uRp = foodRp + milsovRp;
     const uGold = claimGold(uRp, s);
     const resCeiling = tRes({ milsovAssignments: milsov, plots: s.plots, settings: s });
     const ceiling = tMax({
@@ -1700,12 +1832,12 @@
         minimum: ctx.minFood
       }),
       rp: tRp({ uRp, research: ctx.research, rpBonus: ctx.rpBonus, minimum: ctx.minRp }),
-      res: resCeiling.indicative ? Infinity : resCeiling.ceiling
+      res: resCeiling.ceiling
     });
     return {
       tax,
       // False when the plan is at a tax the site cannot hold.
-      holds: held !== null,
+      holds,
       tMax: ceiling.value,
       binding: ceiling.binding,
       sFood,
@@ -1713,18 +1845,17 @@
       uRp,
       uGold,
       goldNet: goldNet({ tax, consumption: ctx.consumption, uGold }),
-      surplus: Number.isFinite(tax) ? surplusAt({ tax, settings: s, sFood, uRp, uGold, milsovAssignments: milsov }) : null,
+      surplus: surplusAt({ tax, settings: s, sFood, uRp, uGold, milsovAssignments: milsov }),
       tiles,
       free,
       headroom,
       milsov,
       milsovBonus: military.bonus,
-      milsovUpkeep: military.upkeep,
+      milsovUpkeep: military.upkeep + fixedUpkeep,
       milsovRp,
       milsovGold: milsov.reduce((sum, a) => sum + a.gold, 0),
-      milsovBlocked: ctx.structure && milsov.length === 0 ? milsovBlockedBy({ hosts, free, headroom, chancery: ctx.chancery }) : null,
+      milsovBlocked: ctx.structure && placed.length === 0 ? milsovBlockedBy({ hosts, free, headroom, chancery: ctx.chancery }) : null,
       resCeiling: resCeiling.ceiling,
-      resIndicative: resCeiling.indicative,
       resBinding: resCeiling.binding,
       resImpossible: resCeiling.impossible
     };
@@ -1751,22 +1882,26 @@
     return { bonus: best.milsovBonus, tax: best.tax };
   }
   function siteCeiling(ctx) {
-    const floors = tRes({ milsovAssignments: [], plots: ctx.settings.plots, settings: ctx.settings });
-    const res = floors.indicative ? Infinity : floors.ceiling;
+    const res = tRes({
+      milsovAssignments: ctx.keptStructures,
+      plots: ctx.settings.plots,
+      settings: ctx.settings
+    }).ceiling;
+    const ceilingAt = (sFood, uRp) => tMax({
+      food: tFood({
+        bOther: ctx.bOther,
+        sFood,
+        consumption: ctx.consumption,
+        k: ctx.k,
+        minimum: ctx.minFood
+      }),
+      rp: tRp({ uRp, research: ctx.research, rpBonus: ctx.rpBonus, minimum: ctx.minRp }),
+      res
+    });
     let winner = null;
     for (let spend = 0; spend <= ctx.budget; spend++) {
       const sFood = ctx.dp.best[spend];
-      const t = tMax({
-        food: tFood({
-          bOther: ctx.bOther,
-          sFood,
-          consumption: ctx.consumption,
-          k: ctx.k,
-          minimum: ctx.minFood
-        }),
-        rp: tRp({ uRp: spend, research: ctx.research, rpBonus: ctx.rpBonus, minimum: ctx.minRp }),
-        res
-      });
+      const t = ceilingAt(sFood, spend);
       const net = goldNet({
         tax: t.value,
         consumption: ctx.consumption,
@@ -1776,15 +1911,14 @@
         winner = { tMax: t.value, binding: t.binding, sFood, spend };
       }
     }
-    return winner;
+    const exact = ceilingAt(winner.sFood, foodClaims(ctx, winner.spend).rp);
+    return { ...winner, tMax: exact.value, binding: exact.binding };
   }
   function scoreSiteFrom(ctx) {
     const s = ctx.settings;
     const winner = siteCeiling(ctx);
-    if (!winner) return null;
     const plan = planSiteAt(ctx, settableTax(winner.tMax)) ?? fallbackPlan(ctx, winner);
-    const cheaper = ctx.structure ? planSiteAt(ctx, plan.tax - 1) : null;
-    const required = ctx.structure ? Math.max(0, s.milsovMinBonus ?? 0) : s.milsovMinBonus ?? 0;
+    const required = ctx.structure ? Math.max(0, s.milsovMinBonus ?? 0) : 0;
     const floor = Math.min(s.tMin ?? 0, plan.tax);
     const reach = required > 0 && plan.milsovBonus < required && Number.isFinite(plan.tax) ? milsovAtFloor(ctx, { required, floor, ceiling: plan.tax }) : null;
     return {
@@ -1794,7 +1928,6 @@
       tMaxExact: winner.tMax,
       // Named from the exact ceiling.
       binding: winner.binding,
-      milsovPrice: cheaper ? cheaper.milsovBonus - plan.milsovBonus : 0,
       // The highest tax reaching the minimum bonus, when it is not met for free.
       milsovMinTax: reach ? reach.tax : null,
       milsovMinBonusAt: reach ? reach.bonus : null,
@@ -1803,14 +1936,16 @@
     };
   }
   function fallbackPlan(ctx, winner) {
-    const tiles = recoverSet(ctx.foodCandidates, ctx.dp, winner.spend).map((i) => ctx.foodCandidates[i]);
+    const { tiles } = foodClaims(ctx, winner.spend);
     const claimed = new Set(tiles.map((t) => t.idx));
     const free = ctx.byDistance.filter((t) => !claimed.has(t.idx));
+    const keptUpkeep = milsovUpkeep(ctx.keptStructures);
     const headroom = milsovHeadroom({
       tax: winner.tMax,
       settings: ctx.settings,
       uRp: winner.spend,
-      buildingsUsed: tiles.length
+      buildingsUsed: tiles.length + ctx.keptStructures.length,
+      upkeepUsed: keptUpkeep
     });
     return {
       tax: winner.tMax,
@@ -1829,9 +1964,9 @@
       tiles,
       free,
       headroom,
-      milsov: [],
-      milsovBonus: 0,
-      milsovUpkeep: 0,
+      milsov: ctx.keptStructures,
+      milsovBonus: ctx.keptHosts.reduce((sum, k) => sum + k.buildingLevel * (MILSOV_BONUS_PER_LEVEL + descriptorBonus(k, ctx.structure)), 0),
+      milsovUpkeep: keptUpkeep,
       milsovRp: 0,
       milsovGold: 0,
       milsovBlocked: ctx.structure ? milsovBlockedBy({
@@ -1841,17 +1976,15 @@
         chancery: ctx.chancery
       }) : null,
       resCeiling: Infinity,
-      resIndicative: false,
       resBinding: null,
       resImpossible: false
     };
   }
   function betterPlan(a, b) {
-    const EPS2 = 1e-9;
-    if (a.tMax > b.tMax + EPS2) return true;
-    if (a.tMax < b.tMax - EPS2) return false;
-    if (a.uRp < b.uRp - EPS2) return true;
-    if (a.uRp > b.uRp + EPS2) return false;
+    if (a.tMax > b.tMax + EPS) return true;
+    if (a.tMax < b.tMax - EPS) return false;
+    if (a.uRp < b.uRp - EPS) return true;
+    if (a.uRp > b.uRp + EPS) return false;
     return a.goldNet > b.goldNet;
   }
 
@@ -1890,8 +2023,8 @@
       errors
     };
   }
-  function focusRadius(focus, settings2) {
-    return focus?.radius ?? Math.round(settings2?.rClaim ?? 2);
+  function focusRadius(focus, settings) {
+    return focus?.radius ?? Math.round(settings?.rClaim ?? 2);
   }
   function plotsFromRs(rs) {
     if (!rs) return null;
@@ -1905,8 +2038,8 @@
     }
     return total === PLOT_TOTAL ? plots : null;
   }
-  function resolvePlots(focus, settings2, rs) {
-    const configured = settings2.plots;
+  function resolvePlots(focus, settings, rs) {
+    const configured = settings.plots;
     if (focus.useConfiguredPlots) {
       return {
         plots: configured,
@@ -1928,7 +2061,7 @@
       note: rs ? `This tile\u2019s ratings do not total ${PLOT_TOTAL} plots, so the City Configuration allocation was used instead.` : "The payload carries no resource ratings for this tile, so the City Configuration allocation was used instead."
     };
   }
-  function keptClaims({ payload, centre, radius, idx, chancery, town }) {
+  function keptClaims({ centre, radius, idx, chancery, town }) {
     const claims = [];
     let rp = 0;
     let unknownLevel = 0;
@@ -1964,7 +2097,7 @@
       isTown: idx.towns.has(key)
     };
   }
-  function focusSite({ payload, focus, settings: settings2 }) {
+  function focusSite({ payload, focus, settings }) {
     if (!payload || !payload.data) {
       return {
         ok: false,
@@ -1972,7 +2105,7 @@
         message: "No map data on screen yet. Pan or zoom the map, then try again."
       };
     }
-    const radius = focusRadius(focus, settings2);
+    const radius = focusRadius(focus, settings);
     const key = tileKey(focus.y, focus.x);
     const centre = payload.data[key];
     if (!centre) {
@@ -1984,27 +2117,25 @@
     }
     const idx = indexPayload(payload);
     const rs = parseRs(centre);
-    const { plots, source: plotSource, note: plotNote } = resolvePlots(focus, settings2, rs);
-    let effective = { ...settings2, plots, rClaim: radius };
+    const { plots, source: plotSource, note: plotNote } = resolvePlots(focus, settings, rs);
+    let effective = { ...settings, plots, rClaim: radius };
     const centreTown = idx.towns.get(key);
     const homeName = centreTown ? townIdentity(centreTown)[0] : void 0;
     const homeTown = homeName ? centreTown : null;
     const preserveTown = focus.preserveSovereignty ? homeTown : null;
     if (homeTown) effective = { ...effective, homeTown };
     const kept = preserveTown ? keptClaims({
-      payload,
       centre: focus,
       radius,
       idx,
-      chancery: chanceryFactor(settings2),
+      chancery: chanceryFactor(settings),
       town: preserveTown
     }) : { claims: [], rp: 0, unknownLevel: 0, otherTown: 0 };
     const released = homeTown && !preserveTown ? keptClaims({
-      payload,
       centre: focus,
       radius,
       idx,
-      chancery: chanceryFactor(settings2),
+      chancery: chanceryFactor(settings),
       town: homeTown
     }) : null;
     if (preserveTown) {
@@ -2030,18 +2161,11 @@
     }
     const ctx = prepareSite({ neighbours, settings: effective });
     const base = scoreSiteFrom(ctx);
-    if (!base) {
-      return {
-        ok: false,
-        reason: "unplannable",
-        message: `Nothing could be planned at ${focus.x}|${focus.y}.`
-      };
-    }
     const ceiling = base.tMax;
-    const floor = Math.max(0, Math.min(settings2.tMin ?? 0, ceiling));
+    const floor = Math.max(0, Math.min(settings.tMin ?? 0, ceiling));
     const requested = focus.tax;
     const tax = Math.max(0, Math.min(ceiling, Math.max(floor, requested)));
-    const plan = planSiteAt(ctx, tax, { bestEffort: true }) ?? base;
+    const plan = planSiteAt(ctx, tax, { bestEffort: true });
     return {
       ok: true,
       x: focus.x,
@@ -2061,8 +2185,8 @@
       homeTown: homeTown ? homeName : null,
       // The town's own claims laid out afresh because preserving was off.
       released: released ? released.claims.length + released.unknownLevel : 0,
-      // The settings this plan was made with, which differ from the form's.
       neighbours,
+      // The settings this plan was made with, which differ from the form's.
       settings: effective,
       kept,
       claimable: neighbours.length,
@@ -2079,8 +2203,245 @@
       floor
     };
   }
+  function ownTowns(payload) {
+    const seen = /* @__PURE__ */ new Map();
+    for (const t of extractTowns(payload)) {
+      if (!t.own || !Number.isFinite(t.x) || !Number.isFinite(t.y)) continue;
+      if (!payload.data?.[tileKey(t.y, t.x)]) continue;
+      const at = `${t.x}|${t.y}`;
+      if (!seen.has(at)) seen.set(at, { x: t.x, y: t.y, label: t.name ? `${t.name} (${at})` : at });
+    }
+    return [...seen.values()].sort((a, b) => a.label.localeCompare(b.label));
+  }
 
-  // src/panel.js
+  // src/settings.js
+  function clampNumber(raw, { min = -Infinity, max = Infinity, integer = false, fallback = 0 } = {}) {
+    const n = typeof raw === "number" ? raw : Number(String(raw ?? "").trim());
+    if (String(raw ?? "").trim() === "" || !Number.isFinite(n)) return fallback;
+    return Math.min(max, Math.max(min, integer ? Math.round(n) : n));
+  }
+  function validatePlots(raw) {
+    const plots = {};
+    let total = 0;
+    for (const key of PLOT_KEYS) {
+      plots[key] = clampNumber(raw?.[key], { min: 0, max: PLOT_TOTAL, integer: true, fallback: 0 });
+      total += plots[key];
+    }
+    const diff = total - PLOT_TOTAL;
+    return {
+      plots,
+      total,
+      ok: diff === 0,
+      message: diff === 0 ? "" : diff > 0 ? `${diff} over` : `${-diff} short`
+    };
+  }
+  function parseMilsovStructure(raw) {
+    const key = String(raw ?? "").trim();
+    return MILSOV_STRUCTURES.some((s) => s.key === key) ? key : null;
+  }
+  function parseRpCalibration(observed, atTax, prestige) {
+    const rp = clampNumber(observed, { min: 0, fallback: 0 });
+    if (rp <= 0) return null;
+    return {
+      observedRpPerHour: rp,
+      atTax: clampNumber(atTax, { min: 0, max: 100, fallback: 0 }),
+      prestige: !!prestige
+    };
+  }
+  function parseResourceBoosters(raw) {
+    const out = {};
+    for (const res of BASIC_RESOURCES) out[res] = !!raw?.[res];
+    return out;
+  }
+  function parseUpkeepBuildings(raw) {
+    const out = {};
+    for (const b of UPKEEP_BUILDINGS) {
+      out[b.key] = clampNumber(raw?.[b.key], { min: 0, max: 99, integer: true, fallback: 0 });
+    }
+    return out;
+  }
+  function parseResourceMinimums(raw) {
+    const out = {};
+    for (const key of MINIMUM_KEYS) {
+      out[key] = clampNumber(raw?.[key], { min: 0, max: 1e7, integer: true, fallback: 0 });
+    }
+    return out;
+  }
+  function parsePrestige(raw) {
+    const out = {};
+    for (const key of PRESTIGE_KEYS) out[key] = !!raw?.[key];
+    return out;
+  }
+  function parseTerrains(raw) {
+    const ticked = Array.isArray(raw) ? raw : [];
+    return SETTLE_TERRAINS.filter((t) => ticked.includes(t));
+  }
+  var SETTINGS_FIELDS = [
+    { key: "plots", group: "Settle Tile", label: "Settle Plot Allocation", type: "plots" },
+    {
+      key: "cityConsumption",
+      group: "City Food",
+      label: "Food Consumed per Hour",
+      type: "number",
+      min: 1,
+      max: 1e6,
+      integer: true,
+      fallback: DEFAULT_CITY_CONSUMPTION
+    },
+    { key: "naturesBounty", group: "City Food", label: "Nature's Bounty", type: "checkbox" },
+    {
+      key: "geomancerRetreats",
+      group: "City Food",
+      label: "Geomancer Retreats",
+      type: "select",
+      parse: "number",
+      options: NATURES_BOUNTY_BY_RETREATS.map((bonus, n) => ({ value: n, label: `${n} (+${bonus}%)` })),
+      enabledWhen: (s) => !!s.naturesBounty
+    },
+    { key: "cityCount", group: "City Food", label: "Number of Cities", type: "number", min: 1, max: 999, integer: true, fallback: 1 },
+    { key: "isCapital", group: "City Food", label: "This City is the Capital", type: "checkbox" },
+    // Both are flat additions the research reading contains, so it does not
+    // override them.
+    {
+      key: "allembine",
+      group: "Research",
+      label: `Allembine Research (+${ALLEMBINE_RP}/hr)`,
+      type: "checkbox"
+    },
+    {
+      key: "overflowingInsight",
+      group: "Research",
+      label: `Overflowing Insight (+${OVERFLOWING_INSIGHT_RP}/hr)`,
+      type: "checkbox"
+    },
+    {
+      key: "rpCalibration",
+      group: "Research",
+      label: "Measured Research Output",
+      type: "calibration"
+    },
+    // Drawn as one table, a row per production. The Flour Mill is food's booster.
+    {
+      key: "resourceBoosters",
+      group: "Production",
+      label: "Booster Buildings at Level 20",
+      type: "boosters"
+    },
+    {
+      key: "flourMill",
+      group: "Production",
+      label: `Flour Mill at Level 20 (+${FLOUR_MILL_L20}%)`,
+      type: "checkbox"
+    },
+    {
+      key: "prestige",
+      group: "Production",
+      label: "Prestige Production Boost",
+      type: "prestige"
+    },
+    {
+      key: "resourceMinimums",
+      group: "Production",
+      label: "Minimum Surplus per Hour",
+      type: "minimums"
+    },
+    {
+      key: "upkeepBuildings",
+      group: "City Buildings",
+      label: "How many of each at level 20",
+      type: "upkeepBuildings"
+    },
+    { key: "rClaim", group: "Sovereignty", label: "Claim Radius", type: "number", min: 1, max: 6, integer: true, fallback: 2 },
+    { key: "maxBuildings", group: "Sovereignty", label: "Maximum Buildings", type: "number", min: 0, max: 200, integer: true, fallback: 20 },
+    { key: "milsovStructure", group: "Sovereignty", label: "Military Structure", type: "milsov" },
+    {
+      key: "milsovMinBonus",
+      group: "Sovereignty",
+      label: "Minimum Military Bonus (%)",
+      type: "number",
+      min: 0,
+      max: 1e3,
+      integer: true,
+      fallback: 0,
+      enabledWhen: (s) => !!s.milsovStructure
+    },
+    { key: "tMin", group: "Site Filters", label: "Minimum Tax (%)", type: "number", min: 0, max: 100 },
+    { key: "dOther", group: "Site Filters", label: "Minimum Distance to Other Players", type: "number", min: 0, max: 100 },
+    { key: "dOwn", group: "Site Filters", label: "Minimum Distance to Your Cities", type: "number", min: 0, max: 100 },
+    { key: "dAlliance", group: "Site Filters", label: "Minimum Distance to Alliance Towns", type: "number", min: 0, max: 100 },
+    {
+      key: "ownClaimsAvailable",
+      group: "Site Filters",
+      label: "Treat Your Own Claims as Available",
+      type: "checkbox",
+      hint: "On: tiles you already claim count as free ground, as if you gave them up. Off: they are off limits, except to the town that holds them."
+    },
+    {
+      key: "siteTerrains",
+      group: "Site Filters",
+      subsection: "Terrain",
+      label: "Site Tile",
+      type: "terrains",
+      hint: "List only sites on the ticked terrain. With none ticked, every terrain is listed."
+    },
+    {
+      key: "surroundTerrains",
+      group: "Site Filters",
+      label: "Surrounding Tiles",
+      type: "terrains",
+      hint: "List only sites with enough of the 8 tiles around them on the ticked terrain. River banks count as Plains. With none ticked, every site is listed."
+    },
+    {
+      key: "surroundMin",
+      group: "Site Filters",
+      label: "Minimum on Ticked Terrain (of 8)",
+      type: "number",
+      min: 0,
+      max: 8,
+      integer: true,
+      fallback: 8,
+      hint: "How many of the 8 tiles around a site must be on the terrain ticked above. Tiles past the edge of the world count as none."
+    },
+    {
+      key: "autoMinimizeOffMap",
+      group: "Display",
+      label: "Minimise when off the World Map",
+      type: "checkbox",
+      menu: true,
+      hint: "Folds the panel to its icon on any page but the World Map, the only one with map data."
+    },
+    {
+      key: "mapOverlay",
+      group: "Display",
+      label: "Mark sites on the World Map",
+      type: "checkbox",
+      menu: true,
+      hint: "After a Scan, numbers the top ten on the map and outlines the selected row\u2019s tile; after Optimise, draws the plan. It draws on the game\u2019s own map, so it depends on that map\u2019s layout."
+    }
+  ];
+  function scanSettingsDiffer(a, b) {
+    return SETTINGS_FIELDS.some((f) => !f.menu && JSON.stringify(a[f.key]) !== JSON.stringify(b[f.key]));
+  }
+
+  // src/map-view.js
+  var WORLD_MAP_HASH = "#/World/Map";
+  function isWorldMapHash(hash) {
+    return String(hash ?? "").startsWith(WORLD_MAP_HASH);
+  }
+  function centredView(x, y, zoom, radius) {
+    return { x, y, zoom: Math.max(zoom, radius) };
+  }
+  function mapHash(view) {
+    return `${WORLD_MAP_HASH}/${view.x}/${view.y}/${view.zoom}`;
+  }
+  function roman(level) {
+    return SOV_LEVEL_ROMAN[level - 1] ?? String(level);
+  }
+  function cellKey(dx, dy) {
+    return `${dx},${dy}`;
+  }
+
+  // src/ui/css.js
   var CSS = `
 /* Form controls take the browser's own font and colour rather than inheriting,
    so every element gets them here, first, and nested elements need explicit
@@ -2261,15 +2622,16 @@
 .sov-panel .sov-matrix input[type=number]{width:72px;text-align:right}
 .sov-matrix .sov-none{color:#555}
 
-.sov-upkeep-group{display:flex;align-items:center;gap:6px;margin:10px 0 2px;padding-bottom:3px;
+.sov-heading{display:flex;align-items:center;gap:6px;margin:10px 0 2px;padding-bottom:3px;
   border-bottom:1px solid var(--line);color:var(--accent-text);font-weight:600}
-.sov-upkeep-group:first-child{margin-top:0}
-.sov-panel .sov-upkeep-group img{width:18px;height:18px;image-rendering:pixelated}
+.sov-heading:first-child{margin-top:0}
+.sov-panel .sov-heading img{width:18px;height:18px;image-rendering:pixelated}
+.sov-subheading{margin:10px 0 3px;color:var(--muted);font-size:10px;font-weight:600;
+  text-transform:uppercase;letter-spacing:.06em}
 .sov-f>.sov-uses{flex:none;display:inline-flex;gap:3px;margin-left:auto;cursor:help}
 .sov-panel .sov-uses img{width:12px;height:12px;image-rendering:pixelated}
 .sov-panel [data-upkeep-row] input[type=number]{width:52px}
 .sov-panel .sov-has>label{color:#fff;font-weight:600}
-.sov-f-head{margin:8px 0 2px;color:#d4d4d4}
 .sov-terrains{display:grid;grid-template-columns:1fr 1fr;column-gap:16px}
 /* Plains alone, then each Small beside its Large. */
 .sov-terrains>:nth-child(2){grid-column:1}
@@ -2397,18 +2759,11 @@
 /* Any display rule above beats the browser's own [hidden], so this one comes last. */
 .sov-panel [hidden]{display:none}
 `;
+
+  // src/ui/layout.js
   var PANEL_POSITION_KEY = "illyriad-sov-scanner.panel-position";
   var PANEL_COLLAPSED_KEY = "illyriad-sov-scanner.panel-collapsed";
-  var WORLD_MAP_HASH = "#/World/Map";
-  function isWorldMapHash(hash) {
-    return String(hash ?? "").startsWith(WORLD_MAP_HASH);
-  }
-  function centredView(x, y, zoom, radius) {
-    return { x, y, zoom: Math.max(zoom, radius) };
-  }
-  function mapHash(view) {
-    return `${WORLD_MAP_HASH}/${view.x}/${view.y}/${view.zoom}`;
-  }
+  var OPEN_SECTIONS_KEY = "illyriad-sov-scanner.open-sections";
   function clampPanelPosition(x, y, panelWidth, panelHeight, viewportWidth, viewportHeight) {
     const maxX = Math.max(0, viewportWidth - panelWidth);
     const maxY = Math.max(0, viewportHeight - panelHeight);
@@ -2433,7 +2788,6 @@
     } catch {
     }
   }
-  var OPEN_SECTIONS_KEY = "illyriad-sov-scanner.open-sections";
   function loadOpenSections() {
     try {
       const names = JSON.parse(globalThis.localStorage?.getItem(OPEN_SECTIONS_KEY) ?? "[]");
@@ -2461,52 +2815,215 @@
     } catch {
     }
   }
+  function installDrag(root, header) {
+    let anchor = loadPanelPosition();
+    let dragged = false;
+    let dragPointerId = null;
+    let dragOffsetX = 0;
+    let dragOffsetY = 0;
+    function positionPanel(x, y) {
+      const viewportHeight = window.innerHeight;
+      if (root.classList.contains("sov-collapsed")) {
+        root.style.maxHeight = "";
+      } else {
+        const minVisible = header.offsetHeight || 34;
+        const top = Math.min(
+          Math.max(0, Number.isFinite(y) ? y : 0),
+          Math.max(0, viewportHeight - minVisible)
+        );
+        root.style.maxHeight = `${viewportHeight - top}px`;
+      }
+      const position = clampPanelPosition(
+        x,
+        y,
+        root.offsetWidth,
+        root.offsetHeight,
+        window.innerWidth,
+        viewportHeight
+      );
+      root.style.left = `${position.x}px`;
+      root.style.top = `${position.y}px`;
+      root.style.right = "auto";
+    }
+    function placeAtAnchor() {
+      if (anchor) positionPanel(anchor.x, anchor.y);
+    }
+    header.addEventListener("pointerdown", (e) => {
+      if (e.target.closest(".sov-about,.sov-gear,.sov-changelog") || e.button !== 0) return;
+      const rect = root.getBoundingClientRect();
+      dragPointerId = e.pointerId;
+      dragOffsetX = e.clientX - rect.left;
+      dragOffsetY = e.clientY - rect.top;
+      dragged = false;
+      header.setPointerCapture?.(e.pointerId);
+    });
+    header.addEventListener("pointermove", (e) => {
+      if (e.pointerId !== dragPointerId) return;
+      const rect = root.getBoundingClientRect();
+      if (!dragged && Math.hypot(
+        e.clientX - (rect.left + dragOffsetX),
+        e.clientY - (rect.top + dragOffsetY)
+      ) < 3) return;
+      dragged = true;
+      root.classList.add("sov-dragging");
+      e.preventDefault();
+      positionPanel(e.clientX - dragOffsetX, e.clientY - dragOffsetY);
+    });
+    function finishDrag(e) {
+      if (e.pointerId !== dragPointerId) return;
+      if (dragged) {
+        const rect = root.getBoundingClientRect();
+        anchor = { x: rect.left, y: rect.top };
+        savePanelPosition(anchor);
+      }
+      root.classList.remove("sov-dragging");
+      dragPointerId = null;
+    }
+    header.addEventListener("pointerup", finishDrag);
+    header.addEventListener("pointercancel", finishDrag);
+    window.addEventListener("resize", placeAtAnchor);
+    return {
+      placeAtAnchor,
+      takeDrag() {
+        const was = dragged;
+        dragged = false;
+        return was;
+      }
+    };
+  }
+
+  // src/ui/tooltips.js
+  function tipPosition(rect, size, view, gap = 6) {
+    const centred = rect.left + rect.width / 2 - size.width / 2;
+    const left = Math.max(gap, Math.min(centred, view.width - size.width - gap));
+    const below = rect.bottom + gap;
+    const top = below + size.height + gap <= view.height ? below : Math.max(gap, rect.top - gap - size.height);
+    return { left, top };
+  }
+  var TIP_DELAY_MS = 250;
+  var innerTarget = (e) => e.composedPath()[0];
+  function installTooltips(shadow) {
+    const box = document.createElement("div");
+    box.className = "sov-tip";
+    box.setAttribute("role", "tooltip");
+    box.hidden = true;
+    shadow.appendChild(box);
+    let shownFor = null;
+    let timer = 0;
+    const hide = () => {
+      clearTimeout(timer);
+      shownFor = null;
+      box.hidden = true;
+    };
+    const show = (el) => {
+      shownFor = el;
+      box.textContent = el.dataset.sovTip;
+      box.classList.toggle("sov-tip-multi", box.textContent.includes("\n"));
+      box.hidden = false;
+      const { left, top } = tipPosition(
+        el.getBoundingClientRect(),
+        { width: box.offsetWidth, height: box.offsetHeight },
+        { width: window.innerWidth, height: window.innerHeight }
+      );
+      box.style.left = `${left}px`;
+      box.style.top = `${top}px`;
+    };
+    document.addEventListener("pointerover", (e) => {
+      const el = innerTarget(e).closest?.(".sov-panel [title], .sov-menu [title], [data-sov-tip]");
+      if (!el) {
+        hide();
+        return;
+      }
+      if (el === shownFor) return;
+      if (el.hasAttribute("title")) {
+        el.dataset.sovTip = el.title;
+        el.setAttribute("aria-description", el.title);
+        el.removeAttribute("title");
+      }
+      clearTimeout(timer);
+      if (shownFor) show(el);
+      else timer = setTimeout(() => show(el), TIP_DELAY_MS);
+    });
+    document.addEventListener("pointerout", (e) => {
+      if (!e.relatedTarget) hide();
+    });
+    for (const type of ["pointerdown", "keydown", "wheel"]) {
+      document.addEventListener(type, hide, true);
+    }
+    for (const target of [document, shadow]) target.addEventListener("scroll", hide, true);
+  }
+
+  // src/game-icons.js
+  var PNG = "data:image/png;base64,";
+  var ICONS = {
+    wood: PNG + "iVBORw0KGgoAAAANSUhEUgAAABQAAAAUCAYAAACNiR0NAAACFElEQVR4Xu3TT0hUURTH8TfmWFSDzNDMq5waQbAWak3qSBKljWHUGIhaKIabEGZsIaYmObgZBAuNXBQEE4YWsxIiNy+wFhpofzBX7Wwl4qqIgXZ6PL+L5zJPKypctvhyuYv7OecxahDRjvYftLeydIc2+3fwcW8BIY8ry+Bo824bgDt6+uTh78HB7tq2tkge3eu7tA5IwNWVpV0A5f5H4NlTbgeA8uLD1N5yRjBdKJh/bSuYmkj+GrzfFbbqqvIVlLvPUOfHyRuEjePRkB5wsepYsuh4IAiwp6djO/jgVk0jR9cjgTQe41G0uUQDfp+TKoOmDNAbd7SUWqUh/7nFD3dzuWzOwSlwilOAz51NFSdMAizAlXAhMD0AQ/tiYQ3jR/r0fugVY1kCfmu6cKhbfc5pr+0xwJH+OkAyQOMVJ33AVPOzifTsm4HvDOcA1MjNqwFAGjQ9Tsrz5tgG4Gy9fIRqK730bDz2lbf6khqPyaarAJeBul3ORUCSPK6vPqhBv7kXn6w/9fNCr2puJqG3BZgAKPncu0cFOF9+gNobjuoB1WUehXv2O+jlZJdGeENsh4YBDmSC8reIU5IBkvWik2am4wp79zaxjpM/PcWnARDFuEcZ4E8H+M09VFTgsm322uqPMzYKjDcU0B4DBgO4JzMGrMm2z8eiPwAyEAEkyX8KHv9VAHgrJ07e0rCmbuOOFLijbQAdponiH+6yGAAAAABJRU5ErkJggg==",
+    clay: PNG + "iVBORw0KGgoAAAANSUhEUgAAABQAAAAUCAYAAACNiR0NAAAEaklEQVR4XqzOz0tUURjH4e977jn3znWcMWfUQAWNARMlSt2ILYLoxzYiCCKCMNy4adnCCFr0B0QEEUGt2rRw3yIocNOi0tBIUcqZ0XGU7ozO3HvuPfec7qZoEHe98Nk+75eMMfifRw+vTB0JaBXhwdysDeBMUiFpy2gNYuw9AI2wgQ8fF1Hf/Alu2wAAfhR2/95MDsB8UiZpNAkJJrSOsbmyVA0Df39oYlJOTpx+/vVg/dnY5esOgMahhQlExpgnAKaJ6M9TS6kIpdVvCBoHyOa60N0/YCzOSZtYq4Yn1f6WlTo+fPHQwgTjcaxn/ECSY9Ga1DjplUvwyt9RKW7h3LWb2KvuIPB9Ygm3vbG6u770OR9KaTmphSl6fPt8C/hlsThS6GSfMizW3BAX2uJgwJv1ALfGOqDCCHsqgi8VuvLt6OuwDTFQT1c7vHpQ4U9fLreAl852vnAQ2m1GGMUMWQBM0k7NQ6ki0J3iUEzDERZK2zWMFE6YlE3IpW14Nb+T7RqJf2sGUWGh2EDKVeSmAEqSrkE+I1CVMboHssi0CdiCkHE5bNth+Q4XBoQ4NoK/ezXdsnDu0WtnvMeFjiyUQwt96RiCBGSowAlQkYawCGEINMMYwuYAMfKaGsJxKjwOVAvoS12dX65mZyd60dseQ8UGv6SC50coNyW0YCAiMEbgSWlhUNwJsVauo8eNR+lU/+BfbHFzAzfGh9+u/KhcUDqCLdIIlQYgQQRkUhwGBJcDg7ksyvUmlDEY6j2Gu3euwqr/rqpsWqKKwgD8nHOPd+bO1x1ThwzRKClrY7mIqBZGrdq0MWgT0Y9oGbXsH7TxDwTupCCQNmVIhIqFpBGTluPHfOrcuXPvzL3nNAVC7Z7Vw8v78PL+mFcXxlwAXr5fZfbZXbHn69mbZ9O3T7s2m5U2SekQRg4fdg+xlUU+ncK2bcYKkjtXCvTnHIbPTHCy4PLtZ3BDLS1WefJ0KgN4gDyTjx+7tiLvKK6NZFBWjnw+ZrHkMT7s8nB6hO1Si063Q63iMXwig+2XqG7scFStJ2VP5gBve9PVjGFl+8BzkkpiEFj2ELE5pNZsI4QgZSs2NivU6k0qdZ/gTyhLIIUBIXtRbEcCs8AU0C8EE2M5tduJDJawaTuK5Xo/oUr1ZGmchM3cWotsPk0cazDQiWN6SBSD3wqQwC3AAgDU6GC6gxH4fozbw6vnJc1YEGv+rmHm+iBuNkkqoYi0IZuykRL2qh0SmSwKSP97yk5CNapeyD5tvqyGZnzAFjuHAX5Yp9XK0yhXWdcGYzRCQKx1jw3FA48jv6sVII5lQLTw1X8xOWjuh5EWGaHFfj0CbbCkZO5TkalTGUZdmz5LAbC25bGwVmSr3CKK9DsJXAaeAzuAmnkw+SpKJleaXVM2QphAyHC7GTU6MWWDKC6XvKOlX61miAq+Ryp+/blMI+hGUvJoaMCZ/u8F9Er3HTMggRgwgC6+WTXzm3UA7l0cIIg0G6HKXTpXUB/XdwMgAPRv7WwOEcvP1YYAAAAASUVORK5CYII=",
+    iron: PNG + "iVBORw0KGgoAAAANSUhEUgAAABQAAAAUCAYAAACNiR0NAAACUUlEQVR4Xq2SO2iTYRSG/2CLODgUHEQcpFpJrEmUguBlclAESRVbc782TWL+JmlKpEWUWqt0cBFxKcUhCCooiJcOVYJFqItLoYKIoOCNFlEQdc3rOQcPfJpY8DI8JN/7c57z53tjAfivSHDm0K6m1GamWcCfq4lVfyFU0V3H3IPb7bP37zyszdz79GHxHZiAbx9IDOMsPJmbZSRToYrWEdeIz0SdwOtXL8xBUyRyXXDrxlVcODssQpUNEN8eP6rh2dN5LL1/oyJ9I/NswqKfhReTe61y5dh4PuGvRw4fQKznILxbOpCZGkMq4EOoez+CxFbnRoSr4ypWVMbPPorQ6VhrdVaLsNNB2H1BFPrDcLs2gbNyJoISZfl4L/bs2PY7Iee8sEWEa6w2EVbycQwXUrCTfn74QxhGxU7ATgXQ5XGJsExnhYQq41KWRLhQrYjQQH9e08xEZVqMCOcnB1lo0TYW/SlajCBC9/oNIjTv5+XzBdno9boULkRzs3GzFIjw6G6vNX0pChXq3Sh6n8FkD2fLldImwstj3SBUqFLBFKbPH0fOjjUIjVLeypsZwmaosIHw5KmGUliospHlCnDTH93jccpdetxOzU2ZYE2N+hYJ2TiYj0sZN69f4UEWmWU0FKTlaCmECL+o8HQlh2JfEEPZCIrZqJYBuz+EXMIvwzu73JIVMhEtRWXwdm4W4VcVcgkTJ4rIxHrluwrPjQzgZCmN0aEsD0lWykVRSodUyDljsbCDmODgH7FECECggOWtBiuJFmIF4dABkyPb21t/zb4DoYVnQN+VdjQAAAAASUVORK5CYII=",
+    stone: PNG + "iVBORw0KGgoAAAANSUhEUgAAABQAAAAUCAYAAACNiR0NAAAB00lEQVR4Xq3Sv0tyURjA8es17F6jXjLrRapbYkoO9lPIBLHBoMbeKRcHx6ApLOMdgmjRG84OLa+T/0JIS0iLLa6RtPQPtPVOT89z4DmcvBcxavhyOFzOh/PjagDwow0EVlcSerfb7WGg9C3Qh90zpjQ82L8YQVG5fCwrFovj2HCg3zTADa3X63B5ec5g6SvgGwG1Wo0ihEGJNhoNgtUcIGMjWIeP2AdyBFJDgR7sTgUpAo1Rn2gns00YN9QOn/t3GIsuQbPZlBUKBdB1XdZut0cwBiWmt1qtVxzVVxWg329CtVqVYCQSYZwj1MQ+gV7svxtoGqMESnQ3l4NKpcJXosIOEHCXDpDmjNEYi0YJZEzitm0vOEBGGaRFvybG1R3SvTGiJv5ZFTQYpA+BQAAsy4Lw4gLMhaYhPB8SY3zJgjG/6ZoE/139mcX2GFR389jpyIJTkzznCOI5nUhgF9gDBgyelk4oRikx1zSNjkYLZSsJed8SfMLADeRHoAjM5w8FeG3bfG8E0sgJ8C8GHINqjP6eCTI0EDzDbgeBfGS6L/oeX45BKrUlHyObzYpxcy0hQO4IO8V6hLiV2QjvI0jIO/aCO9JuLg6MbHrdSCaT3vSq5fkA0AumcNkRmm0AAAAASUVORK5CYII=",
+    gold: PNG + "iVBORw0KGgoAAAANSUhEUgAAABQAAAAUCAYAAACNiR0NAAAE8klEQVR4XmXTaVBTVxyH4VMcREggGJYYSMISSEISwipVjIoJiwuoiKAomCqLYsARQS1DBKs2ihWndSuLVQvOyNTWKp3pVJ22Y9UK1qptFW0RtK2tioCAgiDe++tJBlMcP7wz98OZZ/5nuQQA+blhDWmuLyAPLheRjmvF5IeafDLYXkJePFhHmIclpPMXfzBPtYuZnll5bNey5ejK0uLxu0K2azGxdPH9ENK8W2O13gAfXSkiP9UX2b0cFDkP9U2pYHr1TX+efBtAnzX6bY3p0/2Bp7PLO1uUcrrWjvYm+G9TEem9W0LOVS+zP1blkT30zJ9hnsvA9i9Az9W5eAVTwIozg/4YeCzp7GwJinkDbKrLJ51XSwhQRn48lUTSdZ7nL+4XouVSMtgXHwLD+wHWAMv2wUjB9IZj+H4w7nw2AT2/FmS+Bt5q3EhavzZZxh77pCOyEkzxEWOa4O6ZUm+sinXB54eN+K7RhE8PrMSJg554ck2N7nPhGPwiGm17ZGg/EV/wGrivYBKpLdbarVsoTLvQ6Nf/961I3L6eA3OWEClhjjAmeSErQQBve4LZCh5ubqfIARW6j2nQVObReKXCT31zr+p/cLXOhRTE0hL4FbuW8LAj1wf7KlKwZUMctApXLIsXoyhdgTDROGRqXXG/KhA3KqRoOxzaYLllOh3n1cVYwaQwZzI33JlsSnE/+pFBgHemcJAY6Y6lCXJo5TxMU3ARp3FDmHgcpit5KM9Qo8EswGB3zj12uLTt2cOQgxRzsIE6JcdaZaZn4Y4lHi1pUc6YF8Vn06YK2KkyDib6OtG4mKVxwfelUlyqDUBvjxOAQrAvq9F+embvg4upk21gfDCXxKm5hE4XWZnhaUxQc8+unClkTJlyVq/iIcqPgxkKF1x4T4rbR/wxPMADw+bgxe+VGDg5ETcrpej5bXWcDTy4eR4py5pkAa2ZFnhItqZ5VuTFufeFi+0RIXFEQqgbkqMFiPRxgEbsgBy9G86b5eg9HobW6kC0NoRmUtDOClZvSiI1ZXNt4F9ny98K9bYfo1c53dIGONLtOkIr4yE6wAXTAjlIjnRF4Rx37MwOQG1uEAZa3cEMaaopyLeBNBvYXL9y7Ip4X3mwcMyNMyZfJIVyERPkjNkRbpgT4ozcWA+sXxQIc3YQru0OB9vtheF+VR0FuTbQVvl8snNVJJkfwfvWMJWHunwv5OldYYgTY9W8AISLHCBzt0dhvAs66tRorwpBf6v6+sPmwMW2M6SQHc2HZvi4NHHryb2G7HSdtOXKdl9kTxuP6TIn5Cb5ITdRihCvsVCJONi4UAJzjhJ7VgTgzqEoC2Y3GvSmHaexNBzZtgAZOgkOLBdgR7oAC6MnoCBVjsQoT8xUc+jUEuxdE4z1qUG4fMib/sv6PIo5jAaTaRipq96cejp5srBjcwofuTo+EiP41kuJkDjAEOOBL8vU2LxcgWP5GuAfEX3gwYcpJhsNGmmDtCHaI/qMvtleMOP82lmez6f4O2KpXsIuihGxxng3tjZPwl7+IAi7Vyjw1ScKsIz4zGC3eBfF+KNBf1ot7b4FrDJZt31vm1HfNknKtZ7fGrrlCPE4zAkfj5pCFUwZShwtDzw13C+ynJ8zjYwGLbnSfEdwDW3toS3zq3YVxpr3bEiYXrhIoZzo46iMC+ErizODlatTVcqaLMX4EcjWfzSxPIPprI33AAAAAElFTkSuQmCC",
+    food: PNG + "iVBORw0KGgoAAAANSUhEUgAAABQAAAAUCAYAAACNiR0NAAAErUlEQVR4XlSMXUhTYRyHf7Wx2bRNWw7ywjboC+kmwehm1IJRQnfixbrIC8EwRmAoQRe7XSM9EIJiOecUUbQiQQQHogh+QfuwJa6Bis2jbmvLw+ZZbDu8nfe9iO2Fh9+fB94HhBCGg3ODxO0GGT11A+4PjfJN9ud6lulSJ29MJkpvRthu3Z541pGZa1PJVMqgLMg+xjprk5tvqugdm7IS5oI28sVxRym7XGTsoUgdJey2LNHlZ9uEnzPPPzn7nMrzKHmjIwIHlSLhXwqtUzExGWE+cfgbt4w1BQAV/lD8QnLrG/NanfoBxL+ou3dRe1KQvGYjf640WLX9fVfzqnUcfDR6Ox0pQqerYEHD3ZtsSTKOp68t6ONOsOgJoN58DchJ+OzyJZKn1QupTF2xNJi9fMPcfdV0Hf4QjyHXV6iUBC+avdibD8M9EmDR9y9n8db7BEHfFuYH/ei1TwN/hPaWznd5CSClQexMcmdqTaW+xqDf2ft1+t8f7KYhihI8XBDHggK9Ng/z6vwZ1E2t948ffVyg4rBQi7Jgg60LG4tr6bUfQksWmtTyKs/8/lGObfSoCGujFpeMV5gXTY+bGxSBFbvFV+gfHqaKBf/VSX4hTa5xHP++893cnM39ac5CDQzH2rQ61CFbnrSGbWXuUAZlRp0DWhBE0IVddKCCgpSoi8O5iILWRWSlRVkklhyPJZpaVuryVOpmUrZ8nZvbXO7P2/MMV+2iD3z4vVcffs/7PAkUmIzITgm+LtRJ9co0cQSE3hef4HSHQOnrGoYmMwPWqu22MmuAMx1eL0T63zhkfZkQTGAsIEZj17RLKGItvqgI58+YaS3273ZVrA4V/bZ0XLs28gcCU93wSObwtoYHkEGjDH2DlNq9WsRJnQ2C4pr0M6PTTJTz+HG/qwpwTAGKFEAYQBzO4W9RLZLshyDLAYBhMY/Tuwg/YhCO4uS/HF+aI0Hjha0oLbgUm5/+n5l+N+SUYx5T9dpNiGS0OyMbU5cw977f8uKl+gQpZ8uzhHSWH7hHY7F5s75D9OxNaIepOo95rz0qbr3YCSRNZC8R1x8BwHw7cvu5CiQC3L7RsgyAXSji+cHxWYYe293dxitytQEIolmtthH3ULpFVrlqwiPXaPg3vi0KAX7Cx9H+FTTm9flR11DJXK4zghKVswySxVIv5w+SG4bO1ewdGnOfAsB0251h9tKJ3xcCmCQuIOqIe4g7B3s+anz+AIo3GOBqt+O/ERWKYEc4hQVSlJDlKAM0MqffBUXSkBsEjWx2H3PxuJUFkERsIpZgnqeNLdhWtgzcDIM45iI50tfrwb3qgWr5r6A8eGzILpBf5QD8Q7xKYzLitXhssPkJ6GZ5BjVUailuN/Xi9HEjrjW8RX9fGPmwk+8P2H2wA6xT0LHZjDFgJQOP5M/4ww4SHfgBGlOq1ai/bv8WKylTYmDYjThq3TqE2ZBx4uEATtyysLWtq5LcY52gR84E8BdxA1FLRH7aFI3FNj1WY8ad+89RsSMXdwdSQbHm+WIbS3W/gPJFXcyyfJAHEKUbSonNRBvxJNHV71HCYCnEmvJNaGh9/cg/JwojEVs8RmCSP7dFaIyIr/smFw1aipoHAAAAAElFTkSuQmCC",
+    research: PNG + "iVBORw0KGgoAAAANSUhEUgAAABQAAAAUCAYAAACNiR0NAAAErUlEQVR4XpXTe0xTZxjH8d+hpy20ZSAXnYBcJSiKMOs2p5s4jEMUjWEbbmoVFXU3pmFzU7yMhbGFocKEwZBRdV5AcUEEtIIXFPCC3AIRBRXQFiZ0RS6WUlrOs40UwkhYss/fb7553jx5MFp43gJZiSqfoi+G09HCFDqXG+eOcdSXn5dgjIRA23+/L1Vmyh70VVBeayp9JV/BVV84HIpx1N04ufLW1WOym6V5oS2N111hwgJAVqxMrJ03ISS/6Upix/X9eHd2JFipNZNVU5BacilJSH39eq1ONyCxkNQQAzIX8F6/1tybSi+HTHBieDhyvns9gBYMS45a5nymNol2Fa8gAFiU5E7d+lbK/eNX+rn8a668q4CuNZ7gotJXcQCwO+0wl/egm1TKOmqoK6BLhSrN/t/yZcr6azIzALCfYIf7LRWwkLjgH1cimphHzxqRWZwOxoGYfGU6Yu8kMjOXzGB2pMaR7yvBjJ+dFt2sEaylHWqetNpYingJYDAE2T9udE6/tJGiSz8nmBSWHSWM8cnRA3Tw7B0623iWqnoqKa9GTi2qHnp7j4JT1l2UAcDQhBwRNgfKmZdcjRim6iZEHfpsJLo3JZPshD6YJL0PZ2c3HLsTDw/7efgio75zr79mfXfvi7KRpYCALxWL6OmTZvyUnEDSoCXos3WE2HshCpZGUv2jdmjQhxkeTXCw90JuXSYWTw9Dsrwd7/u1fhyweM0ZACgvTBMPBfkiAem1gK9xO6ZsdMepphPoa2qDWv8AA4NP4TTZF0GiMLww56O+9S48bfxQlUNo87qHN3ymVsDktXe2aoe+zDNjzFyMm0g8ywnyezvhbe6IcLc1kFrOxrxJweD1WKNInYnmF7XgGabBUD0bD7vayEek4Hp6+udglKFgi47mCn2DcfX5/r9jUnzqsRne1l6Y7GAJt4meENvoYSHm4V57FVw1/jhzu6gzaiHWB0mCwlLUSd/Vl2SJMSw3aSu7LyGmI/5xLS26/CpdVhdTN3WSov8IfasOpxh1GGX3ptKpdjkFXPajHVlaijocKYNJZcXxtZVX5c4wYVmBQCASetloButgLZyIQdaAWNUWmAmMYBgOLMNCxVVjplUwWIjhPb0DiuoBPUz4/fwc4oNGgnYOzlaCLgumXaOGuu05SvkVKGq+CcNgPwwDHCbbWmNATxjwmgJtFwfx1F60POvAsFlvfqDFKKzRYFAbe5s0AVZL7cueJOLk71lQdqlhsDAAfKDhcRegAiZtr8LMt5aB67IHT8gJMQ6z+SFRRjfesy1Vtc+xenk4HP0BO1crML6AvYctJnraQzxXAPNZEgROC+tMPFGybrVOqD+ZHjEFJrcVKSKMdiNrNxNxMLoxXdHMxTRk0KZby8nzFwuaf8qT5hQ5kX+ZD2Uoq7kNx2vXjZxhRKBLWsJHrgXZca6l5w85YqwrmTslIft2yHadPvdnWqWSO3Q/h8toPs1933CcDjxs1Ejj82W2gWvd8X/t+WazeMM2mcuqhOSVH2YXh86JjZO5rV4eCpOAUF92zZYFYownfrEdGyEVMfgPeUd2sRgjJ20be/fCAVHk1vdEcXHxIp1OJ/ohJtr1L6hfG9aIaew8AAAAAElFTkSuQmCC",
+    swords: PNG + "iVBORw0KGgoAAAANSUhEUgAAABQAAAAUCAYAAACNiR0NAAADH0lEQVR4Xq3RX2yTVRzG8e9pu/eta9nYSuuKrJEBYcP5h2iC1H+4mRFDvCEGRaOJjj8JJqKGmImJw0RFM80g0WDUYFSUiBdCBl6AimhwIbqJEJW4NXF09s+6ytrVtX3fnve4LbvoBd174yd5bp885/yEUor/k4synzzlptyp31Xs4Q3VwfCGGgp5i68+SO/QPY4DlHm0J1e5MGMKyk1MSX/vpzkaW6qIRrMcOSf3S4uDQLGz3bJfGApIyk3mVeMK2bb97Weu2RO+1fu4tI4MAEWAktO+kM5XA5RrvTGRsJbk2vVYiiuZ0A5gLXOCqW6uxkGZcf6eSwK0NKXRhcHU5eQaZSnMkrxtvX99E3OGLl2cyfyFfYdf4cQXB/j+0GLGDYWllOefZEaLp5KoWaycLuX4wPUs77qZVd1N8xeO/JVgZCRO/6DB8Z4iCmEaUilMAyHEdPAgBLFBP0bKnMn8f1ju3KDPmS6UDGnBuII7qnQTaQxhw8FVPPiQu2nSyBd3764aPNNfnf/5Qh2PvPyrO9Rx/ny85kxh/2sXG06e2Gd/Zc1dQ3v4oyYgsm2nj51Pxxo+PybUOy/q7HrLFJP/Srp2BfSWVXq8YKqw4mg/7Ku88LODb7g7t4xGentSNPidy5UiM+Fd88eTewyuu73zN8BIjhmPvffuONu2j57dunX0HrsnF3w1ohfpbd+4KRoRgoUZTW/Q6oO03NL6PqB/+PHEoeE/iysWuMWbehUDtkdJZ9Vz6WyaOVhKaIua7yPcujr7JbNITljDpuT5Ckep7Ka7mwGmBwbw1no3mxIOH7tAoFYA2B/lha4bACgUHaxcGqjb/PpUTAiHdsU0yU5kOk6eGlBgipd6jlJX34jtwjjPzkZc283GvSqay03diWWOhXw6CxZpfb9cirQBamloCd/+9PVM5l9omGMAOJV0KUWtq9onlSw6h6NDGGpKX9287DQg+n74zuHWNMt24dpgPW0hPznP4hIgmSUceQku01JnExEAHrhrnQVgW9jasYVl9z7BpnX3A7C3wyOkcDpN5cKUllvmS/yYukzf6W+o5D/rnFzC6H0WsgAAAABJRU5ErkJggg==",
+    bows: PNG + "iVBORw0KGgoAAAANSUhEUgAAABQAAAAUCAYAAACNiR0NAAACcElEQVR4Xp2UXUgUYRSGZ3LT2igohMyNNFApMTf6MUNQC3+y3bAyAiNIKDBykTarzVmXblLJIAzS3dZwkaAuJBYJKm+iG7EQusir8CooqIsuiigptq/3xDnL9PEV1MVzcc6cec4358yMdSt2oGG201KDwcoszetyc5glwAaWoJQSKKb7bXeOEumUs/cRSae7C14jniOpDvIloAYUIiaZCZuEDiidCpcOkjQRbT6NuBFsAbeBApk/NKkTuZyYhD0gcaOryEPC8bP+5dIR+ZVgKceS6wBvgN7AIqRg8sVQCc1LHdm0bBXPwwhEXjAA0mAUTUj2ShqSsB3MXTxcnktCsO0vshUgBZyR3v0NXE8n++IWtoH3V05We1nYBCxBNgmKeDyTnFeJviCd9Lo8sgh3A7oYJSHj0YQ7wVfwWGo4vwFSmZ8SYQF4Cn6EmsrCLExiQT7I8mPHdhRCJI+ktEb54LsuJIr5lJ/kBBCSWOgXmSb0AMr/LsRmLd6cA/rj0WBqordORdr8iy5pBNgGaeZaaM8aXUhb1AsXuXsW1HkNws9xJ1BmEopoGLwUCeIPdy7VdNMIQIVB+DYRDdYahRBdBnEWebjBDGZ7FbmPYJ9JiOsHWWi7Z3gcTBs2OQXeUb7Fl3fXMJpWMCbvomy5dmyg/TmKSWZrwpsgk53j5tX3h87Un0Lu6KgTKOYnG6c6klJQDuZJll545jecIA9sHz7X+LCnteKbiAX88mbvRapmktGWCRGGQIxEmsz0zm29cKgy3FG9Pnmiyveks943z8uCeO2CCGUp/wTusUHOr2+8L/CApG7hf4P/KDk2jpzf1UXSn7PdTrLoj8i+AAAAAElFTkSuQmCC",
+    troops: PNG + "iVBORw0KGgoAAAANSUhEUgAAABQAAAAUCAYAAACNiR0NAAAAB3RJTUUH2wIFDhY3V4jYzAAAAAlwSFlzAAAewQAAHsEBw2lUUwAAAARnQU1BAACxjwv8YQUAAAOdSURBVHjarZRNaFxVFMfPfffjzZuZ9+bbzGOGNBiTtkRQTI0fVcSNqIsEERdSqRuDVYJLwZ0gCFLRRTalSIvahRUVwaoLS6MoBJM2rYba2DQmOk1mrJmZN+/7zfu4vgiVUNNx07M6XO7/x//cc84FuMWB/nOAMeJhyLfyscfG3/3pt9UHRQ3cbF7kaoXiar6y0WpqJ2e+Pf3Z1h1CKQp8n98UeD0OvTw13erYU7flGaDIh6YWQceyoWv5PIhclyXhlG46B2dnZtztOrwT7PlDLz09PDj89v57R+CR/f0goCaolQEgTAEecuT5DvWjYCQjy/zypaWZ7VrhRtjExHg5Q9lhtVzWhob6WwnR97teHZISsYuFfChKJC6L88ALIQyiA3ePjio9gYqS7av295cLhYJVrgx0maTqg4MPO3t2jzWQkOCO7QClFFKxO0LY7X1q5antenIj0A/AzOSKDcP2SFvT3UZ9o9QNqaWZXWqYJlFKMgjxszpOAExkkEWI9QSO3TMwfOeeXXIyUWr195VJp26RUOyiakXVwpGus3DRFhfWm8JWW0XMQJKI3BOYTNiPO9pC8exCM1wsV/B6fYlJoi801oTyUDURjd8vRbXlSFgzEOREERjBYk9gLpeXv/ryY2Co2reyOgunjp+BJ57bB19fO5q+Iw8wsnsvYLwXlHQJUqk0MBzxnsBWJ79019gUFAtKE1kXIrd9pjT5wgFtRX8lWfv1HLuy3IBGG4FcxCAyBkwIoScwRAK2PRc2dSebNDdDGo8+D6jxl5Gilq8ypqRA0GsgCMI/3WZY6O0w8IIwRBhQ6OJIc7AVAJiuTXHsJIhC8HkEOIYB35rGCALOac85jIBfy1UKnXSWWEJg84x8Hzi6K7AI2YSKUVKSoKBkIRc7zcQ5QVTuCfQh2BcPt7OrXN1wu1ZgdhzQNy9lU6IWEUl04+2AePXA9GxwLBdEkJ554/V3Ht2x5Nm5k89quvFiCht2e+WceHZ5neLSQ/ra2qJSwlcKnq3A7406r/2xjlQ1C6HMwegGGa1juDs6dAxvDvv+hwRr+Pz8d7lfzrePgW+p3Eh831icJ8isERRsIhVdBdm6DObVRVhd+uHVI0dPzF5n7Ph9TU8fHhV0e+LH+Z/f+uDzT61vPnnvgQunj51IqkNpzwto5MGfGSl9UUwV3j/42ptfbNfe9D/8t4REHkduK/zo+JEKZ7Sax91qaJC5Jycna/+nvSXxN0d7l8xJ6no6AAAAAElFTkSuQmCC",
+    horses: PNG + "iVBORw0KGgoAAAANSUhEUgAAABQAAAAUCAYAAACNiR0NAAADeklEQVR4Xs3UWWhcZRjH4f+cOdvsS2Yms57Z4jTJnJROtpqENkmb2QxtCtFQ0YymUDGU0tRoA0rFqsVas4hWS4uiNiK1aBG1xSpSW1HUC0WkV4IXXtQmRajLhYLk9ftOmGEMiDe9cODHO3zwPec9czEgopvazQenK9H6cGAihr07Q+hrk/DAeBSTt4fwxL4mjA25sDCTxcxEFKcXNmJ0wCUUO1Xz+G0NpqP7U0JzAEJl2Cv+G1jboFL21YNsgTBen+2Szx0fQLlbFe8tenHqKR1bNyjy3WWPisN7U7UOTSZr0NLZEi2fL9L1jwr086d5Gu61JRafzNmvnS7T8vvs/EKRzsy10/K5ItIBIBbE6icUWM3vBTIa8MrTHdbLU5305cIW+u5Yga4xuIpe/7BAV98o0dU3i7T0Dpvv5enw/nXkDsh2FiSrCGSbJKN1SRHvPncXiZJAlya7DPCDo30G+PHJTXTpRD9dnB8wzq+8OkRXXhuiC8/0cIzGtscuO7ySjQW0ZSSj1rSEYl+UgzwDPPt4N710fztNdQeNObtzvQFePDJAP54p0A8ny9QYsZCzQaKoZuk1wEREhhZW0JmVYLeZDUzXHHxLjtTAhwsJmi5odGxMN9Av2LbfL+apJ+cjBpHTJ39lgGlNRiauYIo93eFeBTm8ISVzqNZm3UWjHT4aTIOmNwfp+I5W+uaxrXRfPkWOBg5KKy0ZxQ2TAGgRFTa7aEDVycsxdNt6F/U3WcnjECjMNjlSidNnz/aMP9gVprnSLTQzmCR/QCG7R/zVH1Im8MliL14+NCIbCMNgwi+JiFLZc2diX5smUi4uUTwg/GWzYMVqQWnp7ZL201tFE990qj1IL4600o5cIwfJ5ZFuYOGRVnP1tZwOobohnn+03duTUimuSQ/ZrVjxOEAMNDNQYgnBqJLp1ZVvOVzKWeb57+jySb/B5ZRWOHZ+d46yMTsB8DEUe+7wbOSgnhSzelx4gWF04uA2IwaaWLhVVwc5uKtgmXMH5K/dfvlzzI5k+twuieZHkxT2qfxCrZaYuYY0N+IPdvmUgda1qU39s3rG0BDYZuKB7Y2/7857aEuXOlwPRjSZ6gGXDTfWgjababa7RREZCB4HcU/JSbuG3PWX0d+h+tdcrn/lJpZJT4smABKH1oJmVpgfrI1tyed/1tksoyMj4f//j/032kXCk2YKR0MAAAAASUVORK5CYII=",
+    siege: PNG + "iVBORw0KGgoAAAANSUhEUgAAABQAAAAUCAYAAACNiR0NAAAEh0lEQVR4Xq2Ue2yTZRjFz3frfStt13ZrM1rohlvLOsWBOhFkjAXkrlyVQESJI2AM4Q8zAhjAKKLLJPGCIBBiBk7FAGoiQQlzZoDbYBuwOBe2Qdvd3KV0vXzfvstr0wCJMZkx8fz55M3vOee8yUMRQvB/isW/qPat4gdvniaEvDOQ5tPfU7QuqxAIGXv7DoPFNwW7z/VkWG0AgHEdshTFfX9g45aoylJlbqkDFAJJryWhbB8l0zQmRgNgg72E0uAMMTOb29ML/6QxjpxG7ReqtraqET6B/vwigEGUjSVEV3uj7IwNKp7F5UJaoV8hApYzoq73hfU7L9LjRQ3cSyweMoowcSKiCiDOXmIgRooDIKlDnUr/L4cSmfM20s6XNoMxqyiaYWelIpvTNCmITABWEZni6T7XupUL6mSZcjz2VBlAs7jT9TvCw/2YohnBaEc9QChQLHC+k5IG5Qns82vXYaLbM8YCqWpAAKhoSp3tdCyblJ15sL8naM/IcoHh1GBZDj7/E5DEMRyorEJ7ywASkoKhe3HsP/Ae657kBkURdHW08imgLAhgWZozm81LtVrVTp2att+t/xlBDQtndg56RiKQwoOYs3AV3nh9K/bu5/FbfR0kSUJjQyOqq6uxaOF83uNx21IdvvnqbMx90pORLGFrOBKfGm69CjkaR1buNARCnQi11qKzrgbVBytSThYtKANN0yCE4MTxE7haf5V0B7pm7Nq+TUgBy2bma4djynZFlovnZCSgoxR4y5YhLduNcN9dDLdcRqxvGEM3ruDyhdPIMJuQk+OBLMsAAI5jFYlix/Yl60htObZn+RZ/rkN4ZnI62TbdSCo3LyCff7CNfLJjDakosSVnyXlROqmY6yQ1n+0j1Yc/JJVvVxDvZAdxWgxk0/rVypW6H1KslMMbHQNeRSEqi9UKS04eTLk+hEO30Xf9V/ARHiCA1mJC4cpNGBoJIxjsRrpBg2TnKCoqwo5du8Sm1puTAaSA0Gs4Sc0xSsdAFEbfDCSCbRj9owlClAcAmFwOeJdsgCyKOHnqW3AqNvUhOp0e71cdxJ3u23w4EuYeAu0WwymOpb9MCJJyvfY8gtcaEBkYhRAXkGa3IW/+BkxIT8ets8ehYwC1SoWar88mgVpcqbvAgwi2mUXT2h8CdTpmw9qFvtUuxwTSPSyDogAKgMmZmYxZjthwHy4deheJ0TgWrViFeDyOPE9WIt9laIgMddheXPOygPtij+1d9hyA13QaDo977fFLTT2x2jGdLc9qgrdkNfp6Amg7dxJajkNGySpIihzQ63U7rEamuiDXSuwFpThVU/q381UOgNA0RXLdFp7npZbmjhH/tV7RfPP4V5xeq0L+JD94rTnGcqpWSZQ/am67eToWjRJ/rhWzSlfggR5EbgUQAUCzDG151JtZunKex17sz+JEIYYEzw9muh/h9Vr1xSOHj71y9NOPa3768TthvAN7BMCzADwANBRF3TXo1U3Tp9pvOa2aQJwXu+SRdrWBJiH/lMyu5lvdGE/U0T1LAYC5D//H5o27z+C/6C8ohPDeWkjBBAAAAABJRU5ErkJggg==",
+    plate: PNG + "iVBORw0KGgoAAAANSUhEUgAAABQAAAAUCAYAAACNiR0NAAAB+UlEQVR4XpXTv2tTURjG8ZMOXSyIuCimLa0/EAoOlkYRwYg6iOLQyxVRUeQOgpOxChpTIw7VqHRyilIJDUjiFjA45Q9QyC5xioOZdbqoHJ/z0AfO5V6tDl/eM5x8eO9NYqy1qVZvnx5funJ0zJ3f1M5zNlfC3OtHizl3bj+7MFaOjvGsVAo7cWivjeOYNZtNNjU1maherzPcUdmgu3zq8Q0bRZEdDAbCMvPBlVuLhUwQEIG7a6tEh8Mh0dFoJIhnYV4/X9w7e01gYjuhr961ieIyAUBKIPFKpWLz+bwy3mYEmXCgrLCwIJQTuTtEwzC0nU6H59bzy/cFCmK1Wi0FVqsPCCk9BbZyIOfNqyctQW0mVJVKJR9kQRAkQGH9fp8JZD42iUsTE1uICcRMgMYYOz9/0AeND7Lq9eNC7VLAKZCY3l2v1yPaaDSUEagMEPcvIKTK5bJttVqZYLFYVCYTVHcuzfF9AuTsdrsCGUD25P26D9L4JxAf3BSEsTnIL2fndoFC9ch/B19Wz+XQLEqAM9O7tOV/g2fQL/TUQV4CiSFiiBhQ44PCtm1gMRqiTwfm9vigthPCgJo/gVvRWw/9jj7s3zdjd89OEwHmfo/cWBgSlgJd42gH+og+ox8b+JcjhwvEfBAZJCgTdLjgi+gh+oa+omUHeQlL9Rtnl6VdvZBRqgAAAABJRU5ErkJggg==",
+    diplomacy: PNG + "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",
+    mana: PNG + "iVBORw0KGgoAAAANSUhEUgAAABQAAAAUCAYAAACNiR0NAAAFUElEQVR4XkzNW2wUVQDG8f85O7MzO9tpu+220m4LtLSNtrUoWlqwEG8UQzBBk0pNTITyookRSXzRBENMVBJj9AWCeIHwwoMJRAElaoSiQashWsVbmmDA3uhly/ay7c7MOce+mPBLvrcv3yeeeP5jbmdbmos/V0iDqdOacm3IABIoAHlgxshorKR09ub9Ky00kQEAOHV4N5LbjEzF/f5fyrpCZXaGShyI4ENpiRPER4/hDX4QxqaOKqGOYOTB2WxZ33e/F7WPTiWqQfA/CwAMQ8PJqtFpdyuIjUrSFrl/rbVdz9VxB7PQwOKC55swjlq6sUYj1ieLMo8S2WeHRhL9+QLfN2SWrgNGGmD5xVkeazfLxYKVbwzt821FbpubiHURy9+Bo+qJBesIco2gq2no7GA+n88sqPknjTA7R6bcjpFJtwxACiP5Z9xdbTCd2vObXX/0vs7HtyVKyzcjljKEuVLmpvspLk/yyHONPPDsZm4OxkFOkmz9okKJVBeIjusTzupsLkD+Pewmwkh2KSd4UMQut/s1Lf7KddtBe0xeG2Dx1jyF2WEKuQHqWkuIDVfiV9aysWcLc791o/DLQuLrg1DWfnLkTVdmZ+PlRkR1Ot2/KtOc9bwVjRQWoXv/DD2Ha3jsnVoEmtmJq9h33qCpd4zuFyvI1LXhie3ErRJhZPquuBWtBR6SQSSSkcg3iZn6ionBFsa+ucKXb53i5K6jCF3H8W13o4Cn3tjLgZoVTEyXcfrtCS6dnKc4rREqCwSpEJ0Bui1jRErYVoucX2MvzI+jon8JC3n0ck6//D4XXoVrF/fiV6V45WyBc6/9iuU340jF5PgPOFaAlagVSqj6fGClLaBSuqJGGBdhJ/H8JvIzVwm0ZCk7x7eX97GqNkXfpzlO7H0PY0AyQKDvRef/oGCV4MZXgGtV5YNYvQQioU2kwjFcfw3JdDtuTQ+O7bDr3A78tEdhKeLMgSOUllo4lQFqbozcyAWMVlheGmO5mMjEU16Qk8CMWmTa6BhecTm267FlTxV7PtuB51lU3XMQpTR/fv0CVy7to/ejHtxUI37NZuySDeBkEc55UNgxaY5LMENCWz/qBDS0FrHp6RiOf4tjvZ9zqOMMJZVFaK2obHqd5q2HsKI4D7/UxzPvbmLj7mqc4g5kYkPBGPUT8JU0wkxJ818V9c7aVBwAUPz8H7nNbW4bYm/6LrY+QRF0aRVRBAdRcBB0EZ10UJz8BE5ufgAHER0cfKA4OBQLleIg4rNPNU1LEo1papumNE1yH//rIgXPB/iNR08pp2Rm5lYYfwCPboyR6NYMnL7OtdGL5JoS4VjUCw2e3LxLeu9vpt9OEh/8wMhlRaWUqSpaPgFL2mBQ6AWxnq6btnICVcPdf4ZDZ1tpT+aZn9jgtnFRrX1EfpbNUpp757+DVMSS+7B7ysbR7QURyQyQlW6ygRDRZxWknnu1BvVGEbff4839HM9uveLplTmcGsjkCZS0sVp6SQ920da7DSOnjLfyczltyy+XRhbn22y/ro/saTKbV4u5JfuO9Lx2T2RP5qdXHamrCGsQYWd5PbqOMB5O5ymEjhGqauT7udBqCSpxUu+P7/o1cXBgdRNAbnqC3X31sCvVLErkQ9WsP9YyO6mdCrF4EeEEFL7OoOMGHBfpdGBkSehIfHTjzsvDO5ZfDA/9eRfXYQZg69haIReKdkdh2Rr2AzUUYS5EIuwPhd8Z0kgolapFYVB0YmQSMZM/trP8I6aDb61WMDayvRIC0X8ggBQIY5Q9W7BEec1KYVQ30AN0AFWgePVohgN9a11KRuPAxj9oq7+f2zKNI9gJJQAAAABJRU5ErkJggg==",
+    caravan: PNG + "iVBORw0KGgoAAAANSUhEUgAAABQAAAAUCAYAAACNiR0NAAAEk0lEQVR4XpWUW0xUVxSG/3OZO3O9cK/CSEaNiG1TqQmJTYqkoU0DidGkiW3S1PSBtsa2D6ahpqTVl770ARFbtBYr0EJjA0QIBjRBtGUirVC0dUAdRxRERpnLmZkzZ86s7jE+UR7sl/zJPntnrfxrZa2DEydOTA4MDPSPjIz0lKxdk1hXWpphd39Go9HDPM/j/8J/2dS0+cOGhpra2totodAjoSAvl/vswIF1fr+/gOM4rILApGFa9REGvT6wacMGqtlRTfX19fT+3vdoW+VW6uzsvAjG00BN1vHo6GjX8ePHJ1uPHvW3t7f7zp492z82NtaRfcNTMDw8/IvRaAw3NjbSz93dtH//fqqpfpVaWlpmJyYmvu/q6rr47bFjN1qOHLldmJ8bffmFzbS98nnaWu4lT3EeOaw5ck9Pz3lVVZvA4GZnZ5urq6t3tra2FoDjcPnSJSwtLuDKxB9KPB5PrPeWWUxGI8LhMLQCBy6jQknJgKo8OS8shTA1e/fO9PV/+jwezz5OkqRDp0+f3iWnUl6Xy4WpySkgLcNmsyE3z41oJIL78/ex+GAR8VgUlE6B1DRi7D6tpJ7o79v3qe1Ux2BVVdVfvNls/txut9/zjfsQvBMESEUsGkWEBSiKggg7SzEJajoNvVYLu9UMs8kAjufAykRESsCgE7n6uroKp9P5mlj/5htIJpMmnVaEmpQQuHULWp0OJR4PIuEIWMMhCAKcdht4Upn5BCTmTk2rICKEIhJicRlFTktxWEoW82d6+3nmRC+FH2Nywofp69dYqbmwswRarQasj9CKPIx67RP30VgMgXvziDDXGTUDKSGnHkXjM3E5lc4QKSKAjNfrvfbpJxfWuBx2W5gFPAqF8GBhAaAMFDkJWVKQwxKGw8u4cTOAiWk/nst1wG3NQTKlPP59fPwyq2QSDBGMysrK2d6+vqHFxcW8PXv22Ofu3t1izTHCZNAhzhwl4hLmEwnMzS9AllOQUwol5RQHykAU+BzWkgyblF1YCRF9MTQ09OumjeuVve+8RR/tfZu2b3uJ8lyOpNlkvCHw/LWN69aQ1WxS9FqNVF5SQIVOC3V3d5932YxYlWAw+I3L6bhZV1tDO1/fQS+Wb6CTJ09eAeARBL6ztLiADHrdb729vYMOszHuLXJRc3PzLQAGMHiswO12x746dFhdYOUF5+6BRwZsp6m/v7/Z7bDX8TyH9lM/JioqKvyptLqcVjPQaDRJNmYHAYj/Sci24iCbp7ml0BLikgRSVUixmD0QCGy0sZ2JxRMZNrvRUChk4QAtz3H4oKEhPDMzkw9gLVbD5/P94LTmSJ5CN20qLSKDTnOd9elCtjS24/5z586dyX6b9FrFZTFR9m5qauo7AEUiVmF5edmiEwUdiMAcQRSEXOZqZvfu3fsApJmiV69efbfjp24ZjPLy8pmysrKPAahYgcjkbmtrmyxwWijfYSFPvpNsJkOkr69vAEAVUwmTcUX/V0XHVMb0SjaYlXdTIwiJskIXWYz6xODgYC8AKxOHZ0T/NGE1U022j+wnOq4RBV9HR8elhw8ffo1n4F/j3EdTZcPT+wAAAABJRU5ErkJggg==",
+    sovereignty: PNG + "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"
+  };
+  var PRODUCTION_ICONS = {
+    wood: ICONS.wood,
+    clay: ICONS.clay,
+    iron: ICONS.iron,
+    stone: ICONS.stone,
+    food: ICONS.food,
+    research: ICONS.research,
+    gold: ICONS.gold
+  };
+  var UPKEEP_GROUP_ICONS = {
+    Military: ICONS.troops,
+    Diplomacy: ICONS.diplomacy,
+    Magic: ICONS.mana,
+    Sovereignty: ICONS.sovereignty,
+    Trade: ICONS.caravan
+  };
+  var STRUCTURE_ICONS = {
+    trainingGround: ICONS.troops,
+    targetRange: ICONS.troops,
+    militaryAcademy: ICONS.troops,
+    joustingYard: ICONS.troops,
+    assemblyYard: ICONS.troops
+  };
+
+  // src/ui/format.js
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+  }
+  function attr(name, v) {
+    return v === void 0 || v === null ? "" : ` ${name}="${escapeHtml(v)}"`;
+  }
+  var count = (v) => Number(v ?? 0).toLocaleString("en-GB");
   function productionLabel(key) {
     const icon = PRODUCTION_ICONS[key];
     return `${icon ? `<img class="sov-ico" src="${icon}" alt="">` : ""}${PRODUCTION_LABEL[key] ?? key}`;
   }
-  function clampNumber(raw, { min = -Infinity, max = Infinity, integer = false, fallback = 0 } = {}) {
-    const n = typeof raw === "number" ? raw : Number(String(raw ?? "").trim());
-    if (String(raw ?? "").trim() === "" || !Number.isFinite(n)) return fallback;
-    return Math.min(max, Math.max(min, integer ? Math.round(n) : n));
+  var BINDING_LABEL = {
+    cap: "Tax cap",
+    food: "Food",
+    rp: "Research",
+    res: "Resources"
+  };
+  function bindingLabel(binding) {
+    return BINDING_LABEL[binding] ?? binding;
   }
-  function validatePlots(raw) {
-    const plots = {};
-    let total = 0;
-    for (const key of PLOT_KEYS) {
-      plots[key] = clampNumber(raw?.[key], { min: 0, max: PLOT_TOTAL, integer: true, fallback: 0 });
-      total += plots[key];
-    }
-    const diff = total - PLOT_TOTAL;
-    return {
-      plots,
-      total,
-      ok: diff === 0,
-      message: diff === 0 ? "" : diff > 0 ? `${diff} over` : `${-diff} short`
-    };
-  }
-  function parseMilsovStructure(raw) {
-    const key = String(raw ?? "").trim();
-    return MILSOV_STRUCTURES.some((s) => s.key === key) ? key : null;
-  }
-  function milsovSplitText(plan) {
-    const counts = /* @__PURE__ */ new Map();
-    for (const m of plan.milsov) counts.set(m.buildingLevel, (counts.get(m.buildingLevel) ?? 0) + 1);
-    return [...counts.entries()].sort((a, b) => b[0] - a[0]).map(([level, n]) => `${n}\xD7 Sov ${SOV_LEVEL_ROMAN[level - 1]}`).join(" + ");
-  }
-  function upkeepLimitHtml(plan) {
-    if (plan?.resImpossible) {
-      return `<p class="sov-flag">The settle allocation has no ${plan.resBinding} plots, so this
-        upkeep cannot be paid at any tax.</p>`;
-    }
-    if (!Number.isFinite(plan?.resCeiling) || !(plan.resCeiling < plan.tMax)) return "";
-    return `<p class="sov-hint">Upkeep limit: ${plan.resCeiling.toFixed(1)}% tax \u2014 above that, ${plan.resBinding} production no longer covers it.</p>`;
-  }
-  function milsovPlanHtml(plan) {
-    if (!plan?.milsov?.length) return "";
-    return `<p class="sov-mil"><b class="sov-mil-bonus">+${plan.milsovBonus}%</b>
-    <span class="sov-mil-what">military unit production</span>
-    <span class="sov-hint">${escapeHtml(milsovSplitText(plan))}, upkeep ${(plan.milsovUpkeep ?? 0).toLocaleString("en-GB")}/hr of wood, clay, iron and stone.</span></p>`;
+  function limitHtml(r) {
+    const label = bindingLabel(r.binding);
+    const icon = r.binding === "res" ? PRODUCTION_ICONS[r.resBinding] ?? ICONS.stone : { food: ICONS.food, rp: ICONS.research }[r.binding];
+    const title = `Limited by ${(r.binding === "res" && PRODUCTION_LABEL[r.resBinding] ? PRODUCTION_LABEL[r.resBinding] : label).toLowerCase()}`;
+    return icon ? `<img src="${icon}" alt="${escapeHtml(label)}" title="${escapeHtml(title)}">` : `<span class="sov-cap" title="${escapeHtml(title)}">${escapeHtml(label.toLowerCase())}</span>`;
   }
   var MILSOV_BLOCKED_TEXT = {
     tiles: "every claimable tile went to the food plan",
@@ -2515,216 +3032,8 @@
     upkeep: "the city produces too little wood, clay, iron or stone to run one",
     rp: "the food plan spent the research this site produces"
   };
-  function surplusRows(surplus, binding) {
-    if (!surplus) return [];
-    const rows = [
-      { key: "food", icon: "food", label: PRODUCTION_LABEL.food },
-      { key: "rp", icon: "research", label: PRODUCTION_LABEL.research },
-      { key: "gold", icon: "gold", label: PRODUCTION_LABEL.gold },
-      ...BASIC_RESOURCES.map((res) => ({
-        key: res,
-        icon: res,
-        label: PRODUCTION_LABEL[res],
-        basic: true
-      }))
-    ];
-    return rows.map((r) => {
-      const value = surplus[r.key] ?? 0;
-      const base = surplus.base?.[r.key];
-      const notes = [];
-      if (binding === r.key || binding === "res" && r.basic && Math.abs(value) < 0.5) {
-        notes.push("binds");
-      }
-      if (value < 0) notes.push("deficit");
-      if (r.basic && surplus.indicative) notes.push("indicative");
-      return {
-        ...r,
-        value,
-        base,
-        spent: Number.isFinite(base) ? base - value : void 0,
-        note: notes.join(", ")
-      };
-    });
-  }
-  function resFlag(r) {
-    if (!r?.resIndicative) return null;
-    const caveat = "Indicative only \u2014 per-plot yields for wood, clay, iron and stone are unmeasured, so this figure does not affect the ranking.";
-    if (r.resImpossible) {
-      return {
-        text: `no ${r.resBinding} plots`,
-        title: `The settle allocation has no ${r.resBinding} plots, so the sovereignty upkeep cannot be paid at any tax rate. ${caveat}`
-      };
-    }
-    if (!(r.resCeiling < r.tMax - 1e-9)) return null;
-    return {
-      text: `${r.resBinding} ${r.resCeiling.toFixed(1)}%`,
-      title: `Sovereignty upkeep exhausts ${r.resBinding} above ${r.resCeiling.toFixed(1)}% tax, below this site's ceiling of ${r.tMax.toFixed(1)}%. ${caveat}`
-    };
-  }
-  function parseRpCalibration(observed, atTax, prestige) {
-    const rp = clampNumber(observed, { min: 0, fallback: 0 });
-    if (rp <= 0) return null;
-    return {
-      observedRpPerHour: rp,
-      atTax: clampNumber(atTax, { min: 0, max: 100, fallback: 0 }),
-      prestige: !!prestige
-    };
-  }
-  function parseResourceBoosters(raw) {
-    const out = {};
-    for (const res of BASIC_RESOURCES) out[res] = !!raw?.[res];
-    return out;
-  }
-  function parseUpkeepBuildings(raw) {
-    const out = {};
-    for (const b of UPKEEP_BUILDINGS) {
-      out[b.key] = clampNumber(raw?.[b.key], { min: 0, max: 99, integer: true, fallback: 0 });
-    }
-    return out;
-  }
-  function parseResourceMinimums(raw) {
-    const out = {};
-    for (const key of MINIMUM_KEYS) {
-      out[key] = clampNumber(raw?.[key], { min: 0, max: 1e7, integer: true, fallback: 0 });
-    }
-    return out;
-  }
-  function parsePrestige(raw) {
-    const out = {};
-    for (const key of PRESTIGE_KEYS) out[key] = !!raw?.[key];
-    return out;
-  }
-  function parseSiteTerrains(raw) {
-    const ticked = Array.isArray(raw) ? raw : [];
-    return SETTLE_TERRAINS.filter((t) => ticked.includes(t));
-  }
-  var SETTINGS_FIELDS = [
-    { key: "plots", group: "Settle Tile", label: "Settle Plot Allocation", type: "plots" },
-    {
-      key: "cityConsumption",
-      group: "City Food",
-      label: "Food Consumed per Hour",
-      type: "number",
-      min: 1,
-      max: 1e6,
-      integer: true,
-      fallback: DEFAULT_CITY_CONSUMPTION
-    },
-    { key: "naturesBounty", group: "City Food", label: "Nature's Bounty", type: "checkbox" },
-    {
-      key: "geomancerRetreats",
-      group: "City Food",
-      label: "Geomancer Retreats",
-      type: "select",
-      parse: "number",
-      options: NATURES_BOUNTY_BY_RETREATS.map((bonus, n) => ({ value: n, label: `${n} (+${bonus}%)` })),
-      enabledWhen: (s) => !!s.naturesBounty
-    },
-    { key: "cityCount", group: "City Food", label: "Number of Cities", type: "number", min: 1, max: 999, integer: true, fallback: 1 },
-    { key: "isCapital", group: "City Food", label: "This City is the Capital", type: "checkbox" },
-    // Both are flat additions the research reading contains, so it does not
-    // override them.
-    {
-      key: "allembine",
-      group: "Research",
-      label: "Allembine Research (+100/hr)",
-      type: "checkbox"
-    },
-    {
-      key: "overflowingInsight",
-      group: "Research",
-      label: "Overflowing Insight (+506.5/hr)",
-      type: "checkbox"
-    },
-    {
-      key: "rpCalibration",
-      group: "Research",
-      label: "Measured Research Output",
-      type: "calibration"
-    },
-    // Drawn as one table, a row per production. The Flour Mill is food's booster.
-    {
-      key: "resourceBoosters",
-      group: "Production",
-      label: "Booster Buildings at Level 20",
-      type: "boosters"
-    },
-    {
-      key: "flourMill",
-      group: "Production",
-      label: `Flour Mill at Level 20 (+${FLOUR_MILL_L20}%)`,
-      type: "checkbox"
-    },
-    {
-      key: "prestige",
-      group: "Production",
-      label: "Prestige Production Boost",
-      type: "prestige"
-    },
-    {
-      key: "resourceMinimums",
-      group: "Production",
-      label: "Minimum Surplus per Hour",
-      type: "minimums"
-    },
-    {
-      key: "upkeepBuildings",
-      group: "City Buildings",
-      label: "How many of each at level 20",
-      type: "upkeepBuildings"
-    },
-    { key: "rClaim", group: "Sovereignty", label: "Claim Radius", type: "number", min: 1, max: 6, integer: true, fallback: 2 },
-    { key: "maxBuildings", group: "Sovereignty", label: "Maximum Buildings", type: "number", min: 0, max: 200, integer: true, fallback: 20 },
-    { key: "milsovStructure", group: "Sovereignty", label: "Military Structure", type: "milsov" },
-    {
-      key: "milsovMinBonus",
-      group: "Sovereignty",
-      label: "Minimum Military Bonus (%)",
-      type: "number",
-      min: 0,
-      max: 1e3,
-      integer: true,
-      fallback: 0,
-      enabledWhen: (s) => !!s.milsovStructure
-    },
-    { key: "tMin", group: "Site Filters", label: "Minimum Tax (%)", type: "number", min: 0, max: 100 },
-    { key: "dOther", group: "Site Filters", label: "Minimum Distance to Other Players", type: "number", min: 0, max: 100 },
-    { key: "dOwn", group: "Site Filters", label: "Minimum Distance to Your Cities", type: "number", min: 0, max: 100 },
-    { key: "dAlliance", group: "Site Filters", label: "Minimum Distance to Alliance Towns", type: "number", min: 0, max: 100 },
-    {
-      key: "ownClaimsAvailable",
-      group: "Site Filters",
-      label: "Treat Your Own Claims as Available",
-      type: "checkbox",
-      hint: "On: tiles you already claim count as free ground, as if you gave them up. Off: they are off limits, except to the town that holds them."
-    },
-    {
-      key: "siteTerrains",
-      group: "Site Filters",
-      label: "Terrain",
-      type: "terrains",
-      hint: "List only sites on the ticked terrain. With none ticked, every terrain is listed."
-    },
-    {
-      key: "autoMinimizeOffMap",
-      group: "Display",
-      label: "Minimise when off the World Map",
-      type: "checkbox",
-      menu: true,
-      hint: "Folds the panel to its icon on any page but the World Map, the only one with map data."
-    },
-    {
-      key: "mapOverlay",
-      group: "Display",
-      label: "Mark sites on the World Map",
-      type: "checkbox",
-      menu: true,
-      hint: "After a Scan, numbers the top ten on the map and outlines the selected row\u2019s tile; after Optimise, draws the plan. It draws on the game\u2019s own map, so it depends on that map\u2019s layout."
-    }
-  ];
-  function attr(name, v) {
-    return v === void 0 || v === null ? "" : ` ${name}="${escapeHtml(v)}"`;
-  }
+
+  // src/ui/forms.js
   function fieldRowHtml({ id, label, control, row = "" }) {
     return `<div class="sov-f"${row}><label for="${id}">${label}</label>
     ${control}</div>`;
@@ -2742,7 +3051,7 @@
     return fieldRowHtml({
       id,
       label: escapeHtml(f.label),
-      row: ` data-key="${f.key}"`,
+      row: ` data-key="${f.key}"${attr("title", f.hint)}`,
       control: `<input type="number" data-key="${f.key}"${attr("min", f.min)}${attr("max", f.max)}
       step="${f.integer ? 1 : "any"}"${attr("value", value)} id="${id}">`
     });
@@ -2823,7 +3132,7 @@
       const uses = Object.entries(b.consumes);
       const usesTitle = `Consumes ${uses.map(([res, n]) => `${count(n)} ${PRODUCTION_LABEL[res].toLowerCase()}`).join(", ")} an hour`;
       const icons = uses.map(([res]) => `<img src="${PRODUCTION_ICONS[res]}" alt="">`).join("");
-      const heading = b.group !== UPKEEP_BUILDINGS[i - 1]?.group ? `<p class="sov-upkeep-group"><img src="${UPKEEP_GROUP_ICONS[b.group]}" alt="">${escapeHtml(b.group)}</p>` : "";
+      const heading = b.group !== UPKEEP_BUILDINGS[i - 1]?.group ? `<p class="sov-heading"><img src="${UPKEEP_GROUP_ICONS[b.group]}" alt="">${escapeHtml(b.group)}</p>` : "";
       return heading + fieldRowHtml({
         id,
         label: escapeHtml(b.name),
@@ -2838,8 +3147,8 @@
       ${rows}
     </div>`;
   }
-  function productionMatrixHtml(settings2) {
-    const { resourceBoosters: boosters, prestige, resourceMinimums: minimums } = settings2;
+  function productionMatrixHtml(settings) {
+    const { resourceBoosters: boosters, prestige, resourceMinimums: minimums } = settings;
     const rows = MINIMUM_KEYS.map((key) => {
       const name = PRODUCTION_LABEL[key];
       const boosterBox = (hook, building, bonus, on) => `<input type="checkbox" ${hook}${on ? " checked" : ""} aria-label="${building}" title="${building} (+${bonus}% ${name})">`;
@@ -2852,7 +3161,7 @@
           boosters?.[key]
         );
       } else if (key === "food") {
-        booster = boosterBox('data-key="flourMill"', "Flour Mill", FLOUR_MILL_L20, settings2.flourMill);
+        booster = boosterBox('data-key="flourMill"', "Flour Mill", FLOUR_MILL_L20, settings.flourMill);
       }
       return `<tr><td>${productionLabel(key)}</td><td>${booster}</td>
       <td><input type="checkbox" data-prestige="${key}"${prestige?.[key] ? " checked" : ""}
@@ -2880,15 +3189,18 @@
   }
   function terrainsFieldHtml(f, terrains, hook, idPrefix) {
     const rows = SETTLE_TERRAINS.map((t) => checkboxRowHtml({
-      id: `${idPrefix}-${t.replaceAll(" ", "-")}`,
+      id: `${idPrefix}-${f.key}-${t.replaceAll(" ", "-")}`,
       label: escapeHtml(t),
       checked: terrains?.includes(t),
       hooks: ` ${hook}="${t}"`
     })).join("");
     return `<div class="sov-f-block" data-key="${f.key}"${attr("title", f.hint)}>
-      <p class="sov-f-head">${escapeHtml(f.label)}</p>
+      <p class="sov-subheading">${escapeHtml(f.label)}</p>
       <div class="sov-terrains">${rows}</div>
     </div>`;
+  }
+  function subsectionHtml(f) {
+    return f.subsection ? `<p class="sov-heading">${escapeHtml(f.subsection)}</p>` : "";
   }
   function mirrorFieldHtml(f, tab) {
     const id = `${f.type === "checkbox" ? "sov-cb" : "sov-in"}-${tab}-${f.key}`;
@@ -2896,8 +3208,8 @@
       step="${f.integer ? 1 : "any"}" id="${id}">`;
     return fieldRowHtml({ id, label: escapeHtml(f.label), control, row: attr("title", f.hint) });
   }
-  function fieldHtml(f, settings2) {
-    const v = settings2[f.key];
+  function fieldHtml(f, settings) {
+    const v = settings[f.key];
     switch (f.type) {
       case "checkbox":
         return checkboxFieldHtml(f, v);
@@ -2969,18 +3281,20 @@
         return `radius ${s.rClaim} \xB7 ${escapeHtml(structure?.name ?? "food only")}`;
       }
       case "Site Filters": {
-        const terrains = s.siteTerrains ?? [];
+        const terrains = (list) => list.length > 1 ? `${list.length} terrains` : list[0];
+        const around = s.surroundTerrains ?? [];
         return [
           `tax \u2265 ${s.tMin}%`,
           `apart ${s.dOther}/${s.dOwn}/${s.dAlliance}`,
-          terrains.length > 1 ? `${terrains.length} terrains` : terrains[0]
+          terrains(s.siteTerrains ?? []),
+          around.length && s.surroundMin > 0 && `${s.surroundMin}/8 around ${terrains(around)}`
         ].filter(Boolean).join(" \xB7 ");
       }
       default:
         return "";
     }
   }
-  function settingsFormHtml(settings2) {
+  function settingsFormHtml(settings) {
     const groups = [];
     for (const f of SETTINGS_FIELDS) {
       if (f.menu) continue;
@@ -2988,7 +3302,7 @@
       groups.at(-1).fields.push(f);
     }
     const body = groups.map((g) => {
-      const fields = g.name === "Production" ? productionMatrixHtml(settings2) : g.fields.map((f) => fieldHtml(f, settings2)).join("");
+      const fields = g.name === "Production" ? productionMatrixHtml(settings) : g.fields.map((f) => subsectionHtml(f) + fieldHtml(f, settings)).join("");
       const extra = g.fields.some((f) => f.key === "isCapital") ? '<div class="sov-derived"></div><p class="sov-derived-food"></p>' : "";
       return sectionHtml({
         name: g.name,
@@ -3004,9 +3318,9 @@
       <p class="sov-hint sov-store-note"></p>
     </form>`;
   }
-  function settingsMenuHtml(settings2) {
+  function settingsMenuHtml(settings) {
     const fields = SETTINGS_FIELDS.filter((f) => f.menu);
-    const rows = fields.map((f) => fieldHtml(f, settings2)).join("");
+    const rows = fields.map((f) => fieldHtml(f, settings)).join("");
     return `<h3>Settings</h3><form class="sov-menu-form" autocomplete="off">${rows}</form>`;
   }
   function changelogHtml(entries) {
@@ -3020,9 +3334,9 @@
   function focusRadiusTitle(rClaim) {
     return `How far out sovereignty may be placed. Blank follows City Configuration, currently ${rClaim}.`;
   }
-  function focusFormHtml(focus, settings2) {
+  function focusFormHtml(focus, settings) {
     const f = { ...DEFAULT_FOCUS, ...focus };
-    const rClaim = Math.round(settings2?.rClaim ?? 2);
+    const rClaim = Math.round(settings?.rClaim ?? 2);
     return `<form class="sov-focus-form" autocomplete="off">
       <div class="sov-card">
         ${fieldRowHtml({
@@ -3072,7 +3386,7 @@
         row: ` title="On: plan on the allocation below, the tile as you will terraform it. Off: plan on the tile's ratings as they are today."`
       })}
         <div class="sov-f-block" title="${PLOTS_TITLE}">
-          ${plotInputsHtml("data-mirror-plot", "sov-in-focus-plot", settings2?.plots)}
+          ${plotInputsHtml("data-mirror-plot", "sov-in-focus-plot", settings?.plots)}
           <div class="sov-plotbar"></div>
           <div class="sov-plot-sum"><span class="sov-plot-total"></span></div>
         </div>
@@ -3086,23 +3400,13 @@
     <div class="sov-focus-out"></div>`;
   }
   function scanFormHtml() {
-    const body = SETTINGS_FIELDS.filter((f) => f.group === "Site Filters").map((f) => f.type === "terrains" ? terrainsFieldHtml(f, [], "data-mirror-terrain", "sov-cb-scan-terrain") : mirrorFieldHtml(f, "scan")).join("");
+    const body = SETTINGS_FIELDS.filter((f) => f.group === "Site Filters").map((f) => subsectionHtml(f) + (f.type === "terrains" ? terrainsFieldHtml(f, [], "data-mirror-terrain", "sov-cb-scan-terrain") : mirrorFieldHtml(f, "scan"))).join("");
     return `<form class="sov-scan-form" autocomplete="off">${sectionHtml({
       name: "Site Filters",
       icons: SECTION_ICONS["Site Filters"],
       sum: "Site Filters",
       body: `${body}<p class="sov-hint">These are City Configuration's own; change them in either place.</p>`
     })}</form>`;
-  }
-  function ownTowns(payload) {
-    const seen = /* @__PURE__ */ new Map();
-    for (const t of extractTowns(payload)) {
-      if (!t.own || !Number.isFinite(t.x) || !Number.isFinite(t.y)) continue;
-      if (!payload.data?.[tileKey(t.y, t.x)]) continue;
-      const at = `${t.x}|${t.y}`;
-      if (!seen.has(at)) seen.set(at, { x: t.x, y: t.y, label: t.name ? `${t.name} (${at})` : at });
-    }
-    return [...seen.values()].sort((a, b) => a.label.localeCompare(b.label));
   }
   function capitalDerivedHtml(s) {
     return [
@@ -3114,14 +3418,581 @@
       return `<span class="sov-chip ${active ? "sov-on" : "sov-off"}" title="${active ? "Active" : `Inactive: ${why}`}">${name} +${bonus}%</span>`;
     }).join("");
   }
-  var ABOUT_TIP = "Unofficial fan tool. Illyriad, its game data and the game\u2019s icon art are the intellectual property of Illyriad Games Limited \u2014 click for the licence and full copyright notice.";
-  function tipPosition(rect, size, view, gap = 6) {
-    const centred = rect.left + rect.width / 2 - size.width / 2;
-    const left = Math.max(gap, Math.min(centred, view.width - size.width - gap));
-    const below = rect.bottom + gap;
-    const top = below + size.height + gap <= view.height ? below : Math.max(gap, rect.top - gap - size.height);
-    return { left, top };
+
+  // src/ui/results.js
+  function scanSummaryText(scan) {
+    const side = 2 * scan.zoom + 1;
+    return `Centred on ${scan.x}|${scan.y}, ${side}\xD7${side} tiles. Checked ${count(scan.scanned)} tiles and found ${count(scan.candidates)} candidate${scan.candidates === 1 ? "" : "s"}.`;
   }
+  function militaryCellHtml(r) {
+    const troops = `<img src="${ICONS.troops}" alt="">`;
+    const flags = [];
+    if (r.milsovBlocked) {
+      flags.push({
+        cls: "sov-pill-bad",
+        html: `${troops}none`,
+        title: `No military sovereignty fits here for free \u2014 ${MILSOV_BLOCKED_TEXT[r.milsovBlocked] ?? "nothing was left over"}.`
+      });
+    }
+    if (r.milsovMinTax != null) {
+      flags.push({
+        cls: "sov-pill-warn",
+        html: `${troops}min at ${r.milsovMinTax.toFixed(0)}%`,
+        title: `This site reaches your minimum military bonus (+${r.milsovMinBonusAt}%) at ${r.milsovMinTax.toFixed(0)}% tax, against the ${r.tMax.toFixed(0)}% it holds on food alone. Open the row and drag the tax slider to see the trade.`
+      });
+    }
+    return `${r.milsovBonus ? `<b class="sov-mil-v">+${r.milsovBonus}%</b>` : ""}${flags.map((f) => `<span class="sov-pill ${f.cls}" title="${escapeHtml(f.title)}">${f.html}</span>`).join("")}`;
+  }
+  function iconHeading(icon, name, title) {
+    return `<th title="${escapeHtml(title)}"><img src="${icon}" alt="${escapeHtml(name)}"></th>`;
+  }
+  function resultsHtml(results, summary) {
+    const head = `<p class="sov-meta">${GLYPHS.target}${summary}</p>
+    <p class="sov-warn sov-stale" hidden>Settings have changed \u2014 scan again to update these results.</p>`;
+    if (!results?.length) return `${head}<p class="sov-note">No available sites met the minimum tax.</p>`;
+    const rows = results.slice(0, 200).map((r, n) => `
+        <tr class="sov-row" data-n="${n}">
+          <td class="sov-at"><span class="sov-rank${n < 10 ? " sov-rank-top" : ""}">${n + 1}</span>${r.x}|${r.y}</td>
+          <td class="sov-tax-cell"${Number.isFinite(r.tMaxExact) ? ` title="The arithmetic reaches ${r.tMaxExact.toFixed(2)}%, but tax is whole numbers only, so the plan is made at this rate."` : ""}><b>${Number.isFinite(r.tMax) ? r.tMax.toFixed(0) : r.tMax}%</b>${limitHtml(r)}</td>
+          <td>${r.surplus ? count(Math.round(r.surplus.food)) : ""}</td>
+          <td>${r.uRp.toFixed(0)}</td>
+          <td>${count(Math.round(r.goldNet))}</td>
+          <td class="sov-mil-cell">${militaryCellHtml(r)}</td>
+        </tr>`).join("");
+    return `
+        ${head}
+        <p class="sov-legend sov-map-note"></p>
+        <table>
+          <thead><tr><th>Site</th>
+            <th title="The highest whole-number tax this site can hold on food alone \u2014 the game takes no other kind \u2014 and the icon of what stops it going higher">Max Tax</th>
+            ${iconHeading(ICONS.food, "Food", "Food per hour the city nets at that tax")}
+            ${iconHeading(ICONS.research, "Research", "Research per hour the claims cost")}
+            ${iconHeading(ICONS.gold, "Net Gold", "Gold per hour after claim upkeep")}
+            ${iconHeading(ICONS.troops, "Military", "Free military unit production bonus \u2014 costs this site no tax \u2014 and anything to know about it")}</tr></thead>
+          <tbody>${rows}</tbody>
+        </table>`;
+  }
+
+  // src/ui/grid.js
+  var FOOD_ICON = `<img src="${ICONS.food}" alt="food">`;
+  var CROSS = '<span class="sov-x">\u2715</span>';
+  function gridCell({ cls, title, level, body, badge, dx, dy, pick }) {
+    return `<td class="sov-cell ${cls}${pick ? " sov-pick" : ""}"${pick ? ` data-dx="${dx}" data-dy="${dy}"` : ""} title="${escapeHtml(title)}">${level ? `<span class="sov-lv">${level}</span>` : ""}${body ? `<span class="sov-cv">${body}</span>` : ""}${badge ?? ""}</td>`;
+  }
+  function descriptorText(tile) {
+    if (typeof tile?.i !== "number" && !tile?.descriptor) return "";
+    const d = tile?.descriptor ?? descriptorFor(tile.i);
+    if (!d) return `Terrain ${tile.i} \u2014 unidentified`;
+    const varies = d.nodeClass ? " (rating varies; not a fixed terrain)" : "";
+    if (d.bonusUnread) return `${d.name}${varies} \u2014 bonus not read yet`;
+    if (d.nodeClass) return `${d.name}${varies}`;
+    if (!d.building) return `${d.name} \u2014 no sovereignty bonus`;
+    return `${d.name}: +${d.bonus}% ${d.product} per level of ${d.building}`;
+  }
+  function descriptorBadge(tile) {
+    const d = tile?.descriptor ?? (typeof tile?.i === "number" ? descriptorFor(tile.i) : null);
+    if (!d?.building) return "";
+    return `<span class="sov-desc" title="${escapeHtml(
+      `+${d.bonus}% ${d.product} per level of ${d.building}`
+    )}">+${d.bonus}% ${escapeHtml(d.product)}</span>`;
+  }
+  function claimCostText(t) {
+    const held = t.held ?? 0;
+    const rp = t.rp.toFixed(0);
+    if (held > 0 && t.rp > 0) return `+${rp} RP/hr, raised from Sov ${roman(held)}`;
+    if (held > 0) return "Already held at this level, no extra RP";
+    return `${rp} RP/hr`;
+  }
+  function tip(head, ...lines) {
+    return [head, ...lines].filter(Boolean).join("\n");
+  }
+  function planGridHtml(plan, geom) {
+    const r = Math.max(1, Math.round(geom?.radius ?? 0) || spanOf(plan));
+    const cx = geom?.x;
+    const cy = geom?.y;
+    const excluded = geom?.excluded ?? /* @__PURE__ */ new Set();
+    const kept = new Map((geom?.kept ?? []).map((k) => [cellKey(k.dx, k.dy), k]));
+    const pickable = !!geom?.pickable;
+    const absolute = Number.isFinite(cx) && Number.isFinite(cy);
+    const xLabel = (dx) => absolute ? String(cx + dx) : signed(dx);
+    const yLabel = (dy) => absolute ? String(cy + dy) : signed(dy);
+    const name = (dx, dy) => absolute ? `${cx + dx}|${cy + dy}` : `${signed(dx)},${signed(dy)}`;
+    const specs = /* @__PURE__ */ new Map();
+    let anyKept = false;
+    const place = (t) => `${t.water ? "Water \xB7 food" : "Food"} ${t.food} \xB7 distance ${t.d.toFixed(2)}`;
+    for (const t of plan.free ?? []) {
+      const held = t.held ?? 0;
+      if (held > 0) anyKept = true;
+      specs.set(cellKey(t.dx, t.dy), held > 0 ? {
+        cls: "sov-cell-kept",
+        badge: descriptorBadge(t),
+        title: tip(
+          `${name(t.dx, t.dy)} \u2014 Sov ${roman(held)} claim, kept as it is`,
+          place(t),
+          descriptorText(t)
+        ),
+        level: roman(held),
+        body: "kept"
+      } : {
+        cls: t.water ? "sov-cell-free sov-cell-water" : "sov-cell-free",
+        badge: descriptorBadge(t),
+        title: tip(
+          `${name(t.dx, t.dy)} \u2014 ${t.relaid ? "Claimed, not used in this plan" : "Unclaimed"}`,
+          place(t),
+          descriptorText(t)
+        ),
+        body: `${FOOD_ICON} ${t.food}`
+      });
+    }
+    for (const t of plan.tiles ?? []) {
+      specs.set(cellKey(t.dx, t.dy), {
+        cls: "sov-cell-food",
+        badge: descriptorBadge(t),
+        title: tip(
+          `${name(t.dx, t.dy)} \u2014 Sov ${roman(t.level)} food claim`,
+          place(t),
+          claimCostText(t),
+          descriptorText(t)
+        ),
+        level: roman(t.level),
+        body: `${FOOD_ICON} ${t.food}`
+      });
+    }
+    for (const m of plan.milsov ?? []) {
+      const structure = sovStructure(m);
+      const icon = STRUCTURE_ICONS[structure.key];
+      specs.set(cellKey(m.dx, m.dy), {
+        cls: "sov-cell-mil",
+        badge: descriptorBadge(m),
+        title: tip(
+          `${name(m.dx, m.dy)} \u2014 Sov ${roman(m.sovLevel)} ${structure.military ? "military" : structure.name} claim`,
+          `Level ${m.buildingLevel} ${structure.name} \xB7 ${count(structureUpkeep(m))}/hr upkeep`,
+          `Distance ${m.d.toFixed(2)} \xB7 ${claimCostText(m)}`,
+          descriptorText(m)
+        ),
+        level: roman(m.sovLevel),
+        body: `${icon ? `<img src="${icon}" alt="${escapeHtml(structure.name)}">` : ""} L${m.buildingLevel}`
+      });
+    }
+    const cell = (dx, dy) => {
+      if (dx === 0 && dy === 0) {
+        return gridCell({ cls: "sov-cell-town", title: `${name(0, 0)} \u2014 The town`, level: "TOWN" });
+      }
+      if (excluded.has(cellKey(dx, dy))) {
+        return gridCell({
+          cls: "sov-cell-out",
+          title: tip(`${name(dx, dy)} \u2014 Crossed out`, pickable && "Click to put it back"),
+          body: CROSS,
+          dx,
+          dy,
+          pick: pickable
+        });
+      }
+      const spec = specs.get(cellKey(dx, dy));
+      if (!spec) {
+        const k = kept.get(cellKey(dx, dy));
+        if (k) {
+          anyKept = true;
+          return gridCell({
+            cls: "sov-cell-kept",
+            title: tip(
+              `${name(dx, dy)} \u2014 Sov ${roman(k.level)} claim, kept as it is`,
+              `Distance ${k.d.toFixed(2)} \xB7 ${k.rp.toFixed(0)} RP/hr`
+            ),
+            level: roman(k.level),
+            body: "kept"
+          });
+        }
+        return gridCell({ cls: "sov-cell-none", title: `${name(dx, dy)} \u2014 Not claimable`, body: CROSS });
+      }
+      return gridCell({ ...spec, dx, dy, pick: pickable });
+    };
+    const head = `<tr><th></th>${range(r).map((dx) => `<th>${xLabel(dx)}</th>`).join("")}</tr>`;
+    const body = range(r).slice().reverse().map((dy) => `<tr><th>${yLabel(dy)}</th>${range(r).map((dx) => cell(dx, dy)).join("")}</tr>`).join("");
+    return `<div class="sov-grid-wrap"><table class="sov-grid">
+      <thead>${head}</thead><tbody>${body}</tbody></table></div>
+    <div class="sov-keys">
+      <span><i class="sov-sw sov-sw-food"></i>Food claim</span>
+      <span><i class="sov-sw sov-sw-mil"></i>Military claim</span>${anyKept ? '<span><i class="sov-sw sov-sw-kept"></i>Kept claim</span>' : ""}
+      <span><i class="sov-sw sov-sw-free"></i>Unclaimed</span>
+      <span><i class="sov-sw sov-sw-out">\u2715</i>Unavailable</span>
+    </div>
+    <p class="sov-legend">I\u2013V is the claim level, L the building's, and the last line the
+      terrain bonus.${pickable ? " Click a tile to cross it out and re-plan without it." : ""}
+      Hover a tile for the rest.</p>`;
+  }
+  function range(r) {
+    return Array.from({ length: 2 * r + 1 }, (_, i) => i - r);
+  }
+  function signed(v) {
+    return `${v >= 0 ? "+" : ""}${v}`;
+  }
+  function spanOf(plan) {
+    let span = 1;
+    for (const t of [...plan.free ?? [], ...plan.tiles ?? [], ...plan.milsov ?? []]) {
+      span = Math.max(span, Math.abs(t.dx), Math.abs(t.dy));
+    }
+    return span;
+  }
+
+  // src/ui/plan.js
+  function milsovSplitText(plan) {
+    const counts = /* @__PURE__ */ new Map();
+    for (const m of plan.milsov) counts.set(m.buildingLevel, (counts.get(m.buildingLevel) ?? 0) + 1);
+    return [...counts.entries()].sort((a, b) => b[0] - a[0]).map(([level, n]) => `${n}\xD7 Sov ${SOV_LEVEL_ROMAN[level - 1]}`).join(" + ");
+  }
+  function upkeepLimitHtml(plan) {
+    if (plan?.resImpossible) {
+      return `<p class="sov-flag">The settle allocation has no ${plan.resBinding} plots, so this
+        upkeep cannot be paid at any tax.</p>`;
+    }
+    if (!Number.isFinite(plan?.resCeiling) || !(plan.resCeiling < plan.tMax)) return "";
+    return `<p class="sov-hint">Upkeep limit: ${plan.resCeiling.toFixed(1)}% tax \u2014 above that, ${plan.resBinding} production no longer covers it.</p>`;
+  }
+  function milsovPlanHtml(plan) {
+    if (!plan?.milsov?.length) return "";
+    return `<p class="sov-mil"><b class="sov-mil-bonus">+${plan.milsovBonus}%</b>
+    <span class="sov-mil-what">military unit production</span>
+    <span class="sov-hint">${escapeHtml(milsovSplitText(plan))}, upkeep ${count(plan.milsovUpkeep)}/hr of wood, clay, iron and stone.</span></p>`;
+  }
+  function surplusRows(surplus, binding, resBinding) {
+    if (!surplus) return [];
+    const rows = [
+      { key: "food", icon: "food", label: PRODUCTION_LABEL.food },
+      { key: "rp", icon: "research", label: PRODUCTION_LABEL.research },
+      { key: "gold", icon: "gold", label: PRODUCTION_LABEL.gold },
+      ...BASIC_RESOURCES.map((res) => ({
+        key: res,
+        icon: res,
+        label: PRODUCTION_LABEL[res],
+        basic: true
+      }))
+    ];
+    return rows.map((r) => {
+      const value = surplus[r.key] ?? 0;
+      const base = surplus.base?.[r.key];
+      const notes = [];
+      if (binding === r.key || binding === "res" && r.key === resBinding) notes.push("binds");
+      if (value < 0) notes.push("deficit");
+      return {
+        ...r,
+        value,
+        base,
+        spent: Number.isFinite(base) ? base - value : void 0,
+        note: notes.join(", ")
+      };
+    });
+  }
+  function planBlockHtml({ ctx, base, plan, floor, geom }) {
+    const lowest = Math.max(0, Math.ceil(floor));
+    const slider = ctx && Number.isFinite(base.tMax) && base.tMax - lowest >= 1 ? `<div class="sov-tax" title="Drag to trade tax for sovereignty">
+        <span class="sov-tax-label">Tax</span>
+        <input type="range" class="sov-tax-range" min="${lowest}" max="${base.tMax}"
+          step="1" value="${plan.tax}" aria-label="Tax">
+        <output class="sov-tax-at">${plan.tax.toFixed(0)}%</output>
+      </div>` : "";
+    return `${slider}<div class="sov-body-at">${detailBodyHtml(plan, base, geom)}</div>`;
+  }
+  function keptNote(r) {
+    if (!r?.preserving) {
+      if (!r?.released) return "";
+      const one = r.released === 1;
+      return `Preserve Existing Sovereignty is off, so the ${r.released} claim${one ? "" : "s"} ${escapeHtml(r.homeTown)} already holds inside the radius ${one ? "is" : "are"} planned as empty ground and priced in full, as though given up and laid out again. Turn it on to plan around them instead.`;
+    }
+    if (!r.preserveTown) {
+      return "Preserve Existing Sovereignty is on, but this tile carries no town \u2014 sovereignty belongs to a town, so there is none here to keep and the plan is drawn on empty ground.";
+    }
+    const kept = r.kept;
+    const parts = [];
+    if (kept.claims.length) {
+      parts.push(`Keeping ${kept.claims.length} claim${kept.claims.length === 1 ? "" : "s"} ${escapeHtml(r.preserveTown)} already holds, costing ${count(Math.round(kept.rp))} research and ${count(Math.round(kept.rp * CLAIM_GOLD_PER_RP))} gold an hour, which is taken off the top. Their buildings stay as they stand, counted in the building cap and the upkeep. The plan may raise a food claim to Sov V or a building of the military structure it plans, or build on a claim with no building, and pays only for the levels it adds.`);
+    }
+    if (kept.unknownLevel) {
+      parts.push(`${kept.unknownLevel} more carry a level that could not be read, and are planned as bare ground.`);
+    }
+    if (kept.otherTown) {
+      const one = kept.otherTown === 1;
+      parts.push(`${kept.otherTown} claim${one ? "" : "s"} of yours inside the radius belong${one ? "s" : ""} to another of your towns, and ${one ? "is" : "are"} held against this one on the same terms as a stranger's.`);
+    }
+    return parts.join(" ");
+  }
+  function claimHolderText(rd) {
+    const holder = {
+      Yours: "One of your towns",
+      Alliance: "An alliance member",
+      Confed: "A confederate"
+    }[String(rd ?? "").trim()] ?? "Another player";
+    return `${holder} holds sovereignty on this tile.`;
+  }
+  function focusResultHtml(r) {
+    const notes = [r.plotNote, keptNote(r)].filter(Boolean);
+    const warnings = [];
+    if (!r.centre.isTown) {
+      if (!r.centre.settleable) {
+        warnings.push("This tile cannot be settled, so the plan below is for analysis only.");
+      }
+      if (r.centre.claimedBy) warnings.push(claimHolderText(r.centre.claimedBy));
+    }
+    const ceiling = r.holdsNoTax ? `<p class="sov-warn">This tile holds no tax \u2014 its ceiling is ${r.ceiling.toFixed(0)}%, limited by ${escapeHtml(bindingLabel(r.base.binding).toLowerCase())}.</p>` : "";
+    const chips = [
+      r.holdsNoTax ? "" : `<span class="sov-chip" title="Highest tax this tile holds on food alone">max <b>${r.base.tMax.toFixed(0)}%</b>${limitHtml(r.base)}</span>`,
+      `<span class="sov-chip" title="${r.radiusFromConfig ? "From City Configuration" : "As set above"}">radius ${r.radius}</span>`,
+      `<span class="sov-chip" title="How many of the ${r.ring} surrounding tiles are claimable">${r.claimable}/${r.ring} claimable</span>`
+    ].join("");
+    const asked = r.holdsNoTax ? "" : r.aboveCeiling ? `<p class="sov-flag">This tile cannot hold ${r.requestedTax.toFixed(0)}% \u2014 the plan below is at its ceiling of ${r.ceiling.toFixed(0)}%.</p>` : "";
+    return `<div class="sov-result-h"><span class="sov-xy-big">${r.x}|${r.y}</span>${chips}</div>
+    ${warnings.map((w) => `<p class="sov-warn">${escapeHtml(w)}</p>`).join("")}
+    ${ceiling}${notes.map((n) => `<p class="sov-note">${escapeHtml(n)}</p>`).join("")}
+    ${asked}
+    <div class="sov-plan-block"></div>`;
+  }
+  var NOTE_PILLS = {
+    binds: ["limit", "sov-pill-warn", "The ceiling that sets the tax: this production runs out first"],
+    deficit: ["deficit", "sov-pill-bad", "The plan spends more than the city makes"]
+  };
+  function notePills(note) {
+    return note.split(", ").filter((n) => NOTE_PILLS[n]).map((n) => {
+      const [text, cls, title] = NOTE_PILLS[n];
+      return ` <span class="sov-pill ${cls}" title="${title}">${text}</span>`;
+    }).join("");
+  }
+  function useCellHtml(r) {
+    if (!Number.isFinite(r.base)) return '<td class="sov-use"></td>';
+    const share = r.base > 0 ? Math.min(1, Math.max(0, r.spent / r.base)) : 0;
+    const cls = r.value < 0 ? " sov-bar-over" : share >= 0.95 ? " sov-bar-full" : "";
+    return `<td class="sov-use"><div class="sov-bar${cls}"><i style="width:${(share * 100).toFixed(1)}%"></i></div>
+    <span class="sov-use-txt">${count(Math.round(r.spent))} of ${count(Math.round(r.base))}</span></td>`;
+  }
+  function detailBodyHtml(plan, base, geom) {
+    const atCeiling = plan.tax >= base.tMax;
+    const rows = surplusRows(plan.surplus, atCeiling ? plan.binding : null, plan.resBinding);
+    const num = (v) => Number.isFinite(v) ? count(Math.round(v)) : "";
+    const balance = rows.length ? `<table class="sov-balance"><thead><tr><th>At ${plan.tax.toFixed(0)}% Tax</th>
+        <th class="sov-use" title="What the plan and your buildings spend, against what the city produces">Spent of produced</th>
+        <th>Net</th></tr></thead><tbody>${rows.map((r) => `<tr><td>${productionLabel(r.icon)}${notePills(r.note)}</td>${useCellHtml(r)}
+        <td class="${r.value < 0 ? "sov-bad" : "sov-ok"}">${num(r.value)}</td></tr>`).join("")}</tbody></table>` : "";
+    const buildings = BASIC_RESOURCES.filter((res2) => plan.surplus?.buildingUpkeep?.[res2] > 0).map((res2) => `${num(plan.surplus.buildingUpkeep[res2])} ${PRODUCTION_LABEL[res2].toLowerCase()}`);
+    const buildingNote = buildings.length ? `<p class="sov-hint">Spent includes ${buildings.join(", ")} per hour for your city's buildings.</p>` : "";
+    const milPlan = plan.milsov.length ? milsovPlanHtml(plan) : plan.milsovBlocked ? `<p class="sov-flag">No military sovereignty fits at this tax \u2014 ${escapeHtml(MILSOV_BLOCKED_TEXT[plan.milsovBlocked] ?? "nothing was left over")}.</p>` : "";
+    const res = upkeepLimitHtml(plan);
+    const claimDelta = plan.tiles.length - base.tiles.length;
+    const goldDelta = Math.round(plan.goldNet - base.goldNet);
+    const delta = (v) => `${v >= 0 ? "+" : ""}${count(v)}`;
+    const trade = plan.tax < base.tMax - 0.05 ? `<p class="sov-hint">Against the ${base.tMax.toFixed(1)}% ceiling, which fits ${base.milsovBonus ? `+${base.milsovBonus}%` : "no military bonus"}: ${delta(claimDelta)} food claims, ${delta(goldDelta)} gold/hr.</p>` : "";
+    const short = plan.holds === false ? `<p class="sov-flag">Plan shown at ${plan.tax.toFixed(0)}% tax.</p>` : "";
+    return `${short}${balance}${buildingNote}${milPlan}${res}${trade}${planGridHtml(plan, geom)}`;
+  }
+
+  // src/ui/plan-block.js
+  function bindPlanBlock(scope, ctx, base, geom, onPlan) {
+    const range2 = scope.querySelector(".sov-tax-range");
+    if (!range2) return;
+    const at = scope.querySelector(".sov-tax-at");
+    const body = scope.querySelector(".sov-body-at");
+    range2.addEventListener("input", () => {
+      const tax = Number(range2.value);
+      at.textContent = `${tax.toFixed(0)}%`;
+      const plan = planSiteAt(ctx, tax);
+      body.innerHTML = plan ? detailBodyHtml(plan, base, geom) : '<p class="sov-flag">This site cannot hold that tax.</p>';
+      onPlan(tax, plan);
+    });
+  }
+  function mountPlanBlock(scope, state) {
+    const excluded = /* @__PURE__ */ new Set();
+    let tax = state.tax;
+    const draw = () => {
+      let ctx = state.ctx;
+      let base = state.base;
+      if (excluded.size) {
+        const usable = state.neighbours.filter((n) => !excluded.has(cellKey(n.dx, n.dy)));
+        ctx = usable.length ? prepareSite({ neighbours: usable, settings: state.settings }) : null;
+        base = ctx ? scoreSiteFrom(ctx) : null;
+      }
+      const geom = { ...state.geom, excluded, pickable: !!state.neighbours };
+      if (!base) {
+        const none = { tiles: [], free: [], milsov: [] };
+        scope.innerHTML = `<p class="sov-flag">No plan holds with those tiles crossed out.</p>${planGridHtml(none, geom)}`;
+        state.onPlan?.(none, geom);
+        return;
+      }
+      tax = Math.max(0, Math.min(base.tMax, Math.max(Math.ceil(state.floor), tax)));
+      const plan = (ctx ? planSiteAt(ctx, tax, { bestEffort: true }) : null) ?? base;
+      scope.innerHTML = planBlockHtml({ ctx, base, plan, floor: state.floor, geom });
+      bindPlanBlock(scope, ctx, base, geom, (t, p) => {
+        tax = t;
+        state.onPlan?.(p, geom);
+      });
+      state.onPlan?.(plan, geom);
+    };
+    scope.addEventListener("click", (e) => {
+      const cell = e.target.closest(".sov-pick");
+      if (!cell || !scope.contains(cell)) return;
+      const key = cellKey(Number(cell.dataset.dx), Number(cell.dataset.dy));
+      if (!excluded.delete(key)) excluded.add(key);
+      draw();
+    });
+    draw();
+  }
+  function toggleDetail(row, result, settings, onOptimise) {
+    const next = row.nextElementSibling;
+    if (next && next.classList.contains("sov-detail")) {
+      next.remove();
+      return;
+    }
+    const tr = document.createElement("tr");
+    tr.className = "sov-detail";
+    const ctx = result.neighbours ? prepareSite({ neighbours: result.neighbours, settings }) : null;
+    const cell = document.createElement("td");
+    cell.colSpan = 6;
+    const actions = document.createElement("p");
+    actions.className = "sov-detail-actions";
+    actions.innerHTML = `<button type="button" class="sov-optimise sec">${GLYPHS.target}Optimise ${result.x}|${result.y} \u2192</button>`;
+    actions.querySelector(".sov-optimise").addEventListener("click", () => onOptimise?.(result));
+    const block = document.createElement("div");
+    cell.append(actions, block);
+    tr.append(cell);
+    row.after(tr);
+    mountPlanBlock(block, {
+      neighbours: result.neighbours ?? null,
+      settings,
+      ctx,
+      base: result,
+      floor: Math.max(0, Math.min(settings.tMin ?? 0, result.tMax)),
+      geom: { radius: Math.round(settings.rClaim ?? 2), x: result.x, y: result.y },
+      tax: result.tax
+    });
+  }
+
+  // src/ui/focus-pane.js
+  function createFocusPane({
+    pane,
+    readSettings,
+    getPayload,
+    whenViewLoaded: whenViewLoaded2,
+    onFocusPlan,
+    onPickOnMap
+  }) {
+    const focusForm = pane.querySelector(".sov-focus-form");
+    const status = pane.querySelector(".sov-focus-status");
+    const townPick = focusForm.querySelector(".sov-town-pick");
+    let refusedView = null;
+    let stopWaiting = null;
+    function syncFocusRadiusHint() {
+      const { settings: s } = readSettings();
+      const rClaim = Math.round(s.rClaim ?? 2);
+      focusForm.querySelector('[data-focus="radius"]').placeholder = String(rClaim);
+      focusForm.querySelector("[data-radius-row]").title = focusRadiusTitle(rClaim);
+      syncTownPicker();
+    }
+    function syncTownPicker() {
+      const was = townPick.value;
+      const payload = getPayload?.();
+      const towns = payload ? ownTowns(payload) : [];
+      townPick.innerHTML = towns.length ? `<option value="">\u2014</option>${towns.map((t) => `<option value="${t.x}|${t.y}">${escapeHtml(t.label)}</option>`).join("")}` : `<option value="">${payload ? "none on screen" : "no map data yet"}</option>`;
+      if (was && towns.some((t) => `${t.x}|${t.y}` === was)) townPick.value = was;
+    }
+    function readFocus() {
+      const raw = {};
+      for (const key of ["x", "y", "radius", "tax"]) {
+        raw[key] = focusForm.querySelector(`[data-focus="${key}"]`).value;
+      }
+      for (const key of ["useConfiguredPlots", "preserveSovereignty"]) {
+        raw[key] = focusForm.querySelector(`[data-focus="${key}"]`).checked;
+      }
+      return raw;
+    }
+    function onRefusedMove() {
+      const { x, y } = refusedView;
+      stopWaiting?.();
+      stopWaiting = location.hash === mapHash(refusedView) ? whenViewLoaded2?.(refusedView, () => planAt(x, y)) : null;
+      if (!stopWaiting) window.removeEventListener("hashchange", onRefusedMove);
+      status.textContent = stopWaiting ? `Centring the map on ${x}|${y}; it is optimised once the map has loaded.` : `The map has moved. Optimise again to check ${x}|${y} on this view.`;
+    }
+    function runFocus() {
+      const out = pane.querySelector(".sov-focus-out");
+      window.removeEventListener("hashchange", onRefusedMove);
+      stopWaiting?.();
+      stopWaiting = null;
+      const fail2 = (message) => {
+        status.textContent = message;
+        out.innerHTML = "";
+        onFocusPlan?.(null);
+      };
+      const read = readSettings();
+      if (read.errors.length) {
+        fail2(read.errors.join(" "));
+        return;
+      }
+      const { focus, errors } = parseFocus(readFocus());
+      if (errors.length) {
+        fail2(errors.join(" "));
+        return;
+      }
+      const payload = getPayload?.();
+      const result = focusSite({ payload, focus, settings: read.settings });
+      if (!result.ok) {
+        fail2(result.message);
+        if (result.reason === "centre-missing" || result.reason === "incomplete") {
+          const radius = focusRadius(focus, read.settings);
+          refusedView = centredView(focus.x, focus.y, payload.zoom, radius);
+          window.addEventListener("hashchange", onRefusedMove);
+          status.insertAdjacentHTML("beforeend", `<p class="sov-map-only"><a class="sov-map-centre"
+          href="${mapHash(refusedView)}">Centre the map on ${focus.x}|${focus.y}</a></p>`);
+        }
+        return;
+      }
+      status.textContent = "";
+      out.innerHTML = focusResultHtml(result);
+      mountPlanBlock(out.querySelector(".sov-plan-block"), {
+        neighbours: result.neighbours,
+        // The settings the plan was made with, which can differ from the form's.
+        settings: result.settings,
+        ctx: result.ctx,
+        base: result.base,
+        floor: result.floor,
+        geom: { radius: result.radius, x: result.x, y: result.y, kept: result.kept?.claims },
+        tax: result.plan.tax,
+        onPlan: onFocusPlan
+      });
+    }
+    function planAt(x, y) {
+      focusForm.querySelector('[data-focus="x"]').value = x;
+      focusForm.querySelector('[data-focus="y"]').value = y;
+      townPick.value = "";
+      runFocus();
+    }
+    townPick.addEventListener("pointerdown", syncTownPicker);
+    townPick.addEventListener("focus", syncTownPicker);
+    focusForm.addEventListener("change", (e) => {
+      const el = e.target;
+      if (el.dataset.focus === "x" || el.dataset.focus === "y") {
+        townPick.value = "";
+        return;
+      }
+      if (!el.closest(".sov-town-pick") || !el.value) return;
+      const [x, y] = el.value.split("|");
+      focusForm.querySelector('[data-focus="x"]').value = x;
+      focusForm.querySelector('[data-focus="y"]').value = y;
+    });
+    focusForm.addEventListener("submit", (e) => e.preventDefault());
+    focusForm.addEventListener("click", (e) => {
+      if (e.target.closest(".sov-focus-run")) runFocus();
+      else if (e.target.closest(".sov-map-pick")) onPickOnMap?.();
+    });
+    return {
+      syncFocusRadiusHint,
+      planAt,
+      /** While a pick is armed, Pick on map becomes its cancel button. */
+      setPicking(armed) {
+        const button = focusForm.querySelector(".sov-map-pick");
+        button.classList.toggle("sov-picking", armed);
+        button.textContent = armed ? "Click a tile \xB7 Cancel" : "Pick on map";
+      }
+    };
+  }
+
+  // src/ui/panel.js
+  var ABOUT_TIP = "Unofficial fan tool. Illyriad, its game data and the game\u2019s icon art are the intellectual property of Illyriad Games Limited \u2014 click for the licence and full copyright notice.";
   function createPanel({
     onScan,
     initialSettings,
@@ -3170,7 +4041,7 @@
       <section data-pane="focus" hidden>${focusFormHtml(DEFAULT_FOCUS, opening)}</section>
       <section data-pane="config" hidden>${settingsFormHtml(opening)}</section>
     </div>`;
-    root.querySelector(".sov-build").textContent = false ? "dev" : "2.0.0";
+    root.querySelector(".sov-build").textContent = false ? "dev" : "2.1.0";
     shadow.appendChild(root);
     const openSections = new Set(loadOpenSections());
     for (const sec of root.querySelectorAll(".sov-sec")) sec.open = openSections.has(sec.dataset.sec);
@@ -3180,73 +4051,8 @@
       else openSections.delete(e.target.dataset.sec);
       saveOpenSections([...openSections]);
     }, true);
-    let anchor = loadPanelPosition();
-    let dragged = false;
-    let dragPointerId = null;
-    let dragOffsetX = 0;
-    let dragOffsetY = 0;
     const header = root.querySelector("h2");
-    function positionPanel(x, y) {
-      const viewportHeight = window.innerHeight;
-      if (root.classList.contains("sov-collapsed")) {
-        root.style.maxHeight = "";
-      } else {
-        const minVisible = header.offsetHeight || 34;
-        const top = Math.min(
-          Math.max(0, Number.isFinite(y) ? y : 0),
-          Math.max(0, viewportHeight - minVisible)
-        );
-        root.style.maxHeight = `${viewportHeight - top}px`;
-      }
-      const position = clampPanelPosition(
-        x,
-        y,
-        root.offsetWidth,
-        root.offsetHeight,
-        window.innerWidth,
-        viewportHeight
-      );
-      root.style.left = `${position.x}px`;
-      root.style.top = `${position.y}px`;
-      root.style.right = "auto";
-    }
-    function placeAtAnchor() {
-      if (anchor) positionPanel(anchor.x, anchor.y);
-    }
-    header.addEventListener("pointerdown", (e) => {
-      if (e.target.closest(".sov-about,.sov-gear,.sov-changelog") || e.button !== 0) return;
-      const rect = root.getBoundingClientRect();
-      dragPointerId = e.pointerId;
-      dragOffsetX = e.clientX - rect.left;
-      dragOffsetY = e.clientY - rect.top;
-      dragged = false;
-      header.setPointerCapture?.(e.pointerId);
-    });
-    header.addEventListener("pointermove", (e) => {
-      if (e.pointerId !== dragPointerId) return;
-      const rect = root.getBoundingClientRect();
-      if (!dragged && Math.hypot(
-        e.clientX - (rect.left + dragOffsetX),
-        e.clientY - (rect.top + dragOffsetY)
-      ) < 3) return;
-      dragged = true;
-      root.classList.add("sov-dragging");
-      e.preventDefault();
-      positionPanel(e.clientX - dragOffsetX, e.clientY - dragOffsetY);
-    });
-    function finishDrag(e) {
-      if (e.pointerId !== dragPointerId) return;
-      if (dragged) {
-        const rect = root.getBoundingClientRect();
-        anchor = { x: rect.left, y: rect.top };
-        savePanelPosition(anchor);
-      }
-      root.classList.remove("sov-dragging");
-      dragPointerId = null;
-    }
-    header.addEventListener("pointerup", finishDrag);
-    header.addEventListener("pointercancel", finishDrag);
-    window.addEventListener("resize", placeAtAnchor);
+    const { placeAtAnchor, takeDrag } = installDrag(root, header);
     let manualCollapsed = loadPanelCollapsed();
     let offMapExpandOverride = false;
     let paneShown;
@@ -3259,7 +4065,7 @@
     function applyCollapsed() {
       const collapsed = shouldCollapse();
       root.classList.toggle("sov-collapsed", collapsed);
-      if (collapsed) closePopovers?.();
+      if (collapsed) closePopovers();
       placeAtAnchor();
       reportPane();
     }
@@ -3301,14 +4107,11 @@
     installTooltips(shadow);
     const containerFor = (f) => f.menu ? menu : form;
     let rendered = [];
+    let scanSettings = null;
     let selected = null;
     let incomplete = [];
     header.addEventListener("click", (e) => {
-      if (e.target.closest(".sov-about")) return;
-      if (dragged) {
-        dragged = false;
-        return;
-      }
+      if (e.target.closest(".sov-about") || takeDrag()) return;
       toggleCollapsed();
     });
     scanBtn.addEventListener("click", onScan);
@@ -3319,7 +4122,7 @@
       root.querySelectorAll("[data-pane]").forEach((p) => {
         p.hidden = p.dataset.pane !== name;
       });
-      if (name === "focus") syncFocusRadiusHint();
+      if (name === "focus") focusPane.syncFocusRadiusHint();
       reportPane();
     }
     root.querySelectorAll(".sov-tabs button").forEach((tab) => {
@@ -3394,7 +4197,7 @@
             break;
           }
           case "terrains":
-            out.siteTerrains = parseSiteTerrains([...form.querySelectorAll("[data-terrain]")].filter((el) => el.checked).map((el) => el.dataset.terrain));
+            out[f.key] = parseTerrains([...terrainInputs(f.key)].filter((el) => el.checked).map((el) => el.dataset.terrain));
             break;
           default:
             out[f.key] = clampNumber(containerFor(f).querySelector(`input[data-key="${f.key}"]`).value, f);
@@ -3444,7 +4247,7 @@
             }
             break;
           case "terrains":
-            for (const el of form.querySelectorAll("[data-terrain]")) {
+            for (const el of terrainInputs(f.key)) {
               el.checked = !!v?.includes(el.dataset.terrain);
             }
             break;
@@ -3455,6 +4258,9 @@
       refresh({ save });
       applyCollapsed();
     }
+    function terrainInputs(key) {
+      return form.querySelectorAll(`.sov-f-block[data-key="${key}"] [data-terrain]`);
+    }
     function writePlots(plots) {
       for (const p of PLOT_KEYS) form.querySelector(`[data-plot="${p}"]`).value = plots?.[p] ?? 0;
     }
@@ -3462,8 +4268,8 @@
       const { settings: s } = readSettings();
       if (save) onSettingsChange?.(s);
       for (const f of SETTINGS_FIELDS) {
-        if (!f.enabledWhen && !f.overriddenWhen) continue;
-        const on = (f.enabledWhen?.(s) ?? true) && !f.overriddenWhen?.(s);
+        if (!f.enabledWhen) continue;
+        const on = f.enabledWhen(s);
         const wrap = form.querySelector(`[data-key="${f.key}"]`);
         wrap.classList.toggle("sov-gated", !on);
         wrap.querySelectorAll("input,select").forEach((el) => {
@@ -3489,19 +4295,26 @@
       const rp = Math.round(researchInUse(s)).toLocaleString("en-GB");
       form.querySelector(".sov-rp-read").textContent = s.rpCalibration ? `In use: ${rp} research per hour at 0% tax, from your reading.` : `In use: ${rp} research per hour at 0% tax, from the settings above.`;
       scanBtn.disabled = !plots.ok;
-      scanBtn.title = plots.ok ? "" : "Settle plot allocation must sum to 25";
+      scanBtn.title = plots.ok ? "" : `Settle plot allocation must sum to ${PLOT_TOTAL}`;
       root.classList.toggle("sov-no-map", !s.mapOverlay);
+      markStale(s);
       for (const el of root.querySelectorAll("[data-mirror-key], [data-mirror-plot], [data-mirror-terrain]")) {
         const own = mirrored(el);
         if (el.type === "checkbox") el.checked = own.checked;
         else if (el.value !== own.value) el.value = own.value;
       }
     }
+    function markStale(s) {
+      const stale = $(".sov-stale");
+      if (stale) stale.hidden = !scanSettingsDiffer(scanSettings, s);
+    }
     function mirrored(el) {
       const { mirrorKey, mirrorPlot, mirrorTerrain } = el.dataset;
       if (mirrorKey) return form.querySelector(`input[data-key="${mirrorKey}"]`);
       if (mirrorPlot) return form.querySelector(`input[data-plot="${mirrorPlot}"]`);
-      return mirrorTerrain ? form.querySelector(`input[data-terrain="${mirrorTerrain}"]`) : null;
+      if (!mirrorTerrain) return null;
+      const { key } = el.closest(".sov-f-block").dataset;
+      return [...terrainInputs(key)].find((own) => own.dataset.terrain === mirrorTerrain);
     }
     for (const type of ["input", "change"]) {
       root.addEventListener(type, (e) => {
@@ -3595,121 +4408,21 @@
       $(".sov-diagnostics").innerHTML = incomplete.length ? `<p class="sov-hint">${incomplete.length} ${incomplete.length === 1 ? "site was" : "sites were"} skipped because their claim radius
         runs off screen. Zoom out or pan so the whole area is on screen, then scan again.</p>` : "";
     }
-    const focusForm = $(".sov-focus-form");
-    let refusedView = null;
-    let stopWaiting = null;
-    function syncFocusRadiusHint() {
-      const { settings: s } = readSettings();
-      const rClaim = Math.round(s.rClaim ?? 2);
-      focusForm.querySelector('[data-focus="radius"]').placeholder = String(rClaim);
-      focusForm.querySelector("[data-radius-row]").title = focusRadiusTitle(rClaim);
-      syncTownPicker();
-    }
-    function syncTownPicker() {
-      const sel = focusForm.querySelector(".sov-town-pick");
-      const was = sel.value;
-      const payload = getPayload?.();
-      const towns = payload ? ownTowns(payload) : [];
-      sel.innerHTML = towns.length ? `<option value="">\u2014</option>${towns.map((t) => `<option value="${t.x}|${t.y}">${escapeHtml(t.label)}</option>`).join("")}` : `<option value="">${payload ? "none on screen" : "no map data yet"}</option>`;
-      if (was && towns.some((t) => `${t.x}|${t.y}` === was)) sel.value = was;
-    }
-    function readFocus() {
-      const raw = {};
-      for (const key of ["x", "y", "radius", "tax"]) {
-        raw[key] = focusForm.querySelector(`[data-focus="${key}"]`).value;
-      }
-      for (const key of ["useConfiguredPlots", "preserveSovereignty"]) {
-        raw[key] = focusForm.querySelector(`[data-focus="${key}"]`).checked;
-      }
-      return raw;
-    }
-    function onRefusedMove() {
-      const { x, y } = refusedView;
-      stopWaiting?.();
-      stopWaiting = location.hash === mapHash(refusedView) ? whenViewLoaded2?.(refusedView, () => planAt(x, y)) : null;
-      if (!stopWaiting) window.removeEventListener("hashchange", onRefusedMove);
-      $(".sov-focus-status").textContent = stopWaiting ? `Centring the map on ${x}|${y}; it is optimised once the map has loaded.` : `The map has moved. Optimise again to check ${x}|${y} on this view.`;
-    }
-    function runFocus() {
-      const status = $(".sov-focus-status");
-      const out = $(".sov-focus-out");
-      window.removeEventListener("hashchange", onRefusedMove);
-      stopWaiting?.();
-      stopWaiting = null;
-      const fail2 = (message) => {
-        status.textContent = message;
-        out.innerHTML = "";
-        onFocusPlan?.(null);
-      };
-      const read = readSettings();
-      if (read.errors.length) {
-        fail2(read.errors.join(" "));
-        return;
-      }
-      const { focus, errors } = parseFocus(readFocus());
-      if (errors.length) {
-        fail2(errors.join(" "));
-        return;
-      }
-      const payload = getPayload?.();
-      const result = focusSite({ payload, focus, settings: read.settings });
-      if (!result.ok) {
-        fail2(result.message);
-        if (result.reason === "centre-missing" || result.reason === "incomplete") {
-          const radius = focusRadius(focus, read.settings);
-          refusedView = centredView(focus.x, focus.y, payload.zoom, radius);
-          window.addEventListener("hashchange", onRefusedMove);
-          status.insertAdjacentHTML("beforeend", `<p class="sov-map-only"><a class="sov-map-centre"
-          href="${mapHash(refusedView)}">Centre the map on ${focus.x}|${focus.y}</a></p>`);
-        }
-        return;
-      }
-      status.textContent = "";
-      out.innerHTML = focusResultHtml(result);
-      mountPlanBlock(out.querySelector(".sov-plan-block"), {
-        neighbours: result.neighbours,
-        // The settings the plan was made with, which can differ from the form's.
-        settings: result.settings,
-        ctx: result.ctx,
-        base: result.base,
-        floor: result.floor,
-        geom: { radius: result.radius, x: result.x, y: result.y, kept: result.kept?.claims },
-        tax: result.plan.tax,
-        onPlan: onFocusPlan
-      });
-    }
-    function planAt(x, y) {
-      focusForm.querySelector('[data-focus="x"]').value = x;
-      focusForm.querySelector('[data-focus="y"]').value = y;
-      townPick.value = "";
-      runFocus();
-    }
+    const focusPane = createFocusPane({
+      pane: $('[data-pane="focus"]'),
+      readSettings,
+      getPayload,
+      whenViewLoaded: whenViewLoaded2,
+      onFocusPlan,
+      onPickOnMap
+    });
     function optimiseSite(result) {
       showTab("focus");
-      planAt(result.x, result.y);
+      focusPane.planAt(result.x, result.y);
       $(".sov-focus-status").scrollIntoView({ block: "start" });
     }
-    const townPick = focusForm.querySelector(".sov-town-pick");
-    townPick.addEventListener("pointerdown", syncTownPicker);
-    townPick.addEventListener("focus", syncTownPicker);
-    focusForm.addEventListener("change", (e) => {
-      const el = e.target;
-      if (el.dataset.focus === "x" || el.dataset.focus === "y") {
-        townPick.value = "";
-        return;
-      }
-      if (!el.closest(".sov-town-pick") || !el.value) return;
-      const [x, y] = el.value.split("|");
-      focusForm.querySelector('[data-focus="x"]').value = x;
-      focusForm.querySelector('[data-focus="y"]').value = y;
-    });
-    focusForm.addEventListener("submit", (e) => e.preventDefault());
-    focusForm.addEventListener("click", (e) => {
-      if (e.target.closest(".sov-focus-run")) runFocus();
-      else if (e.target.closest(".sov-map-pick")) onPickOnMap?.();
-    });
     refresh({ save: false });
-    syncFocusRadiusHint();
+    focusPane.syncFocusRadiusHint();
     applyCollapsed();
     return {
       root,
@@ -3732,19 +4445,21 @@
       },
       /**
        * @param {object[]} results ranked sites
-       * @param {object} scan `{x, y, zoom, scanned}`
+       * @param {object} scan `{x, y, zoom, scanned, settings}`
        */
       renderResults(results, scan) {
         const el = root.querySelector(".sov-results");
         rendered = results;
+        scanSettings = scan.settings;
         selected = null;
         const summary = { ...scan, candidates: results.length };
         $(".sov-prefill-src").textContent = "";
         el.innerHTML = resultsHtml(results, scanSummaryText(summary));
+        markStale(readSettings().settings);
         el.querySelectorAll(".sov-row").forEach((row) => {
           row.addEventListener("click", () => {
             select(Number(row.dataset.n));
-            toggleDetail(row, results[Number(row.dataset.n)], readSettings().settings, optimiseSite);
+            toggleDetail(row, results[Number(row.dataset.n)], scanSettings, optimiseSite);
           });
         });
       },
@@ -3758,516 +4473,18 @@
         if (!row) return false;
         select(n);
         if (!row.nextElementSibling?.classList.contains("sov-detail")) {
-          toggleDetail(row, rendered[n], readSettings().settings, optimiseSite);
+          toggleDetail(row, rendered[n], scanSettings, optimiseSite);
         }
         row.scrollIntoView({ block: "nearest" });
         return true;
       },
-      planAt,
-      /** While a pick is armed, Pick on map becomes its cancel button. */
-      setPicking(armed) {
-        const button = focusForm.querySelector(".sov-map-pick");
-        button.classList.toggle("sov-picking", armed);
-        button.textContent = armed ? "Click a tile \xB7 Cancel" : "Pick on map";
-      },
+      planAt: focusPane.planAt,
+      setPicking: focusPane.setPicking,
       renderIncomplete(list) {
         incomplete = list;
         drawIncomplete();
       }
     };
-  }
-  var TIP_DELAY_MS = 250;
-  var innerTarget = (e) => e.composedPath()[0];
-  function installTooltips(shadow) {
-    const box = document.createElement("div");
-    box.className = "sov-tip";
-    box.setAttribute("role", "tooltip");
-    box.hidden = true;
-    shadow.appendChild(box);
-    let shownFor = null;
-    let timer = 0;
-    const hide = () => {
-      clearTimeout(timer);
-      shownFor = null;
-      box.hidden = true;
-    };
-    const show = (el) => {
-      shownFor = el;
-      box.textContent = el.dataset.sovTip;
-      box.classList.toggle("sov-tip-multi", box.textContent.includes("\n"));
-      box.hidden = false;
-      const { left, top } = tipPosition(
-        el.getBoundingClientRect(),
-        { width: box.offsetWidth, height: box.offsetHeight },
-        { width: window.innerWidth, height: window.innerHeight }
-      );
-      box.style.left = `${left}px`;
-      box.style.top = `${top}px`;
-    };
-    document.addEventListener("pointerover", (e) => {
-      const el = innerTarget(e).closest?.(".sov-panel [title], .sov-menu [title], [data-sov-tip]");
-      if (!el) {
-        hide();
-        return;
-      }
-      if (el === shownFor) return;
-      if (el.hasAttribute("title")) {
-        el.dataset.sovTip = el.title;
-        el.setAttribute("aria-description", el.title);
-        el.removeAttribute("title");
-      }
-      clearTimeout(timer);
-      if (shownFor) show(el);
-      else timer = setTimeout(() => show(el), TIP_DELAY_MS);
-    });
-    document.addEventListener("pointerout", (e) => {
-      if (!e.relatedTarget) hide();
-    });
-    for (const type of ["pointerdown", "keydown", "wheel"]) {
-      document.addEventListener(type, hide, true);
-    }
-    for (const target of [document, shadow]) target.addEventListener("scroll", hide, true);
-  }
-  var BINDING_LABEL = {
-    cap: "Tax cap",
-    food: "Food",
-    rp: "Research",
-    res: "Resources"
-  };
-  function bindingLabel(binding) {
-    return BINDING_LABEL[binding] ?? binding;
-  }
-  var count = (v) => Number(v ?? 0).toLocaleString("en-GB");
-  function scanSummaryText(scan) {
-    const side = 2 * scan.zoom + 1;
-    return `Centred on ${scan.x}|${scan.y}, ${side}\xD7${side} tiles. Checked ${count(scan.scanned)} tiles and found ${count(scan.candidates)} candidate${scan.candidates === 1 ? "" : "s"}.`;
-  }
-  function militaryCellHtml(r) {
-    const troops = `<img src="${ICONS.troops}" alt="">`;
-    const flags = [];
-    const res = resFlag(r);
-    if (res) {
-      const icon = PRODUCTION_ICONS[r.resBinding] ? `<img src="${PRODUCTION_ICONS[r.resBinding]}" alt="">` : "";
-      flags.push({
-        cls: "sov-pill-bad",
-        html: `${icon}${r.resImpossible ? "no plots" : `${r.resCeiling.toFixed(1)}%`}`,
-        title: res.title
-      });
-    }
-    if (r.milsovBlocked) {
-      flags.push({
-        cls: "sov-pill-bad",
-        html: `${troops}none`,
-        title: `No military sovereignty fits here for free \u2014 ${MILSOV_BLOCKED_TEXT[r.milsovBlocked] ?? "nothing was left over"}.`
-      });
-    }
-    if (r.milsovMinTax != null) {
-      flags.push({
-        cls: "sov-pill-warn",
-        html: `${troops}min at ${r.milsovMinTax.toFixed(0)}%`,
-        title: `This site reaches your minimum military bonus (+${r.milsovMinBonusAt}%) at ${r.milsovMinTax.toFixed(0)}% tax, against the ${r.tMax.toFixed(0)}% it holds on food alone. Open the row and drag the tax slider to see the trade.`
-      });
-    }
-    const conditional = conditionalDescriptors(r);
-    if (conditional.size) {
-      flags.push({
-        cls: "sov-pill-warn",
-        html: "conditional",
-        title: `${[...conditional].map(([b, n]) => `${n}\xD7 ${b}`).join(", ")} \u2014 these tiles carry a terrain bonus that only pays if the city has that building. Not scored either way.`
-      });
-    }
-    return `${r.milsovBonus ? `<b class="sov-mil-v">+${r.milsovBonus}%</b>` : ""}${flags.map((f) => `<span class="sov-pill ${f.cls}" title="${escapeHtml(f.title)}">${f.html}</span>`).join("")}`;
-  }
-  function planBlockHtml({ ctx, base, plan, floor, geom }) {
-    const lowest = Math.max(0, Math.ceil(floor));
-    const slider = ctx && Number.isFinite(base.tMax) && base.tMax - lowest >= 1 ? `<div class="sov-tax" title="Drag to trade tax for sovereignty">
-        <span class="sov-tax-label">Tax</span>
-        <input type="range" class="sov-tax-range" min="${lowest}" max="${base.tMax}"
-          step="1" value="${plan.tax}" aria-label="Tax">
-        <output class="sov-tax-at">${plan.tax.toFixed(0)}%</output>
-      </div>` : "";
-    return `${slider}<div class="sov-body-at">${detailBodyHtml(plan, base, geom)}</div>`;
-  }
-  function bindPlanBlock(scope, ctx, base, geom, onPlan) {
-    const range2 = scope.querySelector(".sov-tax-range");
-    if (!range2) return;
-    const at = scope.querySelector(".sov-tax-at");
-    const body = scope.querySelector(".sov-body-at");
-    range2.addEventListener("input", () => {
-      const tax = Number(range2.value);
-      at.textContent = `${tax.toFixed(0)}%`;
-      const plan = planSiteAt(ctx, tax);
-      body.innerHTML = plan ? detailBodyHtml(plan, base, geom) : '<p class="sov-flag">This site cannot hold that tax.</p>';
-      onPlan(tax, plan);
-    });
-  }
-  function mountPlanBlock(scope, state) {
-    const excluded = /* @__PURE__ */ new Set();
-    let tax = state.tax;
-    const draw = () => {
-      let ctx = state.ctx;
-      let base = state.base;
-      if (excluded.size) {
-        const usable = state.neighbours.filter((n) => !excluded.has(cellKey(n.dx, n.dy)));
-        ctx = usable.length ? prepareSite({ neighbours: usable, settings: state.settings }) : null;
-        base = ctx ? scoreSiteFrom(ctx) : null;
-      }
-      const geom = { ...state.geom, excluded, pickable: !!state.neighbours };
-      if (!base) {
-        const none = { tiles: [], free: [], milsov: [] };
-        scope.innerHTML = `<p class="sov-flag">No plan holds with those tiles crossed out.</p>${planGridHtml(none, geom)}`;
-        state.onPlan?.(none, geom);
-        return;
-      }
-      tax = Math.max(0, Math.min(base.tMax, Math.max(Math.ceil(state.floor), tax)));
-      const plan = (ctx ? planSiteAt(ctx, tax, { bestEffort: true }) : null) ?? base;
-      scope.innerHTML = planBlockHtml({ ctx, base, plan, floor: state.floor, geom });
-      bindPlanBlock(scope, ctx, base, geom, (t, p) => {
-        tax = t;
-        state.onPlan?.(p, geom);
-      });
-      state.onPlan?.(plan, geom);
-    };
-    scope.addEventListener("click", (e) => {
-      const cell = e.target.closest(".sov-pick");
-      if (!cell || !scope.contains(cell)) return;
-      const key = cellKey(Number(cell.dataset.dx), Number(cell.dataset.dy));
-      if (!excluded.delete(key)) excluded.add(key);
-      draw();
-    });
-    draw();
-  }
-  function toggleDetail(row, result, settings2, onOptimise) {
-    const next = row.nextElementSibling;
-    if (next && next.classList.contains("sov-detail")) {
-      next.remove();
-      return;
-    }
-    const tr = document.createElement("tr");
-    tr.className = "sov-detail";
-    const ctx = result.neighbours ? prepareSite({ neighbours: result.neighbours, settings: settings2 }) : null;
-    const cell = document.createElement("td");
-    cell.colSpan = 6;
-    const actions = document.createElement("p");
-    actions.className = "sov-detail-actions";
-    actions.innerHTML = `<button type="button" class="sov-optimise sec">${GLYPHS.target}Optimise ${result.x}|${result.y} \u2192</button>`;
-    actions.querySelector(".sov-optimise").addEventListener("click", () => onOptimise?.(result));
-    const block = document.createElement("div");
-    cell.append(actions, block);
-    tr.append(cell);
-    row.after(tr);
-    mountPlanBlock(block, {
-      neighbours: result.neighbours ?? null,
-      settings: settings2,
-      ctx,
-      base: result,
-      floor: Math.max(0, Math.min(settings2.tMin ?? 0, result.tMax)),
-      geom: { radius: Math.round(settings2.rClaim ?? 2), x: result.x, y: result.y },
-      tax: result.tax
-    });
-  }
-  function keptNote(r) {
-    if (!r?.preserving) {
-      if (!r?.released) return "";
-      const one = r.released === 1;
-      return `Preserve Existing Sovereignty is off, so the ${r.released} claim${one ? "" : "s"} ${escapeHtml(r.homeTown)} already holds inside the radius ${one ? "is" : "are"} planned as empty ground and priced in full, as though given up and laid out again. Turn it on to plan around them instead.`;
-    }
-    if (!r.preserveTown) {
-      return "Preserve Existing Sovereignty is on, but this tile carries no town \u2014 sovereignty belongs to a town, so there is none here to keep and the plan is drawn on empty ground.";
-    }
-    const kept = r.kept;
-    const parts = [];
-    if (kept.claims.length) {
-      parts.push(`Keeping ${kept.claims.length} claim${kept.claims.length === 1 ? "" : "s"} ${escapeHtml(r.preserveTown)} already holds, costing ${Math.round(kept.rp).toLocaleString("en-GB")} research and ${Math.round(kept.rp * 10).toLocaleString("en-GB")} gold an hour, which is taken off the top. The plan is free to build on those squares and pays only for the levels it raises them by. Their buildings are costed as if new.`);
-    }
-    if (kept.unknownLevel) {
-      parts.push(`${kept.unknownLevel} more carry a level that could not be read, and are planned as bare ground.`);
-    }
-    if (kept.otherTown) {
-      const one = kept.otherTown === 1;
-      parts.push(`${kept.otherTown} claim${one ? "" : "s"} of yours inside the radius belong${one ? "s" : ""} to another of your towns, and ${one ? "is" : "are"} held against this one on the same terms as a stranger's.`);
-    }
-    return parts.join(" ");
-  }
-  function claimHolderText(rd) {
-    const holder = {
-      Yours: "One of your towns",
-      Alliance: "An alliance member",
-      Confed: "A confederate"
-    }[String(rd ?? "").trim()] ?? "Another player";
-    return `${holder} holds sovereignty on this tile.`;
-  }
-  function focusResultHtml(r) {
-    const notes = [r.plotNote, keptNote(r)].filter(Boolean);
-    const warnings = [];
-    if (!r.centre.isTown) {
-      if (!r.centre.settleable) {
-        warnings.push("This tile cannot be settled, so the plan below is for analysis only.");
-      }
-      if (r.centre.claimedBy) warnings.push(claimHolderText(r.centre.claimedBy));
-    }
-    const ceiling = r.holdsNoTax ? `<p class="sov-warn">This tile holds no tax \u2014 its ceiling is ${r.ceiling.toFixed(0)}%, limited by ${escapeHtml(bindingLabel(r.base.binding).toLowerCase())}.</p>` : "";
-    const chips = [
-      r.holdsNoTax ? "" : `<span class="sov-chip" title="Highest tax this tile holds on food alone">max <b>${r.base.tMax.toFixed(0)}%</b>${limitHtml(r.base)}</span>`,
-      `<span class="sov-chip" title="${r.radiusFromConfig ? "From City Configuration" : "As set above"}">radius ${r.radius}</span>`,
-      `<span class="sov-chip" title="How many of the ${r.ring} surrounding tiles are claimable">${r.claimable}/${r.ring} claimable</span>`
-    ].join("");
-    const asked = r.holdsNoTax ? "" : r.aboveCeiling ? `<p class="sov-flag">This tile cannot hold ${r.requestedTax.toFixed(0)}% \u2014 the plan below is at its ceiling of ${r.ceiling.toFixed(0)}%.</p>` : "";
-    return `<div class="sov-result-h"><span class="sov-xy-big">${r.x}|${r.y}</span>${chips}</div>
-    ${warnings.map((w) => `<p class="sov-warn">${escapeHtml(w)}</p>`).join("")}
-    ${ceiling}${notes.map((n) => `<p class="sov-note">${escapeHtml(n)}</p>`).join("")}
-    ${asked}
-    <div class="sov-plan-block"></div>`;
-  }
-  function roman(level) {
-    return SOV_LEVEL_ROMAN[level - 1] ?? String(level);
-  }
-  var FOOD_ICON = `<img src="${ICONS.food}" alt="food">`;
-  var CROSS = '<span class="sov-x">\u2715</span>';
-  function cellKey(dx, dy) {
-    return `${dx},${dy}`;
-  }
-  function gridCell({ cls, title, level, body, badge, dx, dy, pick }) {
-    return `<td class="sov-cell ${cls}${pick ? " sov-pick" : ""}"${pick ? ` data-dx="${dx}" data-dy="${dy}"` : ""} title="${escapeHtml(title)}">${level ? `<span class="sov-lv">${level}</span>` : ""}${body ? `<span class="sov-cv">${body}</span>` : ""}${badge ?? ""}</td>`;
-  }
-  function descriptorText(tile) {
-    if (typeof tile?.i !== "number" && !tile?.descriptor) return "";
-    const d = tile?.descriptor ?? descriptorFor(tile.i);
-    if (!d) return `Terrain ${tile.i} \u2014 unidentified`;
-    const varies = d.nodeClass ? " (rating varies; not a fixed terrain)" : "";
-    if (d.bonusUnread) return `${d.name}${varies} \u2014 bonus not read yet`;
-    if (d.nodeClass) return `${d.name}${varies}`;
-    if (!d.building) return `${d.name} \u2014 no sovereignty bonus`;
-    const conditional = d.conditional ? `, needs a ${d.building}` : "";
-    const disputed = d.disputed ? " [unconfirmed]" : "";
-    return `${d.name}: +${d.bonus}% ${d.product} per level of ${d.building}${conditional}${disputed}`;
-  }
-  function limitHtml(r) {
-    const label = bindingLabel(r.binding);
-    const icon = r.binding === "res" ? PRODUCTION_ICONS[r.resBinding] ?? ICONS.stone : { food: ICONS.food, rp: ICONS.research }[r.binding];
-    const title = `Limited by ${(r.binding === "res" && PRODUCTION_LABEL[r.resBinding] ? PRODUCTION_LABEL[r.resBinding] : label).toLowerCase()}`;
-    return icon ? `<img src="${icon}" alt="${escapeHtml(label)}" title="${escapeHtml(title)}">` : `<span class="sov-cap" title="${escapeHtml(title)}">${escapeHtml(label.toLowerCase())}</span>`;
-  }
-  function iconHeading(icon, name, title) {
-    return `<th title="${escapeHtml(title)}"><img src="${icon}" alt="${escapeHtml(name)}"></th>`;
-  }
-  function resultsHtml(results, summary) {
-    const head = `<p class="sov-meta">${GLYPHS.target}${summary}</p>`;
-    if (!results?.length) return `${head}<p class="sov-note">No available sites met the minimum tax.</p>`;
-    const rows = results.slice(0, 200).map((r, n) => `
-        <tr class="sov-row" data-n="${n}">
-          <td class="sov-at"><span class="sov-rank${n < 10 ? " sov-rank-top" : ""}">${n + 1}</span>${r.x}|${r.y}</td>
-          <td class="sov-tax-cell"${Number.isFinite(r.tMaxExact) ? ` title="The arithmetic reaches ${r.tMaxExact.toFixed(2)}%, but tax is whole numbers only, so the plan is made at this rate."` : ""}><b>${Number.isFinite(r.tMax) ? r.tMax.toFixed(0) : r.tMax}%</b>${limitHtml(r)}</td>
-          <td>${r.sFood.toFixed(0)}</td>
-          <td>${r.uRp.toFixed(0)}</td>
-          <td>${Math.round(r.goldNet).toLocaleString()}</td>
-          <td class="sov-mil-cell">${militaryCellHtml(r)}</td>
-        </tr>`).join("");
-    return `
-        ${head}
-        <p class="sov-legend sov-map-note"></p>
-        <table>
-          <thead><tr><th>Site</th>
-            <th title="The highest whole-number tax this site can hold on food alone \u2014 the game takes no other kind \u2014 and the icon of what stops it going higher">Max Tax</th>
-            ${iconHeading(ICONS.food, "Food", "Food per hour the city nets at that tax")}
-            ${iconHeading(ICONS.research, "Research", "Research per hour the claims cost")}
-            ${iconHeading(ICONS.gold, "Net Gold", "Gold per hour after claim upkeep")}
-            ${iconHeading(ICONS.troops, "Military", "Free military unit production bonus \u2014 costs this site no tax \u2014 and anything to know about it")}</tr></thead>
-          <tbody>${rows}</tbody>
-        </table>`;
-  }
-  function conditionalDescriptors(plan) {
-    const out = /* @__PURE__ */ new Map();
-    for (const t of [...plan?.tiles ?? [], ...plan?.milsov ?? []]) {
-      const d = t.descriptor ?? descriptorFor(t.i);
-      if (d?.conditional) out.set(d.building, (out.get(d.building) ?? 0) + 1);
-    }
-    return out;
-  }
-  function descriptorBadge(tile) {
-    const d = tile?.descriptor ?? (typeof tile?.i === "number" ? descriptorFor(tile.i) : null);
-    if (!d?.building) return "";
-    return `<span class="sov-desc" title="${escapeHtml(
-      `+${d.bonus}% ${d.product} per level of ${d.building}`
-    )}">+${d.bonus}% ${escapeHtml(d.product)}</span>`;
-  }
-  function claimCostText(t) {
-    const held = t.held ?? 0;
-    const rp = t.rp.toFixed(0);
-    if (held > 0 && t.rp > 0) return `+${rp} RP/hr, raised from Sov ${roman(held)}`;
-    if (held > 0) return "Already held at this level, no extra RP";
-    return `${rp} RP/hr`;
-  }
-  function tip(head, ...lines) {
-    return [head, ...lines].filter(Boolean).join("\n");
-  }
-  function planGridHtml(plan, geom) {
-    const r = Math.max(1, Math.round(geom?.radius ?? 0) || spanOf(plan));
-    const cx = geom?.x;
-    const cy = geom?.y;
-    const excluded = geom?.excluded ?? /* @__PURE__ */ new Set();
-    const kept = new Map((geom?.kept ?? []).map((k) => [cellKey(k.dx, k.dy), k]));
-    const pickable = !!geom?.pickable;
-    const absolute = Number.isFinite(cx) && Number.isFinite(cy);
-    const xLabel = (dx) => absolute ? String(cx + dx) : signed(dx);
-    const yLabel = (dy) => absolute ? String(cy + dy) : signed(dy);
-    const name = (dx, dy) => absolute ? `${cx + dx}|${cy + dy}` : `${signed(dx)},${signed(dy)}`;
-    const specs = /* @__PURE__ */ new Map();
-    let anyKept = false;
-    const place = (t) => `${t.water ? "Water \xB7 food" : "Food"} ${t.food} \xB7 distance ${t.d.toFixed(2)}`;
-    for (const t of plan.free ?? []) {
-      const held = t.held ?? 0;
-      if (held > 0) anyKept = true;
-      specs.set(cellKey(t.dx, t.dy), held > 0 ? {
-        cls: "sov-cell-kept",
-        badge: descriptorBadge(t),
-        title: tip(
-          `${name(t.dx, t.dy)} \u2014 Sov ${roman(held)} claim, kept as it is`,
-          place(t),
-          descriptorText(t)
-        ),
-        level: roman(held),
-        body: "kept"
-      } : {
-        cls: t.water ? "sov-cell-free sov-cell-water" : "sov-cell-free",
-        badge: descriptorBadge(t),
-        title: tip(
-          `${name(t.dx, t.dy)} \u2014 ${t.relaid ? "Claimed, not used in this plan" : "Unclaimed"}`,
-          place(t),
-          descriptorText(t)
-        ),
-        body: `${FOOD_ICON} ${t.food}`
-      });
-    }
-    for (const t of plan.tiles ?? []) {
-      specs.set(cellKey(t.dx, t.dy), {
-        cls: "sov-cell-food",
-        badge: descriptorBadge(t),
-        title: tip(
-          `${name(t.dx, t.dy)} \u2014 Sov ${roman(t.level)} food claim`,
-          place(t),
-          claimCostText(t),
-          descriptorText(t)
-        ),
-        level: roman(t.level),
-        body: `${FOOD_ICON} ${t.food}`
-      });
-    }
-    for (const m of plan.milsov ?? []) {
-      const structure = sovStructure(m);
-      const icon = STRUCTURE_ICONS[structure.key];
-      specs.set(cellKey(m.dx, m.dy), {
-        cls: "sov-cell-mil",
-        badge: descriptorBadge(m),
-        title: tip(
-          `${name(m.dx, m.dy)} \u2014 Sov ${roman(m.sovLevel)} military claim`,
-          `Level ${m.buildingLevel} ${structure.name} \xB7 ${structureUpkeep(m).toLocaleString("en-GB")}/hr upkeep`,
-          `Distance ${m.d.toFixed(2)} \xB7 ${claimCostText(m)}`,
-          descriptorText(m)
-        ),
-        level: roman(m.sovLevel),
-        body: `${icon ? `<img src="${icon}" alt="${escapeHtml(structure.name)}">` : ""} L${m.buildingLevel}`
-      });
-    }
-    const cell = (dx, dy) => {
-      if (dx === 0 && dy === 0) {
-        return gridCell({ cls: "sov-cell-town", title: `${name(0, 0)} \u2014 The town`, level: "TOWN" });
-      }
-      if (excluded.has(cellKey(dx, dy))) {
-        return gridCell({
-          cls: "sov-cell-out",
-          title: tip(`${name(dx, dy)} \u2014 Crossed out`, pickable && "Click to put it back"),
-          body: CROSS,
-          dx,
-          dy,
-          pick: pickable
-        });
-      }
-      const spec = specs.get(cellKey(dx, dy));
-      if (!spec) {
-        const k = kept.get(cellKey(dx, dy));
-        if (k) {
-          anyKept = true;
-          return gridCell({
-            cls: "sov-cell-kept",
-            title: tip(
-              `${name(dx, dy)} \u2014 Sov ${roman(k.level)} claim, kept as it is`,
-              `Distance ${k.d.toFixed(2)} \xB7 ${k.rp.toFixed(0)} RP/hr`
-            ),
-            level: roman(k.level),
-            body: "kept"
-          });
-        }
-        return gridCell({ cls: "sov-cell-none", title: `${name(dx, dy)} \u2014 Not claimable`, body: CROSS });
-      }
-      return gridCell({ ...spec, dx, dy, pick: pickable });
-    };
-    const head = `<tr><th></th>${range(r).map((dx) => `<th>${xLabel(dx)}</th>`).join("")}</tr>`;
-    const body = range(r).slice().reverse().map((dy) => `<tr><th>${yLabel(dy)}</th>${range(r).map((dx) => cell(dx, dy)).join("")}</tr>`).join("");
-    return `<div class="sov-grid-wrap"><table class="sov-grid">
-      <thead>${head}</thead><tbody>${body}</tbody></table></div>
-    <div class="sov-keys">
-      <span><i class="sov-sw sov-sw-food"></i>Food claim</span>
-      <span><i class="sov-sw sov-sw-mil"></i>Military claim</span>${anyKept ? '<span><i class="sov-sw sov-sw-kept"></i>Kept claim</span>' : ""}
-      <span><i class="sov-sw sov-sw-free"></i>Unclaimed</span>
-      <span><i class="sov-sw sov-sw-out">\u2715</i>Unavailable</span>
-    </div>
-    <p class="sov-legend">I\u2013V is the claim level, L the building's, and the last line the
-      terrain bonus.${pickable ? " Click a tile to cross it out and re-plan without it." : ""}
-      Hover a tile for the rest.</p>`;
-  }
-  function range(r) {
-    return Array.from({ length: 2 * r + 1 }, (_, i) => i - r);
-  }
-  function signed(v) {
-    return `${v >= 0 ? "+" : ""}${v}`;
-  }
-  function spanOf(plan) {
-    let span = 1;
-    for (const t of [...plan.free ?? [], ...plan.tiles ?? [], ...plan.milsov ?? []]) {
-      span = Math.max(span, Math.abs(t.dx), Math.abs(t.dy));
-    }
-    return span;
-  }
-  var NOTE_PILLS = {
-    binds: ["limit", "sov-pill-warn", "The ceiling that sets the tax: this production runs out first"],
-    deficit: ["deficit", "sov-pill-bad", "The plan spends more than the city makes"],
-    indicative: ["estimate", "", "Per-plot yields for wood, clay, iron and stone are unmeasured"]
-  };
-  function notePills(note) {
-    return note.split(", ").filter((n) => NOTE_PILLS[n]).map((n) => {
-      const [text, cls, title] = NOTE_PILLS[n];
-      return ` <span class="sov-pill ${cls}" title="${title}">${text}</span>`;
-    }).join("");
-  }
-  function useCellHtml(r) {
-    if (!Number.isFinite(r.base)) return '<td class="sov-use"></td>';
-    const share = r.base > 0 ? Math.min(1, Math.max(0, r.spent / r.base)) : 0;
-    const cls = r.value < 0 ? " sov-bar-over" : share >= 0.95 ? " sov-bar-full" : "";
-    return `<td class="sov-use"><div class="sov-bar${cls}"><i style="width:${(share * 100).toFixed(1)}%"></i></div>
-    <span class="sov-use-txt">${count(Math.round(r.spent))} of ${count(Math.round(r.base))}</span></td>`;
-  }
-  function detailBodyHtml(plan, base, geom) {
-    const atCeiling = Math.abs(plan.tax - plan.tMax) < 0.05;
-    const rows = surplusRows(plan.surplus, atCeiling ? plan.binding : null);
-    const num = (v) => Number.isFinite(v) ? Math.round(v).toLocaleString("en-GB") : "";
-    const balance = rows.length ? `<table class="sov-balance"><thead><tr><th>At ${plan.tax.toFixed(0)}% Tax</th>
-        <th class="sov-use" title="What the plan and your buildings spend, against what the city produces">Spent of produced</th>
-        <th>Net</th></tr></thead><tbody>${rows.map((r) => `<tr><td>${productionLabel(r.icon)}${notePills(r.note)}</td>${useCellHtml(r)}
-        <td class="${r.value < 0 ? "sov-bad" : "sov-ok"}">${num(r.value)}</td></tr>`).join("")}</tbody></table>` : "";
-    const buildings = BASIC_RESOURCES.filter((res2) => plan.surplus?.buildingUpkeep?.[res2] > 0).map((res2) => `${num(plan.surplus.buildingUpkeep[res2])} ${PRODUCTION_LABEL[res2].toLowerCase()}`);
-    const buildingNote = buildings.length ? `<p class="sov-hint">Spent includes ${buildings.join(", ")} per hour for your city's buildings.</p>` : "";
-    const milPlan = plan.milsov.length ? milsovPlanHtml(plan) : plan.milsovBlocked ? `<p class="sov-flag">No military sovereignty fits at this tax \u2014 ${escapeHtml(MILSOV_BLOCKED_TEXT[plan.milsovBlocked] ?? "nothing was left over")}.</p>` : "";
-    const res = upkeepLimitHtml(plan);
-    const claimDelta = plan.tiles.length - base.tiles.length;
-    const goldDelta = Math.round(plan.goldNet - base.goldNet);
-    const signed2 = (v) => `${v >= 0 ? "+" : ""}${v.toLocaleString("en-GB")}`;
-    const trade = plan.tax < base.tMax - 0.05 ? `<p class="sov-hint">Against the ${base.tMax.toFixed(1)}% ceiling, which fits ${base.milsovBonus ? `+${base.milsovBonus}%` : "no military bonus"}: ${signed2(claimDelta)} food claims, ${signed2(goldDelta)} gold/hr.</p>` : "";
-    const short = plan.holds === false ? `<p class="sov-flag">Plan shown at ${plan.tax.toFixed(0)}% tax.</p>` : "";
-    return `${short}${balance}${buildingNote}${milPlan}${res}${trade}${planGridHtml(plan, geom)}`;
-  }
-  function escapeHtml(s) {
-    return String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
   }
 
   // src/overlay.js
@@ -4754,7 +4971,7 @@
           out.resourceMinimums = parseResourceMinimums(v);
           break;
         case "terrains":
-          out.siteTerrains = parseSiteTerrains(v);
+          out[f.key] = parseTerrains(v);
           break;
         default:
           out[f.key] = clampNumber(v, { ...f, fallback: f.fallback ?? fallback ?? 0 });
@@ -4775,11 +4992,11 @@
     if (gone.length) parts.push(`${gone.length} no longer exist${gone.length > 1 ? "" : "s"}`);
     return `Settings restored from an older build \u2014 ${parts.join(", ")}.`;
   }
-  function encodeSettings(settings2) {
+  function encodeSettings(settings) {
     return JSON.stringify({
       version: STORAGE_VERSION,
       savedAt: (/* @__PURE__ */ new Date()).toISOString(),
-      settings: sanitizeSettings(settings2)
+      settings: sanitizeSettings(settings)
     });
   }
   function decodeSettings(text) {
@@ -4811,14 +5028,6 @@
     }
     return { settings: sanitizeSettings(migrated), note: driftNote(migrated) };
   }
-  function memoryStorage() {
-    const map = /* @__PURE__ */ new Map();
-    return {
-      getItem: (k) => map.has(k) ? map.get(k) : null,
-      setItem: (k, v) => map.set(k, String(v)),
-      removeItem: (k) => map.delete(k)
-    };
-  }
   function defaultStorage() {
     try {
       const ls = globalThis.localStorage;
@@ -4832,9 +5041,7 @@
   }
   function createSettingsStore(storage = defaultStorage()) {
     const unavailable = !storage;
-    const store2 = storage ?? memoryStorage();
     return {
-      available: !unavailable,
       load() {
         if (unavailable) {
           return {
@@ -4843,24 +5050,18 @@
           };
         }
         try {
-          return decodeSettings(store2.getItem(STORAGE_KEY));
+          return decodeSettings(storage.getItem(STORAGE_KEY));
         } catch {
           return { settings: sanitizeSettings({}), note: "Saved settings could not be read \u2014 defaults restored." };
         }
       },
-      save(settings2) {
+      save(settings) {
         if (unavailable) return "";
         try {
-          store2.setItem(STORAGE_KEY, encodeSettings(settings2));
+          storage.setItem(STORAGE_KEY, encodeSettings(settings));
           return "";
         } catch {
           return "Settings could not be saved \u2014 this browser refused the write.";
-        }
-      },
-      clear() {
-        try {
-          store2.removeItem(STORAGE_KEY);
-        } catch {
         }
       }
     };
@@ -4879,6 +5080,7 @@
   var GOLD_PER_TAX_POP = 0.04;
   var CLAIM_RP_PER_LEVEL_DISTANCE = 10;
   var CLAIM_GOLD_PER_LEVEL_DISTANCE = 100;
+  var CLAIM_GOLD_PER_RP = CLAIM_GOLD_PER_LEVEL_DISTANCE / CLAIM_RP_PER_LEVEL_DISTANCE;
   var CLAIM_DISTANCE_DECIMALS = 2;
   var CHANCERY_DISCOUNT_L20 = 0.4;
   var FOOD_CLAIM_LEVEL = 5;
@@ -5603,6 +5805,7 @@
     ["Shipwreck", "Buildings"]
     // 229
   ];
+  var IMPASSABLE_TERRAIN = /* @__PURE__ */ new Set([18, 19, 20, 21, 22, 23]);
   var NODE_CLASS_TERRAIN = /* @__PURE__ */ new Set([40, 41, 42, 43, 44, 45]);
   var SOV_STRUCTURE_BY_NAME = new Map(SOV_STRUCTURES.map((s) => [s.name, s]));
   function descriptorFor(i) {
@@ -5612,16 +5815,13 @@
     const base = {
       i,
       name: named?.[0] ?? entry.name,
-      terrainClass: named?.[1],
       nodeClass: NODE_CLASS_TERRAIN.has(i) || void 0
     };
-    if (!entry) return { ...base, bonusUnread: true, conditional: false, sovKey: null };
-    const sov = entry.building ? SOV_STRUCTURE_BY_NAME.get(entry.building) : void 0;
+    if (!entry) return { ...base, bonusUnread: true, sovKey: null };
     return {
       ...entry,
       ...base,
-      sovKey: sov?.key ?? null,
-      conditional: !!entry.building && !sov
+      sovKey: SOV_STRUCTURE_BY_NAME.get(entry.building)?.key ?? null
     };
   }
   var BASIC_RESOURCES = ["wood", "clay", "iron", "stone"];
@@ -5705,6 +5905,10 @@
     dAlliance: 3,
     // SETTLE_TERRAINS a site must stand on; empty allows any.
     siteTerrains: [],
+    // At least surroundMin of the eight tiles around a site must be on one of
+    // surroundTerrains; empty allows any.
+    surroundTerrains: [],
+    surroundMin: 8,
     // Key into SOV_STRUCTURES; null plans food only.
     milsovStructure: null,
     // Sites below this military bonus are not listed; it never changes a plan.
@@ -5747,9 +5951,6 @@
     }
     return { base: LIBRARY_BASE_RP_L20, flat };
   }
-  function computeBasicYield() {
-    return { yield: BASIC_YIELD_L20, measured: true };
-  }
   function boosterBonus(s, resource) {
     return s.resourceBoosters?.[resource] ? RESOURCE_BOOSTER_BONUS : 0;
   }
@@ -5791,8 +5992,9 @@
   function claimUpkeep(d, level, chancery = 1, held) {
     const from = held ?? 0;
     const rp = level > from ? claimRp(d, level, chancery) - claimRp(d, from, chancery) : 0;
-    return { rp, gold: rp * CLAIM_GOLD_PER_LEVEL_DISTANCE / CLAIM_RP_PER_LEVEL_DISTANCE };
+    return { rp, gold: rp * CLAIM_GOLD_PER_RP };
   }
+  var sumRp = (claims) => claims.reduce((sum, c) => sum + c.rp, 0);
   function sovStructure(entry) {
     return SOV_STRUCTURE_BY_KEY[entry?.structure] ?? SOV_STRUCTURE_BY_KEY[DEFAULT_SOV_STRUCTURE];
   }
@@ -5812,29 +6014,27 @@
     return PRODUCTION_BASE + rpBonus - 100 * (uRp + minimum - research.flat) / research.base;
   }
   function tRes({ milsovAssignments, plots, settings = {} }) {
-    const none = { ceiling: Infinity, indicative: false, binding: null, impossible: false };
+    const none = { ceiling: Infinity, binding: null, impossible: false };
     const upkeep = milsovUpkeep(milsovAssignments ?? []);
     const fixed = (res) => resourceMinimum(settings, res) + buildingUpkeep(settings, res);
     if (upkeep <= 0 && !BASIC_RESOURCES.some((res) => fixed(res) > 0)) return none;
-    const { yield: y, measured } = computeBasicYield(settings);
     let worst = Infinity;
     let binding = null;
     for (const res of BASIC_RESOURCES) {
       const need = upkeep + fixed(res);
-      const perPoint = plots[res] * y;
+      const perPoint = plots[res] * BASIC_YIELD_L20;
       const ceiling = perPoint > 0 ? PRODUCTION_BASE + resourceBonus(settings, res) - 100 * need / perPoint : need > 0 ? -Infinity : Infinity;
       if (ceiling < worst) {
         worst = ceiling;
         binding = res;
       }
     }
-    return { ceiling: worst, indicative: !measured, binding, impossible: worst === -Infinity };
+    return { ceiling: worst, binding, impossible: worst === -Infinity };
   }
   function surplusAt({ tax, settings, sFood, uRp, uGold, milsovAssignments }) {
     const s = settings;
     const k = computeK(s.plots.food);
     const upkeep = milsovUpkeep(milsovAssignments ?? []);
-    const { yield: y, measured } = computeBasicYield(s);
     const consumption = computeConsumption(s);
     const base = {
       food: k * (PRODUCTION_BASE - tax + computeBOther(s) + (sFood ?? 0)),
@@ -5844,16 +6044,15 @@
     const out = {
       tax,
       food: base.food - consumption,
-      rp: base.rp - (uRp ?? 0),
+      rp: base.rp - (uRp ?? 0) - (s.keptClaimRp ?? 0),
       gold: base.gold - (uGold ?? 0),
       upkeep,
-      buildingUpkeep: {},
-      indicative: !measured
+      buildingUpkeep: {}
     };
     for (const res of BASIC_RESOURCES) {
       base[res] = basicProduction({
         plots: s.plots[res],
-        yield: y,
+        yield: BASIC_YIELD_L20,
         bonus: resourceBonus(s, res),
         tax
       });
@@ -5875,13 +6074,13 @@
     return { value: best.value, binding: best.name };
   }
   function claimGold(uRp, s) {
-    return (uRp + (s?.keptClaimRp ?? 0)) * 10;
+    return (uRp + (s?.keptClaimRp ?? 0)) * CLAIM_GOLD_PER_RP;
   }
   function goldNet({ tax, consumption, uGold }) {
     return GOLD_PER_TAX_POP * tax * consumption - uGold;
   }
   function knapsack(candidates, budget, maxItems = Infinity) {
-    const needCountDim = candidates.length > maxItems;
+    const needCountDim = candidates.filter((c) => c.slot !== false).length > maxItems;
     const width = budget + 1;
     const best = new Float64Array(width);
     if (!needCountDim) {
@@ -5911,9 +6110,10 @@
     for (let i = 0; i < candidates.length; i++) {
       const w = candidates[i].weight;
       const v = candidates[i].food;
-      for (let c = maxItems; c >= 1; c--) {
+      const used = candidates[i].slot === false ? 0 : 1;
+      for (let c = maxItems; c >= used; c--) {
         for (let cap = budget; cap >= w; cap--) {
-          const prev = dp[c - 1][cap - w];
+          const prev = dp[c - used][cap - w];
           if (prev === -Infinity) continue;
           const alt = prev + v;
           if (alt > dp[c][cap]) {
@@ -5944,11 +6144,11 @@
     if (dpResult.countLimited) {
       const { choice, bestCount, width } = dpResult;
       let count = bestCount[cap];
-      for (let i = candidates.length - 1; i >= 0 && count > 0; i--) {
+      for (let i = candidates.length - 1; i >= 0; i--) {
         if (choice[i][count * width + cap] === 1) {
           chosen.push(i);
           cap -= candidates[i].weight;
-          count--;
+          if (candidates[i].slot !== false) count--;
         }
       }
       return chosen.reverse();
@@ -5961,20 +6161,28 @@
     }
     return chosen.reverse();
   }
-  function milsovHeadroom({ tax, settings, uRp = 0, buildingsUsed = 0 }) {
+  function milsovHeadroom({
+    tax,
+    settings,
+    uRp = 0,
+    buildingsUsed = 0,
+    upkeepUsed = 0
+  }) {
     const s = settings;
     const slots = Math.max(0, (s.maxBuildings ?? 20) - buildingsUsed);
     if (!Number.isFinite(tax)) return { rp: 0, upkeep: 0, slots };
-    const { yield: y } = computeBasicYield(s);
     let upkeep = Infinity;
     for (const res of BASIC_RESOURCES) {
       const produced = basicProduction({
         plots: s.plots[res],
-        yield: y,
+        yield: BASIC_YIELD_L20,
         bonus: resourceBonus(s, res),
         tax
       });
-      upkeep = Math.min(upkeep, produced - resourceMinimum(s, res) - buildingUpkeep(s, res));
+      upkeep = Math.min(
+        upkeep,
+        produced - resourceMinimum(s, res) - buildingUpkeep(s, res) - upkeepUsed
+      );
     }
     return {
       rp: Math.max(0, researchAt({
@@ -5990,77 +6198,183 @@
     const d = tile?.descriptor;
     return d && structure && d.sovKey === structure ? d.bonus ?? 0 : 0;
   }
-  function planMilsov({ tiles, headroom, chancery = 1, structure }) {
-    const EPS2 = 1e-9;
-    const n = Math.min(tiles.length, Math.floor(headroom.slots));
+  function planMilsov({
+    tiles,
+    headroom,
+    chancery = 1,
+    structure,
+    kept = []
+  }) {
+    const slots = Math.max(Math.floor(headroom.slots), kept.length);
     const RATE = [chancery, 1, 1, 1, 1];
-    const D = [];
-    for (let j = 0; j < MILSOV_MAX_LEVEL; j++) {
-      const pre = [0];
-      for (let i = 0; i < n; i++) pre.push(pre[i] + ((tiles[i].held ?? 0) > j ? 0 : tiles[i].d));
-      D.push(pre);
+    const worth = (t) => MILSOV_BONUS_PER_LEVEL + descriptorBonus(t, structure);
+    const groups = [];
+    const add = (t, minLevel) => {
+      let g = groups.find((x) => x.worth === worth(t));
+      if (!g) {
+        g = { worth: worth(t), tiles: [], floor: new Array(MILSOV_MAX_LEVEL).fill(0) };
+        groups.push(g);
+      }
+      g.tiles.push(t);
+      for (let j = 0; j < minLevel; j++) g.floor[j] += 1;
+    };
+    [...kept].sort((a, b) => b.buildingLevel - a.buildingLevel || a.d - b.d).forEach((t) => add(t, t.buildingLevel));
+    tiles.forEach((t) => add(t, 0));
+    groups.sort((a, b) => b.worth - a.worth);
+    for (const g of groups) {
+      g.D = [];
+      for (let j = 0; j < MILSOV_MAX_LEVEL; j++) {
+        const pre = [0];
+        g.tiles.forEach((t, i) => pre.push(pre[i] + ((t.held ?? 0) > j ? 0 : t.d)));
+        g.D.push(pre);
+      }
+      g.rpOf = (j, m2) => CLAIM_RP_PER_LEVEL_DISTANCE * RATE[j] * g.D[j][m2];
     }
-    const rpOf = (j, m2) => CLAIM_RP_PER_LEVEL_DISTANCE * RATE[j] * D[j][m2];
-    const empty = { counts: [0, 0, 0, 0, 0], levels: [], bonus: 0, rp: 0, upkeep: 0, buildings: 0 };
-    if (n === 0) return empty;
-    const layerTotal = MILSOV_UPKEEP_STEP.reduce((a, b) => a + b, 0);
     const finish = (counts) => {
+      const placed = [];
       const levels = [];
       let bonus = 0;
-      for (let i = 0; i < n; i++) {
-        const level = counts.filter((m2) => m2 > i).length;
-        if (level > 0) levels.push(level);
-        bonus += level * (MILSOV_BONUS_PER_LEVEL + descriptorBonus(tiles[i], structure));
-      }
-      const units = counts.reduce((a, b) => a + b, 0);
-      return {
-        counts,
-        levels,
-        bonus,
-        rp: counts.reduce((sum, m2, j) => sum + rpOf(j, m2), 0),
-        upkeep: counts.reduce((sum, m2, j) => sum + MILSOV_UPKEEP_STEP[j] * m2, 0),
-        buildings: levels.length
-      };
+      let rp = 0;
+      let upkeep = 0;
+      groups.forEach((g, c) => {
+        g.tiles.forEach((t, i) => {
+          const level = counts[c].filter((m2) => m2 > i).length;
+          if (level === 0) return;
+          placed.push(t);
+          levels.push(level);
+          bonus += level * g.worth;
+        });
+        counts[c].forEach((m2, j) => {
+          rp += g.rpOf(j, m2);
+          upkeep += MILSOV_UPKEEP_STEP[j] * m2;
+        });
+      });
+      return { placed, levels, bonus, rp, upkeep, buildings: placed.length };
     };
-    const topRp = D.reduce((sum, _, j) => sum + rpOf(j, n), 0);
-    if (topRp <= headroom.rp + EPS2 && layerTotal * n <= headroom.upkeep + EPS2) {
-      return finish(new Array(MILSOV_MAX_LEVEL).fill(n));
+    const all = groups.reduce((sum, g) => sum + g.tiles.length, 0);
+    const layerTotal = MILSOV_UPKEEP_STEP.reduce((a, b) => a + b, 0);
+    const topRp = groups.reduce((sum, g) => sum + g.D.reduce((s, _, j) => s + g.rpOf(j, g.tiles.length), 0), 0);
+    if (all <= slots && topRp <= headroom.rp + EPS && layerTotal * all <= headroom.upkeep + EPS) {
+      return finish(groups.map((g) => new Array(MILSOV_MAX_LEVEL).fill(g.tiles.length)));
     }
-    const m = new Array(MILSOV_MAX_LEVEL).fill(0);
+    const restBound = (c, free) => {
+      let bound = 0;
+      let left = free;
+      for (let i = c; i < groups.length; i++) {
+        const n = Math.min(groups[i].floor[0] + left, groups[i].tiles.length);
+        bound += MILSOV_MAX_LEVEL * n * groups[i].worth;
+        left -= n - groups[i].floor[0];
+      }
+      return bound;
+    };
+    const byValue = (steps) => steps.map((s) => ({ ...s, ratio: s.cost > 0 ? groups[s.c].worth / s.cost : Infinity })).sort((a, b) => b.ratio - a.ratio || a.c - b.c);
+    const upkeepSteps = [];
+    const rpSteps = [];
+    groups.forEach((g, c) => {
+      for (let k = 0; k < MILSOV_MAX_LEVEL; k++) {
+        upkeepSteps.push({ c, k, cost: MILSOV_UPKEEP_STEP[k], cap: Infinity });
+        const bare = g.tiles.filter((t) => (t.held ?? 0) <= k);
+        rpSteps.push({ c, k, cost: 0, cap: g.tiles.length - bare.length });
+        if (bare.length) {
+          const nearest = Math.min(...bare.map((t) => t.d));
+          rpSteps.push({ c, k, cost: CLAIM_RP_PER_LEVEL_DISTANCE * RATE[k] * nearest, cap: Infinity });
+        }
+      }
+      g.floorFrom = [0];
+      for (let k = MILSOV_MAX_LEVEL - 1; k >= 0; k--) {
+        g.floorFrom.unshift(g.floorFrom[0] + g.floor[k] * g.worth);
+      }
+    });
+    const upkeepOrder = byValue(upkeepSteps);
+    const rpOrder = byValue(rpSteps);
+    const budgetBound = (order, c, j, v, free, budget) => {
+      let bound = groups[c].floorFrom[j + 1];
+      for (let i = c + 1; i < groups.length; i++) bound += groups[i].floorFrom[0];
+      let left = Math.max(0, budget);
+      for (const s of order) {
+        let n = 0;
+        if (s.c === c) n = s.k > j ? v : 0;
+        else if (s.c > c) n = Math.min(groups[s.c].floor[0] + free, groups[s.c].tiles.length);
+        n = Math.min(n, s.cap);
+        if (n <= 0) continue;
+        const perLevel = groups[s.c].worth;
+        if (s.cost === 0) {
+          bound += n * perLevel;
+          continue;
+        }
+        const take = Math.min(n, left / s.cost);
+        bound += take * perLevel;
+        left -= take * s.cost;
+        if (left <= 0) break;
+      }
+      return bound;
+    };
+    const m = groups.map(() => new Array(MILSOV_MAX_LEVEL).fill(0));
     let best = null;
-    const search = (j, units, rp, upkeep, cap) => {
-      if (j === MILSOV_MAX_LEVEL) {
-        if (!best || units > best.units || units === best.units && rp < best.rp - EPS2) {
-          best = { counts: [...m], units, rp };
+    const search = (c, j, bonus, rp, upkeep, used) => {
+      if (c === groups.length) {
+        if (!best || bonus > best.bonus + EPS || bonus > best.bonus - EPS && rp < best.rp - EPS) {
+          best = { counts: m.map((x) => [...x]), bonus, rp };
         }
         return;
       }
-      let vMax = 0;
-      while (vMax < cap && rp + rpOf(j, vMax + 1) <= headroom.rp + EPS2 && upkeep + MILSOV_UPKEEP_STEP[j] * (vMax + 1) <= headroom.upkeep + EPS2) vMax++;
-      for (let v = vMax; v >= 0; v--) {
-        if (best) {
-          const bound = units + (MILSOV_MAX_LEVEL - j) * v;
-          if (bound < best.units) break;
-          if (bound === best.units && rp >= best.rp - EPS2) break;
-        }
-        m[j] = v;
-        search(j + 1, units + v, rp + rpOf(j, v), upkeep + MILSOV_UPKEEP_STEP[j] * v, v);
+      if (j === MILSOV_MAX_LEVEL) {
+        search(c + 1, 0, bonus, rp, upkeep, used);
+        return;
       }
-      m[j] = 0;
+      const g = groups[c];
+      const floor = g.floor[j];
+      const rpAbove = (v) => g.rpOf(j, v) - g.rpOf(j, floor);
+      const upkeepAbove = (v) => MILSOV_UPKEEP_STEP[j] * (v - floor);
+      const cap = j === 0 ? Math.min(g.tiles.length, floor + slots - used) : m[c][j - 1];
+      let vMax = floor;
+      while (vMax < cap && rp + rpAbove(vMax + 1) <= headroom.rp + EPS && upkeep + upkeepAbove(vMax + 1) <= headroom.upkeep + EPS) vMax++;
+      for (let v = vMax; v >= floor; v--) {
+        const free = slots - used - (j === 0 ? v - floor : 0);
+        if (best) {
+          const bound = bonus + (MILSOV_MAX_LEVEL - j) * v * g.worth + restBound(c + 1, free);
+          if (bound < best.bonus - EPS) break;
+          if (bound < best.bonus + EPS && rp >= best.rp - EPS) break;
+          const byBudget = bonus + v * g.worth + Math.min(
+            budgetBound(upkeepOrder, c, j, v, free, headroom.upkeep - upkeep - upkeepAbove(v)),
+            budgetBound(rpOrder, c, j, v, free, headroom.rp - rp - rpAbove(v))
+          );
+          if (byBudget < best.bonus - EPS) continue;
+          if (byBudget < best.bonus + EPS && rp >= best.rp - EPS) continue;
+        }
+        m[c][j] = v;
+        search(
+          c,
+          j + 1,
+          bonus + v * g.worth,
+          rp + rpAbove(v),
+          upkeep + upkeepAbove(v),
+          used + (j === 0 ? v - floor : 0)
+        );
+      }
+      m[c][j] = 0;
     };
-    search(0, 0, 0, 0, n);
-    return best ? finish(best.counts) : empty;
+    let floorRp = 0;
+    let floorUpkeep = 0;
+    for (const g of groups) {
+      g.floor.forEach((n, j) => {
+        floorRp += g.rpOf(j, n);
+        floorUpkeep += MILSOV_UPKEEP_STEP[j] * n;
+      });
+    }
+    search(0, 0, 0, floorRp, floorUpkeep, kept.length);
+    return finish(best.counts);
   }
-  function milsovClaims({ tiles, levels, structure, chancery }) {
+  function milsovClaims({ placed, levels, structure, chancery }) {
     return levels.map((level, i) => {
-      const held = tiles[i].held ?? 0;
+      const held = placed[i].held ?? 0;
       return {
-        ...tiles[i],
+        ...placed[i],
         structure,
         // A standing claim keeps its level.
         sovLevel: Math.max(level, held),
         buildingLevel: level,
-        ...claimUpkeep(tiles[i].d, level, chancery, held)
+        ...claimUpkeep(placed[i].d, level, chancery, held)
       };
     });
   }
@@ -6068,27 +6382,59 @@
     if (free.length === 0) return "tiles";
     if (hosts.length === 0) return "water";
     if (headroom.slots < 1) return "slots";
-    if (headroom.upkeep + 1e-9 < MILSOV_UPKEEP_BY_LEVEL[1]) return "upkeep";
+    if (headroom.upkeep + EPS < MILSOV_UPKEEP_BY_LEVEL[1]) return "upkeep";
     const nearest = hosts.reduce((d, t) => Math.min(d, (t.held ?? 0) > 0 ? 0 : t.d), Infinity);
     const cheapest = claimUpkeep(nearest, 1, chancery).rp;
-    if (headroom.rp + 1e-9 < cheapest) return "rp";
+    if (headroom.rp + EPS < cheapest) return "rp";
     return null;
   }
   function prepareSite({ neighbours, settings }) {
     const s = settings;
     const chancery = chanceryFactor(s);
     const maxBuildings = s.maxBuildings ?? 20;
-    const byDistance = neighbours.map((n, idx) => ({ ...n, idx, d: distance(n.dx, n.dy) })).sort((a, b) => a.d - b.d || a.food - b.food);
-    const foodCandidates = byDistance.filter((t) => t.food > 0).map((t) => {
+    const structure = s.milsovStructure || null;
+    const tiles = neighbours.map((n, idx) => ({ ...n, idx, d: distance(n.dx, n.dy) })).sort((a, b) => a.d - b.d || a.food - b.food);
+    const isKept = (t) => t.held > 0 && !!t.heldStructure;
+    const isFood = (t) => SOV_STRUCTURE_BY_KEY[t.heldStructure].boosts === "food";
+    const keptStructures = tiles.filter((t) => isKept(t) && !isFood(t)).map((t) => ({
+      ...t,
+      structure: t.heldStructure,
+      sovLevel: t.held,
+      buildingLevel: t.heldBuilding,
+      rp: 0,
+      gold: 0
+    }));
+    const byDistance = tiles.filter((t) => !isKept(t) || isFood(t));
+    const keptFood = byDistance.filter(isKept).map((t) => ({ ...t, level: t.held, rp: 0, gold: 0 }));
+    const keptHosts = keptStructures.filter((k) => k.structure === structure);
+    const foodAtLevel = (t) => t.food * t.heldBuilding / FOOD_CLAIM_LEVEL;
+    const foodClaim = (t) => {
       const up = claimUpkeep(t.d, FOOD_CLAIM_LEVEL, chancery, t.held);
-      return { ...t, level: FOOD_CLAIM_LEVEL, ...up, weight: Math.round(up.rp) };
-    });
+      return { ...t, level: FOOD_CLAIM_LEVEL, ...up, weight: Math.ceil(Math.max(0, up.rp - EPS)) };
+    };
+    const foodCandidates = [
+      ...byDistance.filter((t) => t.food > 0 && !isKept(t)).map(foodClaim),
+      // Raising a kept claim adds the rest of its food, in the slot it already has.
+      ...keptFood.filter((t) => foodAtLevel(t) < t.food).map((t) => ({
+        ...foodClaim(t),
+        food: t.food - foodAtLevel(t),
+        slot: false,
+        raises: true
+      }))
+    ];
     const rpBonus = prestigeBonus(s, "research");
     const budget = Math.max(0, Math.round(researchAt({ research: computeResearch(s), rpBonus, tax: 0 })));
+    const dp = knapsack(
+      foodCandidates,
+      budget,
+      Math.max(0, maxBuildings - keptFood.length - keptStructures.length)
+    );
+    const keptFoodTotal = keptFood.reduce((sum, t) => sum + foodAtLevel(t), 0);
+    for (let spend = 0; spend <= budget; spend++) dp.best[spend] += keptFoodTotal;
     return {
       settings: s,
       chancery,
-      structure: s.milsovStructure || null,
+      structure,
       k: computeK(s.plots.food),
       bOther: computeBOther(s),
       consumption: computeConsumption(s),
@@ -6097,10 +6443,24 @@
       minFood: resourceMinimum(s, "food"),
       minRp: resourceMinimum(s, "research"),
       byDistance,
+      keptFood,
+      keptStructures,
+      keptHosts,
+      keptFixed: keptStructures.filter((k) => !keptHosts.includes(k)),
       foodCandidates,
       budget,
-      dp: knapsack(foodCandidates, budget, maxBuildings)
+      dp
     };
+  }
+  function foodClaims(ctx, spend) {
+    const chosen = recoverSet(ctx.foodCandidates, ctx.dp, spend).map((i) => ctx.foodCandidates[i]);
+    const raised = new Map(chosen.filter((c) => c.raises).map((c) => [c.idx, c]));
+    const tiles = [
+      // A raising candidate carries only the food it adds; the claim gives it all.
+      ...ctx.keptFood.map((t) => raised.has(t.idx) ? { ...raised.get(t.idx), food: t.food } : t),
+      ...chosen.filter((c) => !c.raises)
+    ];
+    return { spend, tiles, rp: sumRp(tiles) };
   }
   function foodSpendFor(ctx, tax) {
     const needed = tax - PRODUCTION_BASE - ctx.bOther + (ctx.consumption + ctx.minFood) / ctx.k;
@@ -6112,8 +6472,7 @@
       if (ctx.dp.best[mid] >= needed - EPS) hi = mid;
       else lo = mid + 1;
     }
-    const produced = researchAt({ research: ctx.research, rpBonus: ctx.rpBonus, tax });
-    return produced - lo - ctx.minRp < -EPS ? null : lo;
+    return lo;
   }
   function bestFoodSpend(ctx, tax) {
     const produced = researchAt({ research: ctx.research, rpBonus: ctx.rpBonus, tax });
@@ -6131,34 +6490,43 @@
   function planSiteAt(ctx, tax, { bestEffort = false } = {}) {
     const s = ctx.settings;
     if (!Number.isFinite(tax)) return null;
-    const held = foodSpendFor(ctx, tax);
-    const spend = held ?? (bestEffort ? bestFoodSpend(ctx, tax) : null);
-    if (spend === null) return null;
-    const tiles = recoverSet(ctx.foodCandidates, ctx.dp, spend).map((i) => ctx.foodCandidates[i]);
+    const cheapest = foodSpendFor(ctx, tax);
+    let food = cheapest === null ? null : foodClaims(ctx, cheapest);
+    const produced = researchAt({ research: ctx.research, rpBonus: ctx.rpBonus, tax });
+    const holds = !!food && produced - food.rp - ctx.minRp >= -EPS;
+    if (!holds) {
+      if (!bestEffort) return null;
+      food = foodClaims(ctx, bestFoodSpend(ctx, tax));
+    }
+    const { spend, tiles, rp: foodRp } = food;
     const claimed = new Set(tiles.map((t) => t.idx));
     const free = ctx.byDistance.filter((t) => !claimed.has(t.idx));
     const hosts = free.filter((t) => !t.water);
+    const fixedUpkeep = milsovUpkeep(ctx.keptFixed);
     const headroom = milsovHeadroom({
       tax,
       settings: s,
-      uRp: spend,
-      buildingsUsed: tiles.length
+      uRp: foodRp,
+      buildingsUsed: tiles.length + ctx.keptFixed.length,
+      upkeepUsed: fixedUpkeep
     });
     const military = planMilsov({
       tiles: ctx.structure ? hosts : [],
       headroom,
       chancery: ctx.chancery,
-      structure: ctx.structure
+      structure: ctx.structure,
+      kept: ctx.keptHosts
     });
-    const milsov = milsovClaims({
-      tiles: hosts,
+    const placed = milsovClaims({
+      placed: military.placed,
       levels: military.levels,
       structure: ctx.structure,
       chancery: ctx.chancery
     });
+    const milsov = [...ctx.keptFixed, ...placed];
     const sFood = ctx.dp.best[spend];
-    const milsovRp = milsov.reduce((sum, a) => sum + a.rp, 0);
-    const uRp = spend + milsovRp;
+    const milsovRp = sumRp(milsov);
+    const uRp = foodRp + milsovRp;
     const uGold = claimGold(uRp, s);
     const resCeiling = tRes({ milsovAssignments: milsov, plots: s.plots, settings: s });
     const ceiling = tMax({
@@ -6170,12 +6538,12 @@
         minimum: ctx.minFood
       }),
       rp: tRp({ uRp, research: ctx.research, rpBonus: ctx.rpBonus, minimum: ctx.minRp }),
-      res: resCeiling.indicative ? Infinity : resCeiling.ceiling
+      res: resCeiling.ceiling
     });
     return {
       tax,
       // False when the plan is at a tax the site cannot hold.
-      holds: held !== null,
+      holds,
       tMax: ceiling.value,
       binding: ceiling.binding,
       sFood,
@@ -6183,18 +6551,17 @@
       uRp,
       uGold,
       goldNet: goldNet({ tax, consumption: ctx.consumption, uGold }),
-      surplus: Number.isFinite(tax) ? surplusAt({ tax, settings: s, sFood, uRp, uGold, milsovAssignments: milsov }) : null,
+      surplus: surplusAt({ tax, settings: s, sFood, uRp, uGold, milsovAssignments: milsov }),
       tiles,
       free,
       headroom,
       milsov,
       milsovBonus: military.bonus,
-      milsovUpkeep: military.upkeep,
+      milsovUpkeep: military.upkeep + fixedUpkeep,
       milsovRp,
       milsovGold: milsov.reduce((sum, a) => sum + a.gold, 0),
-      milsovBlocked: ctx.structure && milsov.length === 0 ? milsovBlockedBy({ hosts, free, headroom, chancery: ctx.chancery }) : null,
+      milsovBlocked: ctx.structure && placed.length === 0 ? milsovBlockedBy({ hosts, free, headroom, chancery: ctx.chancery }) : null,
       resCeiling: resCeiling.ceiling,
-      resIndicative: resCeiling.indicative,
       resBinding: resCeiling.binding,
       resImpossible: resCeiling.impossible
     };
@@ -6221,22 +6588,26 @@
     return { bonus: best.milsovBonus, tax: best.tax };
   }
   function siteCeiling(ctx) {
-    const floors = tRes({ milsovAssignments: [], plots: ctx.settings.plots, settings: ctx.settings });
-    const res = floors.indicative ? Infinity : floors.ceiling;
+    const res = tRes({
+      milsovAssignments: ctx.keptStructures,
+      plots: ctx.settings.plots,
+      settings: ctx.settings
+    }).ceiling;
+    const ceilingAt = (sFood, uRp) => tMax({
+      food: tFood({
+        bOther: ctx.bOther,
+        sFood,
+        consumption: ctx.consumption,
+        k: ctx.k,
+        minimum: ctx.minFood
+      }),
+      rp: tRp({ uRp, research: ctx.research, rpBonus: ctx.rpBonus, minimum: ctx.minRp }),
+      res
+    });
     let winner = null;
     for (let spend = 0; spend <= ctx.budget; spend++) {
       const sFood = ctx.dp.best[spend];
-      const t = tMax({
-        food: tFood({
-          bOther: ctx.bOther,
-          sFood,
-          consumption: ctx.consumption,
-          k: ctx.k,
-          minimum: ctx.minFood
-        }),
-        rp: tRp({ uRp: spend, research: ctx.research, rpBonus: ctx.rpBonus, minimum: ctx.minRp }),
-        res
-      });
+      const t = ceilingAt(sFood, spend);
       const net = goldNet({
         tax: t.value,
         consumption: ctx.consumption,
@@ -6246,7 +6617,8 @@
         winner = { tMax: t.value, binding: t.binding, sFood, spend };
       }
     }
-    return winner;
+    const exact = ceilingAt(winner.sFood, foodClaims(ctx, winner.spend).rp);
+    return { ...winner, tMax: exact.value, binding: exact.binding };
   }
   function scoreSite({ neighbours, settings }) {
     return scoreSiteFrom(prepareSite({ neighbours, settings }));
@@ -6254,10 +6626,8 @@
   function scoreSiteFrom(ctx) {
     const s = ctx.settings;
     const winner = siteCeiling(ctx);
-    if (!winner) return null;
     const plan = planSiteAt(ctx, settableTax(winner.tMax)) ?? fallbackPlan(ctx, winner);
-    const cheaper = ctx.structure ? planSiteAt(ctx, plan.tax - 1) : null;
-    const required = ctx.structure ? Math.max(0, s.milsovMinBonus ?? 0) : s.milsovMinBonus ?? 0;
+    const required = ctx.structure ? Math.max(0, s.milsovMinBonus ?? 0) : 0;
     const floor = Math.min(s.tMin ?? 0, plan.tax);
     const reach = required > 0 && plan.milsovBonus < required && Number.isFinite(plan.tax) ? milsovAtFloor(ctx, { required, floor, ceiling: plan.tax }) : null;
     return {
@@ -6267,7 +6637,6 @@
       tMaxExact: winner.tMax,
       // Named from the exact ceiling.
       binding: winner.binding,
-      milsovPrice: cheaper ? cheaper.milsovBonus - plan.milsovBonus : 0,
       // The highest tax reaching the minimum bonus, when it is not met for free.
       milsovMinTax: reach ? reach.tax : null,
       milsovMinBonusAt: reach ? reach.bonus : null,
@@ -6276,14 +6645,16 @@
     };
   }
   function fallbackPlan(ctx, winner) {
-    const tiles = recoverSet(ctx.foodCandidates, ctx.dp, winner.spend).map((i) => ctx.foodCandidates[i]);
+    const { tiles } = foodClaims(ctx, winner.spend);
     const claimed = new Set(tiles.map((t) => t.idx));
     const free = ctx.byDistance.filter((t) => !claimed.has(t.idx));
+    const keptUpkeep = milsovUpkeep(ctx.keptStructures);
     const headroom = milsovHeadroom({
       tax: winner.tMax,
       settings: ctx.settings,
       uRp: winner.spend,
-      buildingsUsed: tiles.length
+      buildingsUsed: tiles.length + ctx.keptStructures.length,
+      upkeepUsed: keptUpkeep
     });
     return {
       tax: winner.tMax,
@@ -6302,9 +6673,9 @@
       tiles,
       free,
       headroom,
-      milsov: [],
-      milsovBonus: 0,
-      milsovUpkeep: 0,
+      milsov: ctx.keptStructures,
+      milsovBonus: ctx.keptHosts.reduce((sum, k) => sum + k.buildingLevel * (MILSOV_BONUS_PER_LEVEL + descriptorBonus(k, ctx.structure)), 0),
+      milsovUpkeep: keptUpkeep,
       milsovRp: 0,
       milsovGold: 0,
       milsovBlocked: ctx.structure ? milsovBlockedBy({
@@ -6314,17 +6685,15 @@
         chancery: ctx.chancery
       }) : null,
       resCeiling: Infinity,
-      resIndicative: false,
       resBinding: null,
       resImpossible: false
     };
   }
   function betterPlan(a, b) {
-    const EPS2 = 1e-9;
-    if (a.tMax > b.tMax + EPS2) return true;
-    if (a.tMax < b.tMax - EPS2) return false;
-    if (a.uRp < b.uRp - EPS2) return true;
-    if (a.uRp > b.uRp + EPS2) return false;
+    if (a.tMax > b.tMax + EPS) return true;
+    if (a.tMax < b.tMax - EPS) return false;
+    if (a.uRp < b.uRp - EPS) return true;
+    if (a.uRp > b.uRp + EPS) return false;
     return a.goldNet > b.goldNet;
   }
 
@@ -6346,6 +6715,11 @@
     const rs = parseRs(tile);
     return rs ? rs.food : 0;
   }
+  var FRESH_WATER = 59;
+  var BANKSIDE = 172;
+  function terrainId(tile) {
+    return tile?.i === FRESH_WATER && foodOf(tile) > 0 ? BANKSIDE : tile?.i;
+  }
   var WATER_BIOME = 20;
   function isWaterTile(tile) {
     if (Number.isFinite(tile?.b)) return tile.b === WATER_BIOME;
@@ -6364,18 +6738,15 @@
     return { claims, towns };
   }
   function claimLevel(claim) {
-    const n = Number(String(claim?.s ?? "").split("|")[0]);
+    const n = Number(claim?.sl);
     return Number.isInteger(n) && n >= 1 && n <= 5 ? n : null;
   }
   function townIdentity(town) {
-    const text = (v) => String(v ?? "").trim();
     const rec = townRecord(town);
-    const parts = rec ? null : townString(town).split("|");
-    return (rec ? [rec.TownName, rec.TownId] : [parts[0], parts[1]]).map(text).filter(Boolean);
+    return rec ? [rec.TownName, rec.TownId].map((v) => String(v ?? "").trim()).filter(Boolean) : [];
   }
   function townPlayer(town) {
-    const rec = townRecord(town);
-    return String((rec ? rec.Player : townString(town).split("|")[10]) ?? "").trim();
+    return String(townRecord(town)?.Player ?? "").trim();
   }
   function isTownsClaim(claim, town) {
     if (!claim || !town) return false;
@@ -6394,22 +6765,30 @@
     }
     return true;
   }
-  function heldLevel(key, idx, settings) {
+  var STRUCTURE_KEY_BY_NAME = new Map(SOV_STRUCTURES.map((s) => [s.name, s.key]));
+  function heldClaim(key, idx, settings) {
     const claim = idx.claims.get(key);
-    if (!isTownsClaim(claim, settings?.preserveTown)) return 0;
-    return claimLevel(claim) ?? 0;
+    if (!isTownsClaim(claim, settings?.preserveTown)) return { level: 0, structure: null, building: 0 };
+    const level = claimLevel(claim) ?? 0;
+    const building = Number(claim.ss);
+    return {
+      level,
+      structure: level > 0 ? STRUCTURE_KEY_BY_NAME.get(claim.b) ?? null : null,
+      // An unreadable building level is taken to match the claim's.
+      building: Number.isInteger(building) && building >= 1 && building <= 5 ? building : level
+    };
   }
   function isSettleable(tile) {
     if (!tile) return false;
     if (tile.set !== void 0) return tile.set === 1;
-    if (tile.imp || tile.brg || tile.npc) return false;
+    if (tile.imp || tile.brg || tile.npc || IMPASSABLE_TERRAIN.has(tile.i)) return false;
     if (isWaterTile(tile)) return false;
     return tile.sov === 1 && tile.hos === 1;
   }
   function isCandidateSite(tile, key, idx, settings, towns) {
     if (!isSettleable(tile)) return { ok: false, reason: "not-settleable" };
     const terrains = settings.siteTerrains ?? [];
-    if (terrains.length && !terrains.includes(TERRAIN_NAMES[tile.i]?.[1])) {
+    if (terrains.length && !terrains.includes(TERRAIN_NAMES[terrainId(tile)]?.[1])) {
       return { ok: false, reason: "terrain" };
     }
     if (idx.claims.has(key)) return { ok: false, reason: "already-claimed" };
@@ -6427,6 +6806,20 @@
     }
     return { ok: true };
   }
+  function meetsSurroundings(payload, key, settings) {
+    const terrains = settings.surroundTerrains ?? [];
+    if (!terrains.length) return true;
+    const { x, y } = parseKey(key);
+    let matched = 0;
+    for (let dy = -1; dy <= 1; dy++) {
+      for (let dx = -1; dx <= 1; dx++) {
+        if (dx === 0 && dy === 0) continue;
+        const tile = payload.data[tileKey(y + dy, x + dx)];
+        if (terrains.includes(TERRAIN_NAMES[terrainId(tile)]?.[1])) matched += 1;
+      }
+    }
+    return matched >= settings.surroundMin;
+  }
   function townRecord(town) {
     if (!town || typeof town !== "object") return null;
     const isRecord = (o) => !!o && typeof o === "object" && typeof o.TownName === "string" && o.X !== "" && Number.isFinite(Number(o.X)) && o.Y !== "" && Number.isFinite(Number(o.Y));
@@ -6434,29 +6827,13 @@
     for (const v of Object.values(town)) if (isRecord(v)) return v;
     return null;
   }
-  function townString(town) {
-    if (typeof town === "string") return town;
-    if (!town || typeof town !== "object") return "";
-    for (const v of Object.values(town)) {
-      if (typeof v !== "string" || !v.includes("|")) continue;
-      const parts = v.split("|");
-      if (parts.length >= 4 && Number.isFinite(Number(parts[2])) && parts[2] !== "" && Number.isFinite(Number(parts[3])) && parts[3] !== "") {
-        return v;
-      }
-    }
-    return "";
-  }
   function extractTowns(payload) {
     const out = [];
     for (const [key, town] of Object.entries(payload.t ?? {})) {
       const rec = townRecord(town);
-      const parts = rec ? null : townString(town).split("|");
-      const x = Number(rec ? rec.X : parts[2]);
-      const y = Number(rec ? rec.Y : parts[3]);
-      const pos = Number.isNaN(x) || Number.isNaN(y) ? parseKey(key) : { x, y };
       out.push({
-        ...pos,
-        name: (rec ? rec.TownName : parts[0]) ?? "",
+        ...rec ? { x: Number(rec.X), y: Number(rec.Y) } : parseKey(key),
+        name: rec?.TownName ?? "",
         own: town && town.rd === "Yours",
         // Confederates ("Confed ") are kept at a stranger's distance.
         ally: town && town.rd === "Alliance",
@@ -6486,21 +6863,27 @@
           continue;
         }
         if (!isClaimable(tile, nKey, idx, settings)) continue;
-        const held = heldLevel(nKey, idx, settings);
+        const { level: held, structure: heldStructure, building: heldBuilding } = heldClaim(
+          nKey,
+          idx,
+          settings
+        );
         const claim = idx.claims.get(nKey);
         neighbours.push({
           dx,
           dy,
           food: foodOf(tile),
           key: nKey,
-          i: tile.i,
+          i: terrainId(tile),
           water: isWaterTile(tile),
           // Costs downstream are for the levels above this.
           held,
+          heldStructure,
+          heldBuilding,
           // A claim stands here that the plan does not keep and prices as bare
           // ground.
           relaid: held === 0 && !!claim,
-          descriptor: descriptorFor(tile.i)
+          descriptor: descriptorFor(terrainId(tile))
         });
       }
     }
@@ -6526,9 +6909,9 @@
         const neighbours = neighbourhood(payload, key, settings.rClaim, idx, settings);
         if (neighbours === null) {
           incomplete.push({ key, ...parseKey(key) });
-        } else {
+        } else if (meetsSurroundings(payload, key, settings)) {
           const plan = scoreSite({ neighbours, settings });
-          if (plan && !plan.milsovShortfall && plan.tMax >= settings.tMin) {
+          if (!plan.milsovShortfall && plan.tMax >= settings.tMin) {
             results.push({ key, ...parseKey(key), rs: parseRs(tile), neighbours, ...plan });
           }
         }
@@ -6548,7 +6931,6 @@
 })();
 `], { type: "text/javascript" })
   );
-  var settings = { ...DEFAULT_SETTINGS };
   var store = createSettingsStore();
   var restored = store.load();
   var saveTimer = null;
@@ -6603,13 +6985,18 @@
   });
   overlay.setEnabled(panel.getSettings().settings.mapOverlay);
   if (restored.note) panel.setStoreNote(restored.note);
+  var worker = null;
+  function endScan(status) {
+    worker.terminate();
+    worker = null;
+    panel.setStatus(status);
+  }
   function runScan() {
-    const read = panel.getSettings();
-    if (read.errors.length) {
-      panel.setStatus(read.errors.join(" "));
+    const { settings, errors } = panel.getSettings();
+    if (errors.length) {
+      panel.setStatus(errors.join(" "));
       return;
     }
-    settings = read.settings;
     const payload = getLatestPayload();
     if (!payload) {
       panel.setStatus("No map data on screen yet. Pan or zoom the map, then Scan.");
@@ -6617,20 +7004,21 @@
     }
     const view = viewOf(payload);
     overlay.clearTop();
+    worker?.terminate();
     panel.setStatus("Scanning\u2026");
-    const worker = new Worker(workerUrl);
+    worker = new Worker(workerUrl);
     worker.onmessage = (e) => {
       const msg = e.data;
       if (msg.type === "progress") {
         panel.setStatus(`Scanning\u2026 ${msg.done}/${msg.total}`);
         return;
       }
-      panel.renderResults(msg.results, { ...view, scanned: msg.scanned });
+      panel.renderResults(msg.results, { ...view, scanned: msg.scanned, settings });
       overlay.showTop(msg.results);
       panel.renderIncomplete(msg.incomplete);
-      panel.setStatus("");
-      worker.terminate();
+      endScan("");
     };
+    worker.onerror = () => endScan("The scan failed. The browser console has the error.");
     worker.postMessage({ payload, settings });
   }
   window.__sovScanner = {
